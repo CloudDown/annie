@@ -1,0 +1,968 @@
+"""Titres, tri, catalogue Nyaa."""
+
+from __future__ import annotations
+
+import math
+import os
+import re
+from dataclasses import dataclass, field, replace
+from enum import Enum
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore
+
+from annie.nyaa import NyaaEntry
+
+# --- config & models ---
+import os
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib  # type: ignore[no-redef]
+
+CONFIG_DIR = Path.home() / ".config" / "annie"
+CONFIG_FILE = CONFIG_DIR / "config.toml"
+
+
+@dataclass
+class AnnieConfig:
+    player: str = "auto"
+    category: str = "0_0"
+    filter_code: str = "0"
+    skip_recap_movies: bool = False
+    preferred_groups: list[str] = field(default_factory=list)
+
+    @classmethod
+    def load(cls) -> AnnieConfig:
+        data: dict = {}
+        if CONFIG_FILE.is_file():
+            data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        return cls(
+            player=os.environ.get("ANNIE_PLAYER", data.get("player", "auto")),
+            category=data.get("category", "0_0"),
+            filter_code=str(data.get("filter", data.get("filter_code", "0"))),
+            skip_recap_movies=bool(data.get("skip_recap_movies", False)),
+            preferred_groups=list(data.get("preferred_groups", [])),
+        )
+
+    def resolved_player(self, override: str | None = None) -> str | None:
+        if override and override != "auto":
+            return override
+        if self.player != "auto":
+            return self.player
+        return None
+
+from dataclasses import dataclass, field, replace
+from enum import Enum
+
+
+
+class MediaKind(str, Enum):
+    EPISODE = "episode"
+    MOVIE = "movie"
+    OVA = "ova"
+    SPECIAL = "special"
+    BATCH = "batch"
+    MANGA = "manga"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class ParsedTitle:
+    raw: str
+    release_group: str | None
+    series: str
+    display_name: str
+    kind: MediaKind
+    season: int | None
+    episode: int | None
+    arc: str | None
+    quality: int
+    resolution: str | None
+    is_repack: bool
+
+
+@dataclass(frozen=True)
+class WatchTarget:
+    query: str
+    season: int | None = None
+    episode: int | None = None
+    kind: MediaKind | None = None
+
+
+@dataclass(frozen=True)
+class ResultItem:
+    entry: NyaaEntry
+    parsed: ParsedTitle
+    score: float
+
+
+@dataclass
+class MediaSection:
+    key: str
+    label: str
+    kind: MediaKind
+    season: int | None
+    arc: str | None = None
+    batch_recommended: bool = False
+    episodes: dict[int, ResultItem] = field(default_factory=dict)
+    singles: list[ResultItem] = field(default_factory=list)
+
+    @property
+    def has_episodes(self) -> bool:
+        return bool(self.episodes)
+
+    def choices(self) -> list[ResultItem]:
+        if self.has_episodes:
+            return [self.episodes[n] for n in sorted(self.episodes)]
+        return sorted(self.singles, key=lambda item: item.score, reverse=True)
+
+import re
+
+
+def normalize(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+import re
+
+RESOLUTION_SCORES = (
+    (re.compile(r"\b2160p\b|\b4k\b", re.I), 45),
+    (re.compile(r"\b1080p\b", re.I), 38),
+    (re.compile(r"\b720p\b", re.I), 26),
+    (re.compile(r"\b480p\b", re.I), 12),
+)
+SOURCE_SCORES = (
+    (re.compile(r"\bbluray\b|\bbd\b|\bblu-?ray\b", re.I), 24),
+    (re.compile(r"\bweb-?dl\b", re.I), 20),
+    (re.compile(r"\bwebrip\b", re.I), 14),
+    (re.compile(r"\bhdtv\b", re.I), 6),
+)
+CODEC_SCORES = (
+    (re.compile(r"\bhevc\b|\bx265\b|\bh\.265\b", re.I), 8),
+    (re.compile(r"\bavc\b|\bx264\b|\bh\.264\b", re.I), 10),
+)
+PREFERRED_GROUPS = {
+    "subsplease": 14,
+    "erai-raws": 12,
+    "toonhub": 9,
+    "sam": 8,
+    "judas": 7,
+    "ember": 6,
+}
+
+
+def resolution_tag(title: str) -> str | None:
+    for pattern, _ in RESOLUTION_SCORES:
+        match = pattern.search(title)
+        if match:
+            return match.group(0).lower().replace("4k", "2160p")
+    return None
+
+
+def quality_score(title: str, release_group: str | None) -> int:
+    score = 0
+    for pattern, points in RESOLUTION_SCORES:
+        if pattern.search(title):
+            score += points
+            break
+    for pattern, points in SOURCE_SCORES:
+        if pattern.search(title):
+            score += points
+            break
+    for pattern, points in CODEC_SCORES:
+        if pattern.search(title):
+            score += points
+            break
+    if release_group:
+        score += PREFERRED_GROUPS.get(release_group.lower(), 0)
+    if re.search(r"\brepack\b", title, re.I):
+        score -= 5
+    if re.search(r"\bdual[\s-]?audio\b", title, re.I):
+        score += 2
+    return score
+
+import re
+
+MANGA_KEYWORDS = (
+    re.compile(r"\bmanga\b", re.I),
+    re.compile(r"\bmanhwa\b", re.I),
+    re.compile(r"\bmanhua\b", re.I),
+    re.compile(r"\bcomic\b", re.I),
+    re.compile(r"\bdoujin(?:shi)?\b", re.I),
+    re.compile(r"\bchapter\b", re.I),
+    re.compile(r"\bch\.?\s*\d+\b", re.I),
+    re.compile(r"\bvolume\b", re.I),
+    re.compile(r"\bvol\.?\s*\d+\b", re.I),
+)
+MANGA_VOLUME_RANGE_RE = re.compile(
+    r"\bv(?:ol(?:ume)?\.?\s*)?(?P<a>\d{1,2})\s*[-–—]\s*v?(?P<b>\d{1,2})\b",
+    re.I,
+)
+MANGA_DIGITAL_RE = re.compile(
+    r"\((?:digital|web)\)|\bdigital\s+(?:comic|release|edition)\b",
+    re.I,
+)
+MANGA_EXT_RE = re.compile(r"\.(?:cbz|cbr|pdf|zip)(?:\s|\]|$)", re.I)
+MANGA_SCAN_GROUPS = frozenset(
+    {
+        "danke-empire",
+        "lucaz",
+        "1r0n",
+        "nif",
+        "stick",
+        "rascal",
+        "philia",
+    }
+)
+
+
+def is_manga(title: str, release_group: str | None = None) -> bool:
+    if MANGA_EXT_RE.search(title):
+        return True
+    if any(pattern.search(title) for pattern in MANGA_KEYWORDS):
+        return True
+    if MANGA_DIGITAL_RE.search(title) and not re.search(
+        r"\b(?:mkv|mp4|avi|webm|m4v|mov|ts)\b",
+        title,
+        re.I,
+    ):
+        return True
+    volume_match = MANGA_VOLUME_RANGE_RE.search(title)
+    if volume_match and MANGA_DIGITAL_RE.search(title):
+        return True
+    if volume_match and not re.search(r"\bS\d{1,2}E\d{1,3}\b", title, re.I):
+        if not re.search(r"[-–—]\s*\d{1,2}(?:v\d+)?(?:\s|\[|\(|$)", title):
+            return True
+    if release_group and release_group.lower() in MANGA_SCAN_GROUPS and MANGA_DIGITAL_RE.search(title):
+        return True
+    return False
+
+ARC_SEASON_ALIASES: dict[str, int] = {
+    "retsujitsu no ougonkyou": 2,
+    "the golden city of the scorching sun": 2,
+    "golden city of the scorching sun": 2,
+}
+
+
+def arc_to_season(arc: str | None) -> int | None:
+    if not arc:
+        return None
+    return ARC_SEASON_ALIASES.get(normalize(arc))
+
+import re
+
+
+RELEASE_GROUP_RE = re.compile(r"^\[([^\]]+)\]\s*")
+TECH_BRACKET_RE = re.compile(
+    r"\[(?:1080p|720p|480p|2160p|4K|HEVC|H\.264|H\.265|x264|x265|AAC|AC3|"
+    r"Multi-?Sub(?:s)?|Batch|Weekly|REPACK|v\d+)\]",
+    re.I,
+)
+MOVIE_PATTERNS = (
+    re.compile(r"\bgekijouban\b", re.I),
+    re.compile(r"\bthe\s+movie\b", re.I),
+    re.compile(r"\bmovie(?:\s*\d+)?\b", re.I),
+    re.compile(r"\bfilm\b", re.I),
+    re.compile(r"\b(?:movie|film)\s*:", re.I),
+    re.compile(r"\bdawn\s+of\s+the\s+deep\s+soul\b", re.I),
+    re.compile(r"\bfukaki\s+tamashii\s+no\s+reimei\b", re.I),
+    re.compile(r"\btabidachi\s+no\s+yoake\b", re.I),
+    re.compile(r"\bhourou\s+suru\s+tasogare\b", re.I),
+    re.compile(r"\bjourney'?s\s+dawn\b", re.I),
+    re.compile(r"\bwandering\s+twilight\b", re.I),
+)
+MANGA_VOLUME_IN_TITLE_RE = re.compile(
+    r"\bv(?:ol(?:ume)?\.?\s*)?\d{1,2}\s*[-–—]\s*v?\d{1,2}\b",
+    re.I,
+)
+OVA_PATTERNS = (
+    re.compile(r"\bova\b", re.I),
+    re.compile(r"\boad\b", re.I),
+)
+SPECIAL_PATTERNS = (
+    re.compile(r"\bspecial\b", re.I),
+    re.compile(r"\btv\s+special\b", re.I),
+    re.compile(r"\b(?:^|\s)sp(?:\s|$|\d)", re.I),
+)
+BATCH_PATTERNS = (
+    re.compile(r"\bbatch\b", re.I),
+    re.compile(r"\bcomplete\b", re.I),
+    re.compile(r"\b\d{1,3}\s*-\s*\d{1,3}\b"),
+    re.compile(r"\b\d{1,3}\s*[~]\s*\d{1,3}\b"),
+    re.compile(r"\bS\d{1,2}E\d{1,3}\s*-\s*S?\d{1,2}E\d{1,3}\b", re.I),
+)
+VIDEO_EXT_RE = re.compile(r"\.(?:mkv|mp4|avi|webm|m4v|mov)\b", re.I)
+HASH_BRACKET_RE = re.compile(r"\[[0-9A-Fa-f]{6,}\]")
+SEASON_EP_RE = re.compile(r"\bS(?P<season>\d{1,2})E(?P<episode>\d{1,3})\b", re.I)
+ORDINAL_SEASON_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s+Season", re.I)
+SEASON_WORD_RE = re.compile(r"\bSeason\s*(?P<season>\d+)\b", re.I)
+SEASON_SHORT_RE = re.compile(r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})(?!E\d)", re.I)
+PART_RE = re.compile(r"\bPart\s*(?P<season>\d+)\b", re.I)
+COUR_RE = re.compile(r"\bCour\s*(?P<season>\d+)\b", re.I)
+EP_DASH_RE = re.compile(
+    r"[-–—]\s*(?P<episode>\d{1,3})(?:v\d+)?(?:\s|\[|\(|$)",
+    re.I,
+)
+EP_WORD_RE = re.compile(r"\b(?:Episode|EP)\s*(?P<episode>\d{1,3})\b", re.I)
+ARC_EP_RE = re.compile(
+    r"^(?P<series>.+?)\s+[-–—]\s+(?P<arc>.+?)\s+[-–—]\s+(?P<episode>\d{1,3})(?:v\d+)?(?:\s|\[|\(|$)",
+    re.I,
+)
+
+
+def strip_release_group(title: str) -> tuple[str | None, str]:
+    match = RELEASE_GROUP_RE.match(title)
+    if not match:
+        return None, title
+    return match.group(1), title[match.end() :].strip()
+
+
+
+
+def matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
+    return any(pattern.search(text) for pattern in patterns)
+
+
+def parse_season(body: str) -> int | None:
+    for pattern in (
+        ORDINAL_SEASON_RE,
+        SEASON_WORD_RE,
+        PART_RE,
+        COUR_RE,
+        SEASON_SHORT_RE,
+    ):
+        match = pattern.search(body)
+        if match:
+            return int(match.group("season"))
+    return None
+
+
+def parse_episode(body: str) -> int | None:
+    if MANGA_VOLUME_IN_TITLE_RE.search(body):
+        return None
+    match = EP_DASH_RE.search(body) or EP_WORD_RE.search(body)
+    if match:
+        return int(match.group("episode"))
+    return None
+
+
+def extract_arc(body: str) -> tuple[str | None, str | None, int | None]:
+    match = ARC_EP_RE.match(body)
+    if not match:
+        return None, None, None
+    arc = match.group("arc").strip()
+    if matches_any(MOVIE_PATTERNS, arc) or matches_any(BATCH_PATTERNS, arc):
+        return None, None, None
+    return match.group("series").strip(), arc, int(match.group("episode"))
+
+
+def extract_display_name(body: str) -> str:
+    series, arc, _episode = extract_arc(body)
+    if series and arc:
+        return f"{clean_fragment(series)} - {clean_fragment(arc)}"
+
+    cleaned = TECH_BRACKET_RE.sub(" ", body)
+    cleaned = re.sub(r"\([^)]*\)", " ", cleaned)
+    cleaned = re.sub(r"\[[^\]]*\]", " ", cleaned)
+    cleaned = re.sub(r"[-–—]\s*\d{1,3}(?:v\d+)?.*$", " ", cleaned)
+    cleaned = re.sub(
+        r"\b(?:S\d{1,2}E\d{1,3}|Season\s*\d+|S\d{1,2}|Part\s*\d+|Cour\s*\d+)\b",
+        " ",
+        cleaned,
+        flags=re.I,
+    )
+    cleaned = clean_fragment(cleaned)
+    return cleaned or clean_fragment(body)
+
+
+def clean_fragment(text: str) -> str:
+    text = VIDEO_EXT_RE.sub("", text)
+    text = HASH_BRACKET_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip(" -–—:.")
+    return text
+
+
+def series_key(body: str, display_name: str) -> str:
+    return normalize(display_name or body)
+
+
+def detect_kind(body: str, season: int | None, episode: int | None, arc: str | None) -> MediaKind:
+    if matches_any(MOVIE_PATTERNS, body):
+        return MediaKind.MOVIE
+    if matches_any(BATCH_PATTERNS, body):
+        return MediaKind.BATCH
+    if matches_any(OVA_PATTERNS, body):
+        return MediaKind.OVA
+    if matches_any(SPECIAL_PATTERNS, body):
+        return MediaKind.SPECIAL
+    if episode is not None or SEASON_EP_RE.search(body):
+        return MediaKind.EPISODE
+    if arc:
+        return MediaKind.EPISODE
+    return MediaKind.UNKNOWN
+
+
+def finalize_parsed(
+    *,
+    title: str,
+    release_group: str | None,
+    body: str,
+    kind: MediaKind,
+    season: int | None,
+    episode: int | None,
+    arc: str | None,
+) -> ParsedTitle:
+    if arc and season is None:
+        mapped_season = arc_to_season(arc)
+        if mapped_season is not None:
+            season = mapped_season
+            arc = None
+
+    display_name = extract_display_name(body)
+    resolution = resolution_tag(title)
+    return ParsedTitle(
+        raw=title,
+        release_group=release_group,
+        series=series_key(body, display_name),
+        display_name=display_name,
+        kind=kind,
+        season=season,
+        episode=episode,
+        arc=arc,
+        quality=quality_score(title, release_group),
+        resolution=resolution,
+        is_repack=bool(re.search(r"\brepack\b", title, re.I)),
+    )
+
+
+def parse_title(title: str) -> ParsedTitle:
+    release_group, body = strip_release_group(title)
+    if is_manga(title, release_group):
+        return finalize_parsed(
+            title=title,
+            release_group=release_group,
+            body=body,
+            kind=MediaKind.MANGA,
+            season=None,
+            episode=None,
+            arc=None,
+        )
+
+    season: int | None = None
+    episode: int | None = None
+    arc: str | None = None
+
+    if matches_any(MOVIE_PATTERNS, body):
+        kind = MediaKind.MOVIE
+    elif matches_any(BATCH_PATTERNS, body):
+        kind = MediaKind.BATCH
+        season = parse_season(body)
+    else:
+        season_ep = SEASON_EP_RE.search(body)
+        if season_ep:
+            season = int(season_ep.group("season"))
+            episode = int(season_ep.group("episode"))
+        else:
+            arc_series, arc_name, arc_episode = extract_arc(body)
+            if arc_name:
+                arc = clean_fragment(arc_name)
+                episode = arc_episode
+                body_for_season = arc_series or body
+            else:
+                body_for_season = body
+                episode = parse_episode(body)
+            season = parse_season(body_for_season)
+        kind = detect_kind(body, season, episode, arc)
+        if kind == MediaKind.EPISODE and season is None and arc is None and episode is not None:
+            season = 1
+
+    return finalize_parsed(
+        title=title,
+        release_group=release_group,
+        body=body,
+        kind=kind,
+        season=season,
+        episode=episode,
+        arc=arc,
+    )
+
+import re
+from pathlib import Path
+
+
+INVALID_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+
+def sanitize_name(text: str, limit: int = 120) -> str:
+    cleaned = INVALID_CHARS.sub("", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned[:limit] or "anime"
+
+
+def minimal_label(parsed: ParsedTitle) -> str:
+    name = sanitize_name(parsed.display_name)
+    quality = f" [{parsed.resolution}]" if parsed.resolution else ""
+
+    if parsed.kind == MediaKind.EPISODE:
+        season = parsed.season or 1
+        episode = parsed.episode or 0
+        if parsed.arc and parsed.season is None:
+            return f"{name} E{episode:02d}{quality}"
+        return f"{name} S{season:02d}E{episode:02d}{quality}"
+
+    if parsed.kind == MediaKind.MOVIE:
+        if re.search(r"\bmovie\b", name, re.I):
+            return f"{name}{quality}"
+        return f"{name} Movie{quality}"
+
+    if parsed.kind == MediaKind.OVA:
+        if parsed.episode is not None:
+            return f"{name} OVA {parsed.episode:02d}{quality}"
+        return f"{name} OVA{quality}"
+
+    if parsed.kind == MediaKind.SPECIAL:
+        if parsed.episode is not None:
+            return f"{name} Special {parsed.episode:02d}{quality}"
+        return f"{name} Special{quality}"
+
+    if parsed.kind == MediaKind.BATCH:
+        if parsed.episode is not None:
+            season = parsed.season or 1
+            return f"{name} S{season:02d}E{parsed.episode:02d} (batch){quality}"
+        if parsed.season is not None:
+            return f"{name} Batch S{parsed.season:02d}{quality}"
+        return f"{name} Batch{quality}"
+
+    return f"{name}{quality}"
+
+
+def minimal_filename(parsed: ParsedTitle, source_name: str | None = None) -> str:
+    ext = Path(source_name or parsed.raw).suffix.lower()
+    if ext not in {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}:
+        ext = ".mkv"
+    return f"{minimal_label(parsed)}{ext}"
+
+import re
+
+
+
+def query_tokens(query: str) -> list[str]:
+    return [token for token in normalize(query).split() if len(token) > 1]
+
+
+def series_match_score(parsed: ParsedTitle, query: str) -> int:
+    tokens = query_tokens(query)
+    if not tokens:
+        return 0
+
+    haystacks = {parsed.series, normalize(parsed.display_name)}
+    hits = 0
+    for token in tokens:
+        if any(token in hay for hay in haystacks):
+            hits += 1
+
+    if hits == 0:
+        return -1000
+    return hits * 120 + (180 if hits == len(tokens) else 0)
+
+
+def _resolved_season(parsed: ParsedTitle) -> int | None:
+    if parsed.season is not None:
+        return parsed.season
+    if parsed.kind == MediaKind.EPISODE and parsed.arc is None:
+        return 1
+    return None
+
+
+def target_match_score(parsed: ParsedTitle, target: WatchTarget) -> int | None:
+    score = series_match_score(parsed, target.query)
+    if score < 0:
+        return None
+
+    if target.kind is not None and parsed.kind != target.kind:
+        if not (target.kind == MediaKind.EPISODE and parsed.kind == MediaKind.BATCH):
+            return None
+
+    if target.season is not None:
+        season = _resolved_season(parsed)
+        if season != target.season and not (parsed.arc and parsed.season is None):
+            return None
+        score += 150
+
+    if target.episode is not None:
+        if parsed.kind == MediaKind.BATCH:
+            score += 40
+        elif parsed.episode == target.episode:
+            score += 220
+        else:
+            return None
+
+    if parsed.kind == MediaKind.MOVIE:
+        score += 80
+    elif parsed.kind == MediaKind.OVA:
+        score += 60
+    elif parsed.kind == MediaKind.SPECIAL:
+        score += 50
+
+    return score
+
+
+def same_section(a: ParsedTitle, b: ParsedTitle) -> bool:
+    if a.kind != b.kind:
+        return False
+    if a.kind == MediaKind.EPISODE:
+        if a.arc and b.arc:
+            return normalize(a.arc) == normalize(b.arc)
+        if a.arc or b.arc:
+            return False
+        return _resolved_season(a) == _resolved_season(b)
+    return True
+
+import math
+
+
+
+def episode_file_query(episode: int) -> str:
+    return rf"(?:^|[^\d])0?{episode}(?:v\d+)?(?:[^\d]|$)"
+
+
+def rank_entry(entry: NyaaEntry, target: WatchTarget) -> tuple[float, ParsedTitle] | None:
+    if is_manga(entry.title):
+        return None
+    parsed = parse_title(entry.title)
+    if parsed.kind == MediaKind.MANGA:
+        return None
+    title_score = target_match_score(parsed, target)
+    if title_score is None:
+        return None
+
+    seed_score = math.log1p(entry.seeders) * 20
+    quality = parsed.quality
+    trusted_bonus = 8 if entry.trusted else 0
+    batch_penalty = -30 if target.episode is not None and parsed.kind == MediaKind.BATCH else 0
+    repack_penalty = -8 if parsed.is_repack else 0
+    unknown_penalty = -40 if parsed.kind == MediaKind.UNKNOWN else 0
+
+    total = title_score * 1000 + seed_score + quality + trusted_bonus + batch_penalty + repack_penalty + unknown_penalty
+    return total, parsed
+
+
+def pick_best(entries: list[NyaaEntry], target: WatchTarget) -> tuple[NyaaEntry, ParsedTitle] | None:
+    ranked: list[tuple[float, NyaaEntry, ParsedTitle]] = []
+    for entry in entries:
+        result = rank_entry(entry, target)
+        if result is None:
+            continue
+        score, parsed = result
+        ranked.append((score, entry, parsed))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    _, best, parsed = ranked[0]
+    return best, parsed
+
+import re
+
+
+RECAP_MOVIE_PATTERNS = (
+    re.compile(r"\bjourney'?s\s+dawn\b", re.I),
+    re.compile(r"\bwandering\s+twilight\b", re.I),
+    re.compile(r"\btabidachi\s+no\s+yoake\b", re.I),
+    re.compile(r"\bhourou\s+suru\s+tasogare\b", re.I),
+)
+
+
+def section_key(parsed) -> str:
+    if parsed.kind == MediaKind.EPISODE:
+        if parsed.arc:
+            return f"arc:{parsed.arc.lower()}"
+        season = parsed.season or 1
+        return f"season:{season:02d}"
+    return f"{parsed.kind.value}:main"
+
+
+def section_label(parsed) -> str:
+    if parsed.kind == MediaKind.EPISODE:
+        if parsed.arc:
+            return parsed.arc
+        season = parsed.season or 1
+        return f"Season {season:02d}"
+    labels = {
+        MediaKind.MOVIE: "Movies",
+        MediaKind.OVA: "OVA",
+        MediaKind.SPECIAL: "Specials",
+        MediaKind.BATCH: "Batch",
+        MediaKind.UNKNOWN: "Other",
+    }
+    return labels.get(parsed.kind, parsed.kind.value)
+
+
+def section_sort_key(section: MediaSection) -> tuple[int, int, str]:
+    if section.kind == MediaKind.EPISODE:
+        season = section.season or 1
+        return (season * 10, 0, section.label.lower())
+    slot = {
+        MediaKind.MOVIE: 15,
+        MediaKind.OVA: 25,
+        MediaKind.SPECIAL: 26,
+        MediaKind.BATCH: 30,
+        MediaKind.UNKNOWN: 40,
+    }
+    base = slot.get(section.kind, 50)
+    if section.kind == MediaKind.MOVIE:
+        base = 15 if (section.season or 1) <= 1 else 25
+    return (base, 0, section.label.lower())
+
+
+def is_recap_movie(title: str) -> bool:
+    return any(pattern.search(title) for pattern in RECAP_MOVIE_PATTERNS)
+
+
+def upsert_episode(section: MediaSection, item: ResultItem) -> None:
+    episode = item.parsed.episode
+    if episode is None:
+        section.singles.append(item)
+        return
+    current = section.episodes.get(episode)
+    if current is None or item.score > current.score:
+        section.episodes[episode] = item
+
+
+def upsert_single(section: MediaSection, item: ResultItem) -> None:
+    for index, current in enumerate(section.singles):
+        if minimal_label(current.parsed) == minimal_label(item.parsed):
+            if item.score > current.score:
+                section.singles[index] = item
+            return
+    section.singles.append(item)
+
+
+BATCH_EP_RANGE_RE = re.compile(
+    r"(?:\(|\[|\s|-)(?P<a>\d{1,3})\s*[-–—~]\s*(?P<b>\d{1,3})(?:\)|\]|\s|\[|\(|$)",
+    re.I,
+)
+SE_BATCH_RANGE_RE = re.compile(
+    r"\bS(?P<s>\d{1,2})E(?P<a>\d{1,3})\s*[-–—~]\s*S?\d{0,2}E?(?P<b>\d{1,3})\b",
+    re.I,
+)
+MOVIE_NOISE_RE = re.compile(
+    r"\b(?:ost|soundtrack|discography|\bcd\b|\bmp3\b)\b",
+    re.I,
+)
+MOVIE_PACK_RE = re.compile(
+    r"\b(?:TV\s*\+\s*MOVIE|\+ MOVIE|\+ Movies|Season\s*\d+\s*\+\s*Season)\b",
+    re.I,
+)
+MOVIE_ID_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bmovie\s*1\b|\bjourney'?s\s+dawn\b|\btabidachi\s+no\s+yoake\b", re.I), "movie-1"),
+    (re.compile(r"\bmovie\s*2\b|\bwandering\s+twilight\b|\bhourou\s+suru\s+tasogare\b", re.I), "movie-2"),
+    (re.compile(r"\bmovie\s*3\b|\bdawn\s+of\s+the\s+deep\s+soul\b|\bfukaki\s+tamashii\b", re.I), "movie-3"),
+)
+
+
+def is_movie_noise(title: str) -> bool:
+    if MOVIE_PACK_RE.search(title):
+        return True
+    if VIDEO_EXT_RE.search(title):
+        return False
+    if MOVIE_NOISE_RE.search(title):
+        return True
+    if re.search(r"\b(?:ost|soundtrack)\b", title, re.I):
+        return True
+    return False
+
+
+def movie_canonical_key(title: str, parsed: ParsedTitle) -> str:
+    hay = normalize(f"{title} {parsed.display_name}")
+    for pattern, key in MOVIE_ID_PATTERNS:
+        if pattern.search(hay):
+            return key
+    cleaned = normalize(parsed.display_name)
+    cleaned = re.sub(r"\bmovie\b", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or normalize(title)
+
+
+def infer_batch_season(body: str, season: int | None) -> int:
+    if season is not None:
+        return season
+    normalized_body = normalize(body)
+    for arc_name, mapped in ARC_SEASON_ALIASES.items():
+        if arc_name in normalized_body:
+            return mapped
+    return 1
+
+
+def parse_batch_episode_range(title: str) -> tuple[int | None, list[int]]:
+    _, body = strip_release_group(title)
+    season = parse_season(body)
+
+    se_match = SE_BATCH_RANGE_RE.search(body)
+    if se_match:
+        season = infer_batch_season(body, int(se_match.group("s")))
+        start, end = int(se_match.group("a")), int(se_match.group("b"))
+        if end >= start and end - start < 60:
+            return season, list(range(start, end + 1))
+
+    for match in BATCH_EP_RANGE_RE.finditer(body):
+        start, end = int(match.group("a")), int(match.group("b"))
+        if end < start or end - start >= 60:
+            continue
+        if start == 0 or end == 0:
+            continue
+        return infer_batch_season(body, season), list(range(start, end + 1))
+
+    return season, []
+
+
+def item_for_episode(item: ResultItem, episode: int) -> ResultItem:
+    parsed = item.parsed
+    if parsed.episode == episode and parsed.kind == MediaKind.EPISODE:
+        return item
+    new_parsed = replace(
+        parsed,
+        episode=episode,
+        season=parsed.season or infer_batch_season(item.entry.title, parsed.season),
+    )
+    penalty = 5.0 if parsed.kind == MediaKind.BATCH else 0.0
+    return ResultItem(entry=item.entry, parsed=new_parsed, score=item.score - penalty)
+
+
+def upsert_movie(section: MediaSection, item: ResultItem) -> None:
+    if is_movie_noise(item.entry.title):
+        return
+    key = movie_canonical_key(item.entry.title, item.parsed)
+    for index, current in enumerate(section.singles):
+        if movie_canonical_key(current.entry.title, current.parsed) == key:
+            if item.score > current.score:
+                section.singles[index] = item
+            return
+    section.singles.append(item)
+
+
+def apply_batch_episodes(sections: dict[str, MediaSection], batches: list[ResultItem]) -> None:
+    for item in batches:
+        season, episodes = parse_batch_episode_range(item.entry.title)
+        if not episodes:
+            continue
+        key = f"season:{season:02d}"
+        section = sections.get(key)
+        if section is None:
+            section = MediaSection(
+                key=key,
+                label=f"Season {season:02d}",
+                kind=MediaKind.EPISODE,
+                season=season,
+            )
+            sections[key] = section
+        for episode in episodes:
+            upsert_episode(section, item_for_episode(item, episode))
+
+
+def _strict_target(
+    query: str,
+    *,
+    season: int | None,
+    episode: int | None,
+    kind: MediaKind | None,
+) -> WatchTarget | None:
+    if season is None and episode is None and kind is None:
+        return None
+    resolved_kind = kind
+    if resolved_kind is None and episode is not None:
+        resolved_kind = MediaKind.EPISODE
+    return WatchTarget(query=query, season=season, episode=episode, kind=resolved_kind)
+
+
+def _annotate_batch_hints(sections: list[MediaSection]) -> None:
+    episode_sections = [section for section in sections if section.kind == MediaKind.EPISODE]
+    batch_sections = [section for section in sections if section.kind == MediaKind.BATCH]
+    for section in episode_sections:
+        if not section.has_episodes:
+            continue
+        sparse = len(section.episodes) <= 3
+        has_batch = any(
+            batch.season == section.season or batch.season in {None, section.season}
+            for batch in batch_sections
+        )
+        section.batch_recommended = sparse and has_batch
+
+
+def build_catalog(
+    entries: list[NyaaEntry],
+    query: str,
+    *,
+    season: int | None = None,
+    episode: int | None = None,
+    kind: MediaKind | None = None,
+    skip_recap_movies: bool = False,
+) -> list[MediaSection]:
+    loose_target = WatchTarget(query=query)
+    strict_target = _strict_target(query, season=season, episode=episode, kind=kind)
+    sections: dict[str, MediaSection] = {}
+    batches: list[ResultItem] = []
+
+    for entry in entries:
+        if is_manga(entry.title):
+            continue
+        if skip_recap_movies and is_recap_movie(entry.title):
+            continue
+        ranked = rank_entry(entry, loose_target)
+        if ranked is None:
+            continue
+        score, parsed = ranked
+        if strict_target is not None and target_match_score(parsed, strict_target) is None:
+            continue
+
+        item = ResultItem(entry=entry, parsed=parsed, score=score)
+        key = section_key(parsed)
+        section = sections.get(key)
+        if section is None:
+            section = MediaSection(
+                key=key,
+                label=section_label(parsed),
+                kind=parsed.kind,
+                season=parsed.season,
+                arc=parsed.arc,
+            )
+            sections[key] = section
+
+        if parsed.kind == MediaKind.EPISODE and parsed.episode is not None:
+            upsert_episode(section, item)
+        elif parsed.kind == MediaKind.MOVIE:
+            upsert_movie(section, item)
+        elif parsed.kind == MediaKind.BATCH:
+            batches.append(item)
+            upsert_single(section, item)
+        else:
+            upsert_single(section, item)
+
+    apply_batch_episodes(sections, batches)
+
+    result = [section for section in sections.values() if section.episodes or section.singles]
+    result.sort(key=section_sort_key)
+    _annotate_batch_hints(result)
+    return result
+
+
+def find_section(
+    sections: list[MediaSection],
+    season: int | None,
+    kind: MediaKind | None,
+) -> MediaSection | None:
+    for section in sections:
+        if kind is not None and section.kind != kind:
+            continue
+        if season is None:
+            return section
+        if section.season == season:
+            return section
+    return None

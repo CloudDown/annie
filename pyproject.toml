@@ -1,0 +1,33 @@
+[project]
+name = "annie"
+version = "0.4.0"
+description = "Anime torrent CLI — search Nyaa, sort releases, stream with mpv"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "rain" }]
+keywords = ["anime", "nyaa", "torrent", "cli", "mpv"]
+classifiers = [
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "libtorrent>=2.0.13",
+]
+
+[project.scripts]
+annie = "annie.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/local/annie"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["annie*"]
