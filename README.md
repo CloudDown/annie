@@ -29,8 +29,6 @@ frieren s2e10               # shortcut in interactive mode
 
 Config (optional): `~/.config/annie/config.toml`
 
-See also `AGENTS.md` for architecture and agent conventions.
-
 ```toml
 player = "mpv"
 skip_recap_movies = false

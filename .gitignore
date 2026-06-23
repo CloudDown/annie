@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -6,3 +7,14 @@ build/
 dist/
 .venv/
 *.egg
+
+# Tooling / IDE
+.cursor/
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local agent context (not part of the app)
+AGENTS.md
