@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, wait
 
 from annie.media import (
     AnnieConfig,
@@ -12,13 +13,19 @@ from annie.media import (
     ResultItem,
     WatchTarget,
     build_catalog,
-    episode_file_query,
+    build_catalog_from_releases,
     minimal_label,
     pick_best,
     rank_entry,
 )
-from annie.nyaa import search
-from annie.stream import list_files, play
+from annie.mal import (
+    collect_franchise,
+    franchise_to_releases,
+    pick_candidate,
+    relation_nyaa_hints,
+    search_anime,
+)
+from annie.nyaa import prefetch, search
 from annie.ui import (
     C,
     copy_magnet,
@@ -173,13 +180,86 @@ def _pick_for_options(entries, query: str, options: dict, config: AnnieConfig):
     return pick_best(entries, target)
 
 
+def _warm_nyaa(query: str, *, category: str, filter_code: str) -> None:
+    if not query:
+        return
+    try:
+        search(query, category=category, filter_code=filter_code)
+    except Exception:
+        pass
+
+
 def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[list, dict]:
     query, options = parse_inline_target(raw_query)
-    entries = search(
-        query,
-        category=overrides.get("category") or config.category,
-        filter_code=overrides.get("filter_code") or config.filter_code,
-    )
+    category = overrides.get("category") or config.category
+    filter_code = overrides.get("filter_code") or config.filter_code
+
+    try:
+        candidates = search_anime(query)
+        chosen = pick_candidate(candidates, query) if candidates else None
+        if chosen is not None:
+            warm_futures = []
+
+            with ThreadPoolExecutor(max_workers=16) as pool:
+                for warm_q in dict.fromkeys(
+                    [
+                        query,
+                        chosen.title_english or "",
+                        chosen.title,
+                        chosen.title_japanese or "",
+                    ]
+                ):
+                    if warm_q:
+                        warm_futures.append(
+                            pool.submit(_warm_nyaa, warm_q, category=category, filter_code=filter_code)
+                        )
+
+                def on_root(root_data: dict) -> None:
+                    for hint in relation_nyaa_hints(root_data):
+                        warm_futures.append(
+                            pool.submit(_warm_nyaa, hint, category=category, filter_code=filter_code)
+                        )
+
+                franchise = pool.submit(
+                    collect_franchise,
+                    chosen.mal_id,
+                    on_root=on_root,
+                    pool=pool,
+                ).result()
+                releases = franchise_to_releases(
+                    franchise,
+                    skip_recap=config.skip_recap_movies,
+                    root_id=chosen.mal_id,
+                    user_query=query,
+                )
+                if releases:
+                    all_queries = [
+                        query
+                        for release in releases
+                        for query in release.nyaa_queries
+                        if query
+                    ]
+                    prefetch(
+                        list(dict.fromkeys(all_queries)),
+                        category=category,
+                        filter_code=filter_code,
+                        pool=pool,
+                    )
+                    wait(warm_futures)
+                    catalog = build_catalog_from_releases(
+                        releases,
+                        search=search,
+                        category=category,
+                        filter_code=filter_code,
+                        skip_recap_movies=config.skip_recap_movies,
+                        pool=pool,
+                    )
+                    if catalog:
+                        return catalog, options
+    except Exception:
+        pass
+
+    entries = search(query, category=category, filter_code=filter_code)
     if not entries:
         return [], options
 
@@ -212,17 +292,19 @@ def play_item(
     player: str | None = None,
 ) -> int:
     file_query = None
-    if item.parsed.episode is not None and item.parsed.kind == MediaKind.BATCH:
-        file_query = episode_file_query(item.parsed.episode)
+    episode = item.parsed.episode if item.parsed.kind == MediaKind.BATCH else None
 
     label = minimal_label(item.parsed)
     print_status_line(label, item.entry.seeders, item.parsed.release_group)
+    from annie.stream import play
+
     return play(
         item.entry.magnet,
         None,
         file_query,
         keep,
         player=config.resolved_player(player),
+        episode=episode,
     )
 
 
@@ -336,15 +418,19 @@ def run_watch(
     entry, parsed = picked
     label = minimal_label(parsed)
     file_query = query_file
-    if episode is not None and parsed.kind == MediaKind.BATCH:
-        file_query = episode_file_query(episode)
+    episode = episode if parsed.kind == MediaKind.BATCH else None
+    if episode is not None:
+        file_query = None
     print_status_line(label, entry.seeders, parsed.release_group)
+    from annie.stream import play
+
     return play(
         entry.magnet,
         index,
         file_query,
         keep,
         player=config.resolved_player(player),
+        episode=episode,
     )
 
 
@@ -381,7 +467,8 @@ def interactive_loop(config: AnnieConfig) -> int:
             continue
 
         try:
-            print_status(f"Searching Nyaa · {raw_query}")
+            query, options = parse_inline_target(raw_query)
+            print_status(f"Searching · {query}")
             catalog, options = gather_catalog(raw_query, config)
         except Exception as exc:  # noqa: BLE001
             print_status(str(exc), kind="err")
@@ -522,7 +609,11 @@ def main() -> int:
             player=None if args.player == "auto" else args.player,
         )
     if args.command == "ls":
+        from annie.stream import list_files
+
         return list_files(args.source)
+    from annie.stream import play
+
     return play(
         args.source,
         args.index,

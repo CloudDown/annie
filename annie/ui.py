@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from annie.media import MediaKind, MediaSection, ParsedTitle, ResultItem, minimal_label
+from annie.media import MediaKind, MediaSection, ResultItem, minimal_label
 
 
 class C:
@@ -19,8 +20,9 @@ class C:
     ITALIC = "\033[3m"
     UNDER = "\033[4m"
 
+    # Terminal / banner
     FG = "\033[38;5;252m"
-    MUTED = "\033[38;5;245m"
+    MUTED = "\033[38;5;244m"
     PINK = "\033[38;5;213m"
     PALE_PINK = "\033[38;5;218m"
     ROSE = "\033[38;5;176m"
@@ -33,6 +35,14 @@ class C:
     BLUE = "\033[38;5;117m"
     WHITE = "\033[38;5;255m"
 
+    # fzf list — restrained palette
+    LIST = "\033[38;5;252m"
+    META = "\033[38;5;243m"
+    CHROME = "\033[38;5;245m"
+    SEED_HIGH = "\033[38;5;114m"
+    SEED_MID = "\033[38;5;179m"
+    SEED_LOW = "\033[38;5;174m"
+
 
 def stylize(text: str, *codes: str) -> str:
     if not codes:
@@ -44,10 +54,12 @@ def banner_line(text: str, color: str) -> str:
     return stylize(text, color, C.BOLD)
 
 
+# fzf chrome — explicit selection bg so light terminals stay readable
 FZF_COLOR = (
-    "fg:-1,bg:-1,hl:#ff79c6,fg+:#ffffff,bg+:-1,hl+:#ff92df,"
-    "prompt:#8be9fd,pointer:#50fa7b,marker:#50fa7b,"
-    "spinner:#ffb86c,header:#bd93f9,info:#6272a4,border:#44475a"
+    "fg:-1,bg:-1,hl:#7aa2f7,"
+    "fg+:#f4f6ff,bg+:#3a4a6b,hl+:#a8c4ff,"
+    "prompt:#9aa0a6,pointer:#f0a8d0,marker:#7aa2f7,"
+    "spinner:#6b7280,header:#6b7280,info:#6b7280,border:#4b5563"
 )
 
 BANNER_ART = [
@@ -85,20 +97,28 @@ HELP = f"""
 CACHE_DIR = Path.home() / ".cache" / "annie"
 PREVIEW_FILE = CACHE_DIR / "previews.json"
 SEP = "\x1f"
+_preview_digest: str | None = None
 
 
 def _preview_command() -> str:
+    path = shlex.quote(str(PREVIEW_FILE))
+    if shutil.which("jq"):
+        return f"jq -r --arg k {{1}} '.[$k] // empty' {path}"
     root = Path(__file__).resolve().parent.parent
-    return f"PYTHONPATH={root} {sys.executable} -m annie.preview {{1}}"
+    exe = shlex.quote(sys.executable)
+    return f"PYTHONPATH={shlex.quote(str(root))} {exe} -m annie.preview {{1}}"
 
-KIND_COLORS = {
-    MediaKind.EPISODE: C.CYAN,
-    MediaKind.MOVIE: C.MAGENTA,
-    MediaKind.OVA: C.ORANGE,
-    MediaKind.SPECIAL: C.YELLOW,
-    MediaKind.BATCH: C.ROSE,
-    MediaKind.UNKNOWN: C.MUTED,
-}
+
+def _write_previews(previews: dict[str, str]) -> None:
+    global _preview_digest
+    payload = json.dumps(previews, ensure_ascii=False, sort_keys=True)
+    if payload == _preview_digest:
+        return
+    _preview_digest = payload
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = PREVIEW_FILE.with_suffix(".tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(PREVIEW_FILE)
 
 
 def print_banner() -> None:
@@ -122,72 +142,124 @@ def fzf_available() -> bool:
     return shutil.which("fzf") is not None
 
 
-def _meta_label(parsed: ParsedTitle) -> str:
-    label = parsed.kind.value
-    if parsed.season is not None:
-        label += f" S{parsed.season:02d}"
+def _terminal_size() -> tuple[int, int]:
+    try:
+        size = shutil.get_terminal_size()
+        return size.columns, size.lines
+    except OSError:
+        return 80, 24
+
+
+def _compact_ui() -> bool:
+    cols, _ = _terminal_size()
+    return cols < 110
+
+
+def _clip(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+def _fzf_header(text: str) -> str:
+    return stylize(text, C.CHROME)
+
+
+def _seed_color(seeders: int) -> str:
+    if seeders >= 100:
+        return C.SEED_HIGH
+    if seeders >= 20:
+        return C.SEED_MID
+    return C.SEED_LOW
+
+
+def _fzf_height() -> str:
+    _, rows = _terminal_size()
+    if rows < 28:
+        return "100%"
+    if rows < 40:
+        return "92%"
+    return "85%"
+
+
+def _preview_window() -> str:
+    _, rows = _terminal_size()
+    if rows < 28:
+        return "down:7:wrap:border-top"
+    if _compact_ui():
+        return "down:30%:wrap:border-top"
+    return "down:35%:wrap:border-top"
+
+
+def _list_item_label(item: ResultItem) -> str:
+    parsed = item.parsed
+    if parsed.episode is not None and parsed.kind in {MediaKind.EPISODE, MediaKind.BATCH}:
+        return f"{parsed.episode:02d}"
+    return _clip(minimal_label(parsed), 36)
+
+
+def _compact_ep_label(item: ResultItem) -> str:
+    parsed = item.parsed
     if parsed.episode is not None:
-        label += f"E{parsed.episode:02d}"
-    return label
+        season = parsed.season or 1
+        return f"S{season:02d}E{parsed.episode:02d}"
+    return _clip(minimal_label(parsed), 28)
 
 
 def format_torrent_line(item: ResultItem) -> str:
-    seeds = item.entry.seeders
-    seed_color = C.GREEN if seeds >= 100 else C.YELLOW if seeds >= 20 else C.RED
-    kind_color = KIND_COLORS.get(item.parsed.kind, C.MUTED)
-    label = minimal_label(item.parsed)
-    if item.parsed.episode is not None:
-        label = stylize(label, kind_color, C.BOLD)
-    return (
-        f"{stylize(f'[{seeds:>4}S]', seed_color, C.BOLD)} "
-        f"{label}  "
-        f"{stylize(item.entry.size, C.MUTED):>8}  "
-        f"{item.entry.title}"
-    )
+    return stylize(_list_item_label(item), C.LIST, C.BOLD)
 
 
 def format_section_line(section: MediaSection) -> str:
-    color = KIND_COLORS.get(section.kind, C.PALE_PINK)
+    label = _clip(section.label, 28 if _compact_ui() else 40)
     if section.has_episodes:
-        detail = f"{len(section.episodes)} episode(s)"
+        count = len(section.episodes)
+        if section.expected_episodes:
+            detail = f"{count}/{section.expected_episodes} ep"
+        else:
+            detail = f"{count} ep"
         if section.batch_recommended:
-            detail += stylize(" · batch recommended", C.YELLOW)
+            detail += " batch"
     else:
-        detail = f"{len(section.singles)} release(s)"
-    return f"{stylize(section.label, color, C.BOLD):20} {stylize(detail, C.MUTED)}"
+        detail = f"{len(section.singles)} rel"
+    return f"{stylize(label, C.LIST, C.BOLD)}  {stylize(detail, C.META)}"
 
 
 def format_preview_item(item: ResultItem) -> str:
+    parsed = item.parsed
+    if parsed.episode is not None:
+        title = stylize(f"Episode {parsed.episode:02d}", C.LIST, C.BOLD)
+    else:
+        title = stylize(_compact_ep_label(item), C.LIST, C.BOLD)
+    seeds = item.entry.seeders
+    seed_line = stylize(
+        f"{seeds} seeders · {item.entry.leechers} leechers · {item.entry.size}",
+        _seed_color(seeds),
+    )
+    group = item.parsed.release_group or "—"
     return "\n".join(
         [
-            stylize(minimal_label(item.parsed), C.WHITE, C.BOLD),
-            stylize(item.entry.title, C.MUTED),
-            "",
-            f"{stylize('type', C.MUTED)}      {_meta_label(item.parsed)}",
-            f"{stylize('seeders', C.MUTED)}   {stylize(str(item.entry.seeders), C.GREEN)}",
-            f"{stylize('leechers', C.MUTED)}  {item.entry.leechers}",
-            f"{stylize('size', C.MUTED)}    {item.entry.size}",
-            f"{stylize('score', C.MUTED)}     {item.score:,.0f}",
-            f"{stylize('release', C.MUTED)}   {item.parsed.release_group or '—'}",
+            title,
+            stylize(item.entry.title, C.META),
+            seed_line,
+            stylize(group, C.CHROME),
         ]
     )
 
 
 def format_preview_section(section: MediaSection) -> str:
-    lines = [
-        stylize(section.label, C.WHITE, C.BOLD),
-        "",
-        f"{stylize('type', C.MUTED)}  {section.kind.value}",
-    ]
-    if section.season is not None:
-        lines.append(f"{stylize('season', C.MUTED)}  {section.season:02d}")
+    lines = [stylize(section.label, C.LIST, C.BOLD)]
+    if section.expected_episodes:
+        lines.append(stylize(f"{section.kind.value} · {section.expected_episodes} ep", C.META))
+    else:
+        lines.append(stylize(section.kind.value, C.META))
     if section.batch_recommended:
-        lines.append(stylize("batch recommended for this season", C.YELLOW))
+        lines.append(stylize("batch recommended", C.META))
     if section.has_episodes:
         nums = sorted(section.episodes)
-        lines.append(f"{stylize('episodes', C.MUTED)}  E{nums[0]:02d} → E{nums[-1]:02d} ({len(nums)})")
+        lines.append(stylize(f"E{nums[0]:02d}-E{nums[-1]:02d} ({len(nums)})", C.META))
     else:
-        lines.append(f"{stylize('releases', C.MUTED)}  {len(section.singles)}")
+        lines.append(stylize(f"{len(section.singles)} release(s)", C.META))
     return "\n".join(lines)
 
 
@@ -204,11 +276,12 @@ def _run_fzf(
     command = [
         "fzf",
         "--ansi",
+        "--no-sort",
         "--cycle",
         "--layout=reverse",
-        "--height=85%",
+        f"--height={_fzf_height()}",
         "--border=rounded",
-        "--margin=1,2",
+        "--margin=0,1",
         f"--color={FZF_COLOR}",
         f"--prompt={prompt}",
         f"--header={header}",
@@ -224,7 +297,7 @@ def _run_fzf(
                 "--with-nth=2..",
                 "--preview",
                 preview_cmd,
-                "--preview-window=right:45%:wrap",
+                f"--preview-window={_preview_window()}",
             ]
         )
     if expect:
@@ -252,7 +325,7 @@ def _fzf_choose(
     if not lines:
         return None
 
-    PREVIEW_FILE.write_text(json.dumps(previews, ensure_ascii=False), encoding="utf-8")
+    _write_previews(previews)
     code, output = _run_fzf(
         lines,
         prompt=prompt,
@@ -284,12 +357,63 @@ def read_query() -> str | None:
     return raw or None
 
 
-def pick_section(sections: list[MediaSection]) -> MediaSection | None:
-    if not sections:
-        return None
-    if len(sections) == 1:
-        return sections[0]
+GROUP_LABELS = {
+    "season": "Seasons",
+    "movie": "Movies",
+    "other": "Other",
+}
 
+
+def _bucket_section(section: MediaSection) -> str:
+    if section.kind == MediaKind.EPISODE:
+        return "season"
+    if section.kind == MediaKind.MOVIE:
+        return "movie"
+    return "other"
+
+
+def _group_sections(sections: list[MediaSection]) -> dict[str, list[MediaSection]]:
+    groups: dict[str, list[MediaSection]] = {"season": [], "movie": [], "other": []}
+    for section in sections:
+        groups[_bucket_section(section)].append(section)
+    return groups
+
+
+def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
+    options = [
+        (key, GROUP_LABELS[key], groups[key])
+        for key in ("season", "movie", "other")
+        if groups[key]
+    ]
+    if len(options) <= 1:
+        return options[0][0] if options else None
+
+    indexed: dict[str, str] = {}
+    previews: dict[str, str] = {}
+    lines: list[str] = []
+    for index, (key, label, items) in enumerate(options):
+        fzf_key = f"g{index:03d}"
+        indexed[fzf_key] = key
+        previews[fzf_key] = stylize(f"{label}\n{len(items)} section(s)", C.META)
+        lines.append(
+            f"{fzf_key}{SEP}{stylize(label, C.LIST, C.BOLD)}  "
+            f"{stylize(f'{len(items)}', C.META)}"
+        )
+
+    picked = _fzf_choose(
+        indexed,
+        previews,
+        lines,
+        prompt="group> ",
+        header=_fzf_header("Enter · Esc"),
+    )
+    if picked is None:
+        return None
+    _, group_key = picked
+    return group_key
+
+
+def _pick_section_flat(sections: list[MediaSection]) -> MediaSection | None:
     indexed: dict[str, MediaSection] = {}
     previews: dict[str, str] = {}
     lines: list[str] = []
@@ -299,21 +423,36 @@ def pick_section(sections: list[MediaSection]) -> MediaSection | None:
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = (
-        f"{stylize('①', C.PALE_PINK)} type / season  ·  "
-        f"{stylize('Enter', C.GREEN)} continue  ·  "
-        f"{stylize('Esc', C.YELLOW)} back"
-    )
-    picked = _fzf_choose(indexed, previews, lines, prompt="season / movie / ova> ", header=header)
+    header = _fzf_header("Enter · Esc")
+    picked = _fzf_choose(indexed, previews, lines, prompt="section> ", header=header)
     if picked is None:
         return None
     _, section = picked
     return section
 
 
+def pick_section(sections: list[MediaSection]) -> MediaSection | None:
+    if not sections:
+        return None
+    if len(sections) == 1:
+        return sections[0]
+
+    groups = _group_sections(sections)
+    active = [key for key in ("season", "movie", "other") if groups[key]]
+    if len(active) > 1:
+        group_key = pick_group(groups)
+        if group_key is None:
+            return None
+        sections = groups[group_key]
+
+    if len(sections) == 1:
+        return sections[0]
+    return _pick_section_flat(sections)
+
+
 def _episode_query(item: ResultItem) -> str:
     if item.parsed.episode is not None:
-        return f"E{item.parsed.episode:02d}"
+        return f"{item.parsed.episode:02d}"
     return minimal_label(item.parsed)
 
 
@@ -324,31 +463,21 @@ def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
     if len(items) == 1:
         return "enter", items[0]
 
+    indexed: dict[str, ResultItem] = {}
+    previews: dict[str, str] = {}
+    lines: list[str] = []
+    for item_index, item in enumerate(items):
+        key = f"e{item_index:03d}"
+        indexed[key] = item
+        previews[key] = format_preview_item(item)
+        lines.append(f"{key}{SEP}{format_torrent_line(item)}")
+
+    prompt = f"{_clip(section.label, 18)}> "
+    header = _fzf_header("Enter · Ctrl-N/P · Ctrl-O · Esc")
     index = 0
+    jumped = False
     while 0 <= index < len(items):
-        indexed: dict[str, ResultItem] = {}
-        previews: dict[str, str] = {}
-        lines: list[str] = []
-        for item_index, item in enumerate(items):
-            key = f"e{item_index:03d}"
-            indexed[key] = item
-            previews[key] = format_preview_item(item)
-            lines.append(f"{key}{SEP}{format_torrent_line(item)}")
-
-        if section.has_episodes:
-            prompt = f"{section.label} · episode> "
-            step = "② episode"
-        else:
-            prompt = f"{section.label}> "
-            step = "② release"
-
-        header = (
-            f"{stylize(step, C.PALE_PINK)}  ·  "
-            f"{stylize('Enter', C.GREEN)} stream  ·  "
-            f"{stylize('Ctrl-N/P', C.CYAN)} next/prev ep  ·  "
-            f"{stylize('Ctrl-O', C.CYAN)} magnet  ·  "
-            f"{stylize('Esc', C.YELLOW)} back"
-        )
+        # fzf --query filters the list; only pass a query after Ctrl-N/P navigation.
         picked = _fzf_choose(
             indexed,
             previews,
@@ -356,16 +485,18 @@ def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
             prompt=prompt,
             header=header,
             expect="ctrl-n,ctrl-p,ctrl-o,enter",
-            query=_episode_query(items[index]),
+            query=_episode_query(items[index]) if jumped else "",
         )
         if picked is None:
             return None
         action, item = picked
         if action == "ctrl-n":
             index = min(index + 1, len(items) - 1)
+            jumped = True
             continue
         if action == "ctrl-p":
             index = max(index - 1, 0)
+            jumped = True
             continue
         return action, item
     return None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
@@ -14,20 +15,13 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore
 
-from annie.nyaa import NyaaEntry
+from annie.nyaa import NYAA_PARALLEL, NyaaEntry
 
-# --- config & models ---
-import os
-from dataclasses import dataclass, field, replace
-from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore[no-redef]
+MAX_FRANCHISE_QUERIES = 20
 
 CONFIG_DIR = Path.home() / ".config" / "annie"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
+_config_cache: AnnieConfig | None = None
 
 
 @dataclass
@@ -40,16 +34,20 @@ class AnnieConfig:
 
     @classmethod
     def load(cls) -> AnnieConfig:
+        global _config_cache
+        if _config_cache is not None:
+            return replace(_config_cache)
         data: dict = {}
         if CONFIG_FILE.is_file():
             data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        return cls(
+        _config_cache = cls(
             player=os.environ.get("ANNIE_PLAYER", data.get("player", "auto")),
             category=data.get("category", "0_0"),
             filter_code=str(data.get("filter", data.get("filter_code", "0"))),
             skip_recap_movies=bool(data.get("skip_recap_movies", False)),
             preferred_groups=list(data.get("preferred_groups", [])),
         )
+        return replace(_config_cache)
 
     def resolved_player(self, override: str | None = None) -> str | None:
         if override and override != "auto":
@@ -57,10 +55,6 @@ class AnnieConfig:
         if self.player != "auto":
             return self.player
         return None
-
-from dataclasses import dataclass, field, replace
-from enum import Enum
-
 
 
 class MediaKind(str, Enum):
@@ -111,6 +105,8 @@ class MediaSection:
     season: int | None
     arc: str | None = None
     batch_recommended: bool = False
+    expected_episodes: int | None = None
+    mal_id: int | None = None
     episodes: dict[int, ResultItem] = field(default_factory=dict)
     singles: list[ResultItem] = field(default_factory=list)
 
@@ -122,6 +118,17 @@ class MediaSection:
         if self.has_episodes:
             return [self.episodes[n] for n in sorted(self.episodes)]
         return sorted(self.singles, key=lambda item: item.score, reverse=True)
+
+
+@dataclass(frozen=True)
+class MalRelease:
+    mal_id: int
+    label: str
+    kind: MediaKind
+    season: int | None
+    episode_count: int | None
+    nyaa_queries: list[str]
+    sort_key: tuple[int, str]
 
 import re
 
@@ -563,7 +570,11 @@ def series_match_score(parsed: ParsedTitle, query: str) -> int:
     if not tokens:
         return 0
 
-    haystacks = {parsed.series, normalize(parsed.display_name)}
+    haystacks = {
+        parsed.series,
+        normalize(parsed.display_name),
+        normalize(parsed.raw),
+    }
     hits = 0
     for token in tokens:
         if any(token in hay for hay in haystacks):
@@ -574,6 +585,12 @@ def series_match_score(parsed: ParsedTitle, query: str) -> int:
     return hits * 120 + (180 if hits == len(tokens) else 0)
 
 
+def best_series_match_score(parsed: ParsedTitle, queries: list[str]) -> int:
+    if not queries:
+        return 0
+    return max(series_match_score(parsed, query) for query in queries)
+
+
 def _resolved_season(parsed: ParsedTitle) -> int | None:
     if parsed.season is not None:
         return parsed.season
@@ -582,8 +599,14 @@ def _resolved_season(parsed: ParsedTitle) -> int | None:
     return None
 
 
-def target_match_score(parsed: ParsedTitle, target: WatchTarget) -> int | None:
-    score = series_match_score(parsed, target.query)
+def target_match_score(
+    parsed: ParsedTitle,
+    target: WatchTarget,
+    *,
+    match_queries: list[str] | None = None,
+) -> int | None:
+    queries = match_queries or [target.query]
+    score = best_series_match_score(parsed, queries)
     if score < 0:
         return None
 
@@ -630,17 +653,40 @@ import math
 
 
 
+CRC_TAG_RE = re.compile(r"\[[0-9A-F]{8}\]", re.I)
+
+
+def _filename_for_episode_match(name: str) -> str:
+    return CRC_TAG_RE.sub("", Path(name).name)
+
+
+def match_episode_filename(name: str, episode: int) -> bool:
+    """Match episode number in fansub filenames, ignoring CRC/hash tags."""
+    stem = _filename_for_episode_match(name)
+    patterns = (
+        rf"[\s\-]0?{episode}(?:v\d+)?(?=\s|\[|\.|$)",
+        rf"[Ee]0?{episode}\b",
+        rf"[Ss]\d+[Ee]0?{episode}\b",
+    )
+    return any(re.search(pattern, stem, re.I) for pattern in patterns)
+
+
 def episode_file_query(episode: int) -> str:
-    return rf"(?:^|[^\d])0?{episode}(?:v\d+)?(?:[^\d]|$)"
+    return rf"(?:[\s\-]0?{episode}(?:v\d+)?(?=\s|\[)|[Ee]0?{episode}\b|[Ss]\d+[Ee]0?{episode}\b)"
 
 
-def rank_entry(entry: NyaaEntry, target: WatchTarget) -> tuple[float, ParsedTitle] | None:
+def rank_entry(
+    entry: NyaaEntry,
+    target: WatchTarget,
+    *,
+    match_queries: list[str] | None = None,
+) -> tuple[float, ParsedTitle] | None:
     if is_manga(entry.title):
         return None
     parsed = parse_title(entry.title)
     if parsed.kind == MediaKind.MANGA:
         return None
-    title_score = target_match_score(parsed, target)
+    title_score = target_match_score(parsed, target, match_queries=match_queries)
     if title_score is None:
         return None
 
@@ -904,9 +950,11 @@ def build_catalog(
     episode: int | None = None,
     kind: MediaKind | None = None,
     skip_recap_movies: bool = False,
+    match_queries: list[str] | None = None,
 ) -> list[MediaSection]:
     loose_target = WatchTarget(query=query)
     strict_target = _strict_target(query, season=season, episode=episode, kind=kind)
+    queries = list(dict.fromkeys([query, *(match_queries or [])]))
     sections: dict[str, MediaSection] = {}
     batches: list[ResultItem] = []
 
@@ -915,11 +963,11 @@ def build_catalog(
             continue
         if skip_recap_movies and is_recap_movie(entry.title):
             continue
-        ranked = rank_entry(entry, loose_target)
+        ranked = rank_entry(entry, loose_target, match_queries=queries)
         if ranked is None:
             continue
         score, parsed = ranked
-        if strict_target is not None and target_match_score(parsed, strict_target) is None:
+        if strict_target is not None and target_match_score(parsed, strict_target, match_queries=queries) is None:
             continue
 
         item = ResultItem(entry=entry, parsed=parsed, score=score)
@@ -966,3 +1014,271 @@ def find_section(
         if section.season == season:
             return section
     return None
+
+
+def _pick_section_for_release(parts: list[MediaSection], release: MalRelease) -> MediaSection | None:
+    if not parts:
+        return None
+
+    if release.kind == MediaKind.EPISODE and release.season is not None:
+        for section in parts:
+            if section.kind == MediaKind.EPISODE and section.season == release.season:
+                return section
+        episode_sections = [section for section in parts if section.has_episodes]
+        if episode_sections:
+            return max(episode_sections, key=lambda section: len(section.episodes))
+
+    if release.kind == MediaKind.MOVIE:
+        movie_sections = [section for section in parts if section.kind == MediaKind.MOVIE]
+        if movie_sections:
+            return max(movie_sections, key=lambda section: len(section.singles))
+        singles = [section for section in parts if section.singles]
+        if singles:
+            return max(singles, key=lambda section: len(section.singles))
+
+    if release.kind in {MediaKind.OVA, MediaKind.SPECIAL}:
+        for section in parts:
+            if section.kind == release.kind:
+                return section
+
+    return max(parts, key=lambda section: len(section.episodes) + len(section.singles))
+
+
+def normalize_section_episodes(section: MediaSection, expected: int | None) -> None:
+    """Map absolute cours numbering (e.g. E29–E38 → S2E01–E10)."""
+    if not expected or not section.episodes:
+        return
+    nums = sorted(section.episodes.keys())
+    if not nums or max(nums) <= expected:
+        return
+
+    remapped: dict[int, ResultItem] = {
+        ep: item for ep, item in section.episodes.items() if ep <= expected
+    }
+    high = [n for n in nums if n > expected]
+    if not high:
+        section.episodes = remapped
+        return
+
+    offset = min(high) - 1
+    if offset < 1:
+        section.episodes = remapped
+        return
+
+    for ep in high:
+        rel = ep - offset
+        if not (1 <= rel <= expected):
+            continue
+        item = item_for_episode(section.episodes[ep], rel)
+        current = remapped.get(rel)
+        if current is None or item.score > current.score:
+            remapped[rel] = item
+
+    section.episodes = remapped
+
+
+def _safe_search(
+    query: str,
+    search,
+    *,
+    category: str,
+    filter_code: str,
+    pages: int | None = None,
+) -> list[NyaaEntry]:
+    try:
+        kwargs: dict = {"category": category, "filter_code": filter_code}
+        if pages is not None:
+            kwargs["pages"] = pages
+        return search(query, **kwargs)
+    except Exception:
+        return []
+
+
+def _gap_search_queries(release: MalRelease, missing: list[int]) -> list[str]:
+    queries: list[str] = []
+    shorts: list[str] = []
+    for base in release.nyaa_queries:
+        if not base:
+            continue
+        short = base.split(":", 1)[0].strip()
+        if short and short not in shorts:
+            shorts.append(short)
+    for ep in missing:
+        for short in shorts[:2]:
+            variant = f"{short} {ep:02d}"
+            if variant not in queries:
+                queries.append(variant)
+    return queries[:24]
+
+
+def _fill_missing_episodes(
+    release: MalRelease,
+    section: MediaSection,
+    *,
+    search,
+    category: str,
+    filter_code: str,
+    skip_recap_movies: bool,
+    pool: ThreadPoolExecutor | None,
+) -> None:
+    expected = release.episode_count
+    if not expected or release.kind != MediaKind.EPISODE:
+        return
+    missing = [ep for ep in range(1, expected + 1) if ep not in section.episodes]
+    if not missing:
+        return
+
+    gap_queries = _gap_search_queries(release, missing)
+    if not gap_queries:
+        return
+
+    gap_entries: list[NyaaEntry] = []
+    seen = {item.entry.magnet for item in section.choices()}
+
+    def _fetch_gap(query: str) -> list[NyaaEntry]:
+        return _safe_search(
+            query,
+            search,
+            category=category,
+            filter_code=filter_code,
+            pages=2,
+        )
+
+    if pool is None:
+        for query in gap_queries:
+            gap_entries.extend(_fetch_gap(query))
+    else:
+        futures = [pool.submit(_fetch_gap, query) for query in gap_queries]
+        for future in as_completed(futures):
+            gap_entries.extend(future.result())
+
+    gap_entries = [entry for entry in gap_entries if entry.magnet not in seen]
+    if not gap_entries:
+        return
+
+    primary_query = release.nyaa_queries[0] if release.nyaa_queries else ""
+    parts = build_catalog(
+        gap_entries,
+        primary_query,
+        skip_recap_movies=skip_recap_movies,
+        match_queries=release.nyaa_queries,
+    )
+    extra = _pick_section_for_release(parts, release)
+    if extra is None:
+        return
+
+    for ep, item in extra.episodes.items():
+        current = section.episodes.get(ep)
+        if current is None or item.score > current.score:
+            section.episodes[ep] = item
+
+    normalize_section_episodes(section, expected)
+
+
+def build_catalog_from_releases(
+    releases: list[MalRelease],
+    *,
+    search,
+    category: str,
+    filter_code: str,
+    skip_recap_movies: bool = False,
+    pool: ThreadPoolExecutor | None = None,
+) -> list[MediaSection]:
+    sections: list[MediaSection] = []
+    seen_magnets: set[str] = set()
+    workers = min(NYAA_PARALLEL, max(len(releases), 1))
+
+    unique_queries: list[str] = []
+    query_freq: dict[str, int] = {}
+    for release in releases:
+        for query in release.nyaa_queries:
+            if not query:
+                continue
+            query_freq[query] = query_freq.get(query, 0) + 1
+
+    ranked_queries = sorted(
+        query_freq.keys(),
+        key=lambda query: (-query_freq[query], len(query.split()), query.lower()),
+    )
+    for query in ranked_queries[:MAX_FRANCHISE_QUERIES]:
+        unique_queries.append(query)
+
+    query_entries: dict[str, list[NyaaEntry]] = {}
+
+    def _fetch_all(executor: ThreadPoolExecutor) -> None:
+        futures = {
+            executor.submit(
+                _safe_search,
+                query,
+                search,
+                category=category,
+                filter_code=filter_code,
+            ): query
+            for query in unique_queries
+        }
+        for future in as_completed(futures):
+            query = futures[future]
+            entries = future.result()
+            if entries:
+                query_entries[query] = entries
+
+    if unique_queries:
+        if pool is None:
+            with ThreadPoolExecutor(max_workers=workers) as local_pool:
+                _fetch_all(local_pool)
+        else:
+            _fetch_all(pool)
+
+    for release in releases:
+        merged: list[NyaaEntry] = []
+        local_magnets: set[str] = set()
+        source_queries = list(
+            dict.fromkeys([*release.nyaa_queries, *unique_queries[:6]])
+        )
+        for query in source_queries:
+            for entry in query_entries.get(query, []):
+                if entry.magnet in seen_magnets or entry.magnet in local_magnets:
+                    continue
+                local_magnets.add(entry.magnet)
+                merged.append(entry)
+        if not merged:
+            continue
+
+        primary_query = release.nyaa_queries[0] if release.nyaa_queries else ""
+        parts = build_catalog(
+            merged,
+            primary_query,
+            skip_recap_movies=skip_recap_movies,
+            match_queries=release.nyaa_queries,
+        )
+        section = _pick_section_for_release(parts, release)
+        if section is None:
+            continue
+
+        normalize_section_episodes(section, release.episode_count)
+        _fill_missing_episodes(
+            release,
+            section,
+            search=search,
+            category=category,
+            filter_code=filter_code,
+            skip_recap_movies=skip_recap_movies,
+            pool=pool,
+        )
+
+        section.key = f"mal:{release.mal_id}"
+        section.label = release.label
+        section.kind = release.kind if release.kind != MediaKind.UNKNOWN else section.kind
+        section.season = release.season
+        section.expected_episodes = release.episode_count
+        section.mal_id = release.mal_id
+
+        for item in section.choices():
+            seen_magnets.add(item.entry.magnet)
+
+        if section.episodes or section.singles:
+            sections.append(section)
+
+    sections.sort(key=lambda section: section_sort_key(section))
+    _annotate_batch_hints(sections)
+    return sections
