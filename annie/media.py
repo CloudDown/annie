@@ -18,7 +18,7 @@ except ModuleNotFoundError:
 from annie.nyaa import NYAA_PARALLEL, NyaaEntry
 
 MAX_FRANCHISE_QUERIES = 12
-FRANCHISE_SEARCH_PAGES = 1
+FRANCHISE_SEARCH_PAGES = 2
 PRIMARY_SEARCH_PAGES = 2
 
 CONFIG_DIR = Path.home() / ".config" / "annie"
@@ -302,6 +302,12 @@ SPECIAL_PATTERNS = (
     re.compile(r"\btv\s+special\b", re.I),
     re.compile(r"\b(?:^|\s)sp(?:\s|$|\d)", re.I),
 )
+SPINOFF_PATTERNS = (
+    re.compile(r"\bpetit\b", re.I),
+    re.compile(r"\bbreak\s+time\b", re.I),
+    re.compile(r"\bmini\s+anime\b", re.I),
+    re.compile(r"\bpicture\s+drama\b", re.I),
+)
 BATCH_PATTERNS = (
     re.compile(r"\bbatch\b", re.I),
     re.compile(r"\bcomplete\b", re.I),
@@ -568,6 +574,13 @@ def query_tokens(query: str) -> list[str]:
     return [token for token in normalize(query).split() if len(token) > 1]
 
 
+def _token_matches(token: str, hay: str) -> bool:
+    if len(token) < 2:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])"
+    return bool(re.search(pattern, hay))
+
+
 def series_match_score(parsed: ParsedTitle, query: str) -> int:
     tokens = query_tokens(query)
     if not tokens:
@@ -580,7 +593,7 @@ def series_match_score(parsed: ParsedTitle, query: str) -> int:
     }
     hits = 0
     for token in tokens:
-        if any(token in hay for hay in haystacks):
+        if any(_token_matches(token, hay) for hay in haystacks):
             hits += 1
 
     if hits == 0:
@@ -818,6 +831,45 @@ def is_recap_movie(title: str) -> bool:
     return any(pattern.search(title) for pattern in RECAP_MOVIE_PATTERNS)
 
 
+def is_spinoff(title: str) -> bool:
+    return any(pattern.search(title) for pattern in SPINOFF_PATTERNS)
+
+
+def _batch_title_body(title: str) -> str:
+    """Ignore Nyaa alias segments that often contain false episode ranges."""
+    _, body = strip_release_group(title)
+    return body.split("|", 1)[0].strip()
+
+
+def _episode_belongs_to_release(item: ResultItem, release: MalRelease) -> bool:
+    if release.kind != MediaKind.EPISODE or release.season is None:
+        return True
+    if is_spinoff(item.entry.title):
+        return False
+    parsed = item.parsed
+    if parsed.season is not None and parsed.season != release.season:
+        return False
+    if (
+        release.episode_count
+        and parsed.episode is not None
+        and parsed.episode > release.episode_count
+        and parsed.season in {None, release.season}
+    ):
+        return False
+    return True
+
+
+def _filter_section_for_release(section: MediaSection, release: MalRelease) -> None:
+    section.episodes = {
+        ep: item
+        for ep, item in section.episodes.items()
+        if _episode_belongs_to_release(item, release)
+    }
+    section.singles = [
+        item for item in section.singles if not is_spinoff(item.entry.title)
+    ]
+
+
 def upsert_episode(section: MediaSection, item: ResultItem) -> None:
     episode = item.parsed.episode
     if episode is None:
@@ -894,7 +946,7 @@ def infer_batch_season(body: str, season: int | None) -> int:
 
 
 def parse_batch_episode_range(title: str) -> tuple[int | None, list[int]]:
-    _, body = strip_release_group(title)
+    body = _batch_title_body(title)
     season = parse_season(body)
 
     se_match = SE_BATCH_RANGE_RE.search(body)
@@ -959,7 +1011,9 @@ def apply_batch_episodes(sections: dict[str, MediaSection], batches: list[Result
             upsert_episode(section, item_for_episode(item, episode))
 
 
-def _merge_batches_into_section(section: MediaSection, parts: list[MediaSection]) -> None:
+def _merge_batches_into_section(
+    section: MediaSection, parts: list[MediaSection], release: MalRelease
+) -> None:
     """Expand batch torrents from catalog parts into the MAL-aligned section."""
     seen: set[str] = set()
     for part in parts:
@@ -969,11 +1023,19 @@ def _merge_batches_into_section(section: MediaSection, parts: list[MediaSection]
             if item.entry.magnet in seen:
                 continue
             seen.add(item.entry.magnet)
-            _, episodes = parse_batch_episode_range(item.entry.title)
+            batch_season, episodes = parse_batch_episode_range(item.entry.title)
             if not episodes:
                 continue
+            effective_season = batch_season if batch_season is not None else infer_batch_season(
+                item.entry.title, item.parsed.season
+            )
+            if section.season is not None and effective_season != section.season:
+                continue
             for episode in episodes:
-                upsert_episode(section, item_for_episode(item, episode))
+                candidate = item_for_episode(item, episode)
+                if not _episode_belongs_to_release(candidate, release):
+                    continue
+                upsert_episode(section, candidate)
 
 
 def _strict_target(
@@ -1123,6 +1185,10 @@ def normalize_section_episodes(section: MediaSection, expected: int | None) -> N
         section.episodes = remapped
         return
 
+    if min(high) != expected + 1:
+        section.episodes = remapped
+        return
+
     offset = min(high) - 1
     if offset < 1:
         section.episodes = remapped
@@ -1235,6 +1301,7 @@ def _fill_missing_episodes(
         if current is None or item.score > current.score:
             section.episodes[ep] = item
 
+    _filter_section_for_release(section, release)
     normalize_section_episodes(section, expected)
 
 
@@ -1376,9 +1443,7 @@ def build_catalog_from_releases(
     for release in releases:
         merged: list[NyaaEntry] = []
         local_magnets: set[str] = set()
-        source_queries = list(
-            dict.fromkeys([*release.nyaa_queries, *unique_queries[:6]])
-        )
+        source_queries = list(dict.fromkeys(release.nyaa_queries))
         for query in source_queries:
             for entry in query_entries.get(query, []):
                 if entry.magnet in seen_magnets or entry.magnet in local_magnets:
@@ -1399,7 +1464,9 @@ def build_catalog_from_releases(
         if section is None:
             continue
 
-        _merge_batches_into_section(section, parts)
+        section.expected_episodes = release.episode_count
+        _merge_batches_into_section(section, parts, release)
+        _filter_section_for_release(section, release)
         normalize_section_episodes(section, release.episode_count)
         if fill_gaps:
             _fill_missing_episodes(
@@ -1411,6 +1478,7 @@ def build_catalog_from_releases(
                 skip_recap_movies=skip_recap_movies,
                 pool=pool,
             )
+            _filter_section_for_release(section, release)
 
         section.key = f"mal:{release.mal_id}"
         section.label = release.label
@@ -1423,7 +1491,16 @@ def build_catalog_from_releases(
         for item in section.choices():
             seen_magnets.add(item.entry.magnet)
 
-        if section.episodes or section.singles:
+        keep = (
+            section.episodes
+            or section.singles
+            or (
+                release.kind == MediaKind.EPISODE
+                and release.episode_count
+                and release.season is not None
+            )
+        )
+        if keep:
             sections.append(section)
 
     sections.sort(key=lambda section: section_sort_key(section))
