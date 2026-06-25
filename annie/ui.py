@@ -55,6 +55,74 @@ def banner_line(text: str, color: str) -> str:
     return stylize(text, color, C.BOLD)
 
 
+BUFFER_BAR_WIDTH = 24
+
+
+def progress_bar(pct: int, width: int = BUFFER_BAR_WIDTH) -> str:
+    pct = max(0, min(100, pct))
+    filled = pct * width // 100
+    return "█" * filled + "░" * (width - filled)
+
+
+def _mib_label(current: int, total: int) -> str:
+    return f"{current // 1024 // 1024}/{max(1, total) // 1024 // 1024} MiB"
+
+
+def format_buffer_lines(
+    *,
+    contiguous: int,
+    ready: int,
+    file_size: int,
+    target_bytes: int,
+    peer_hint: str,
+    download_kib: float,
+    extra_hint: str = "",
+) -> str:
+    cont_pct = min(100, contiguous * 100 // target_bytes) if target_bytes else 0
+    file_pct = ready * 100 // file_size if file_size else 0
+    bar_cont = stylize(progress_bar(cont_pct), C.GREEN)
+    bar_file = stylize(progress_bar(file_pct), C.PALE_PINK)
+    rate_part = stylize(f"{download_kib:.0f} KiB/s", C.GREEN) if download_kib > 0 else ""
+    hint = stylize(extra_hint, C.MUTED) if extra_hint else ""
+    if rate_part:
+        meta = f"{stylize(peer_hint, C.MUTED)} · {rate_part}{hint}"
+    else:
+        meta = f"{stylize(peer_hint, C.MUTED)}{hint}"
+    lines = [
+        stylize("annie: buffer", C.MUTED),
+        (
+            f"  {stylize('contigu', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
+            f"{_mib_label(contiguous, target_bytes)}"
+        ),
+        (
+            f"  {stylize('fichier', C.MUTED)}  [{bar_file}] {file_pct:3d}%  "
+            f"{_mib_label(ready, file_size)}"
+        ),
+        f"  {meta}",
+    ]
+    return "\n".join(lines)
+
+
+class BufferStatusDisplay:
+    def __init__(self) -> None:
+        self._line_count = 0
+
+    def update(self, text: str) -> None:
+        line_count = text.count("\n") + 1
+        if self._line_count:
+            sys.stdout.write(f"\033[{self._line_count}A")
+        for line in text.split("\n"):
+            sys.stdout.write(f"\033[K{line}\n")
+        sys.stdout.flush()
+        self._line_count = line_count
+
+    def finish(self, message: str) -> None:
+        if self._line_count:
+            sys.stdout.write(f"\033[{self._line_count}A\033[J")
+        print(message, flush=True)
+        self._line_count = 0
+
+
 # fzf chrome — explicit selection bg so light terminals stay readable
 FZF_COLOR = (
     "fg:-1,bg:-1,hl:#7aa2f7,"

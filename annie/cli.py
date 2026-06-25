@@ -7,6 +7,7 @@ import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+from annie.settings import AnnieSettings
 from annie.media import (
     AnnieConfig,
     MediaKind,
@@ -316,6 +317,7 @@ def play_item(
         player=config.resolved_player(player),
         episode=episode,
         season=season,
+        seed_while_watching=AnnieSettings.load().seed_while_watching,
     )
 
 
@@ -444,6 +446,7 @@ def run_watch(
         player=config.resolved_player(player),
         episode=batch_episode,
         season=batch_season,
+        seed_while_watching=AnnieSettings.load().seed_while_watching,
     )
 
 
@@ -641,4 +644,5 @@ def main() -> int:
         args.query,
         args.keep,
         player=config.resolved_player(None if args.player == "auto" else args.player),
+        seed_while_watching=AnnieSettings.load().seed_while_watching,
     )

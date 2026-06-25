@@ -16,6 +16,7 @@ from pathlib import Path
 import libtorrent as lt
 
 from annie.media import _filename_for_episode_match, match_episode_filename
+from annie.ui import BufferStatusDisplay, format_buffer_lines
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}
 MKV_MAGIC = b"\x1a\x45\xdf\xa3"
@@ -34,6 +35,7 @@ BUFFER_ABSOLUTE_SEC = 45.0
 MP4_TAIL_BYTES = 8 * 1024 * 1024
 MPV_RETRY_WAIT_SEC = 15.0
 MKV_HEAD_BYTES = 16 * 1024 * 1024
+DEFAULT_UPLOAD_LIMIT = 512 * 1024
 
 _player_cache: str | None = None
 _ffprobe_cache: bool | None = None
@@ -123,28 +125,71 @@ def _player_popen(cmd: list[str]) -> subprocess.Popen:
     return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def make_session() -> lt.session:
+def make_session(*, seed_while_watching: bool = False) -> lt.session:
     session = lt.session()
+    upload_limit = 0 if seed_while_watching else DEFAULT_UPLOAD_LIMIT
     try:
         session.apply_settings(
             {
                 "active_downloads": 1,
-                "active_seeds": 0,
+                "active_seeds": 1 if seed_while_watching else 0,
                 "active_limit": 4,
                 "connections_limit": 300,
-                "unchoke_slots_limit": 12,
+                "unchoke_slots_limit": 20 if seed_while_watching else 12,
                 "allow_multiple_connections_per_ip": True,
                 "enable_dht": True,
                 "enable_lsd": True,
                 "enable_upnp": True,
                 "enable_natpmp": True,
                 "download_rate_limit": 0,
-                "upload_rate_limit": 512 * 1024,
+                "upload_rate_limit": upload_limit,
             }
         )
     except Exception:
         pass
     return session
+
+
+def _enable_watch_seed(
+    session: lt.session, handle: lt.torrent_handle, file_index: int
+) -> None:
+    try:
+        handle.set_upload_mode(False)
+    except Exception:
+        pass
+    try:
+        session.apply_settings(
+            {
+                "upload_rate_limit": 0,
+                "unchoke_slots_limit": 20,
+            }
+        )
+    except Exception:
+        pass
+    info = handle.torrent_file()
+    files = info.files()
+    piece_len = info.piece_length()
+    if piece_len <= 0:
+        return
+    file_offset = files.file_offset(file_index)
+    file_size = files.file_size(file_index)
+    first_piece = file_offset // piece_len
+    last_piece = (file_offset + file_size - 1) // piece_len
+    for piece in range(first_piece, last_piece + 1):
+        if handle.have_piece(piece):
+            handle.piece_priority(piece, 7)
+
+
+def _disable_watch_seed(session: lt.session) -> None:
+    try:
+        session.apply_settings(
+            {
+                "upload_rate_limit": DEFAULT_UPLOAD_LIMIT,
+                "unchoke_slots_limit": 12,
+            }
+        )
+    except Exception:
+        pass
 
 
 def _info_hash_hex(info: lt.torrent_info) -> str:
@@ -571,15 +616,6 @@ def _prioritize_mp4_tail(handle: lt.torrent_handle, file_index: int, file_size: 
         handle.piece_priority(piece, 6)
 
 
-def _format_progress(contiguous: int, target_bytes: int, file_size: int, total: int) -> str:
-    pct = min(100, contiguous * 100 // target_bytes) if target_bytes else 0
-    file_pct = total * 100 // file_size if file_size else 0
-    return (
-        f"{contiguous // 1024 // 1024}/{target_bytes // 1024 // 1024} MiB contigu ({pct}%)"
-        f" · fichier {file_pct}%"
-    )
-
-
 def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[int, str]:
     """Wait until the file is startable or timeout. Returns (ready_bytes, mode)."""
     started_at = time.monotonic()
@@ -589,11 +625,7 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
     last_ready = -1
     stall_ticks = 0
     target_bytes = START_TARGET_BYTES
-
-    print(
-        f"annie: buffer (≤{BUFFER_MAX_WAIT_SEC:.0f}s · cible {target_bytes // 1024 // 1024} MiB)…",
-        flush=True,
-    )
+    display = BufferStatusDisplay()
 
     while True:
         ready = _file_ready(handle, file_index)
@@ -610,22 +642,26 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         hard_timeout = now >= absolute_deadline
 
         if startable and can_start and contiguous >= START_TARGET_BYTES:
-            print(f"\nannie: ready ({contiguous // 1024 // 1024} MiB contigu)", flush=True)
+            display.finish(
+                f"annie: ready ({contiguous // 1024 // 1024} MiB contigu)"
+            )
             return contiguous, "ready"
 
         if soft_timeout and startable and can_start:
-            print(f"\nannie: quick start ({contiguous // 1024 // 1024} MiB contigu)", flush=True)
+            display.finish(
+                f"annie: quick start ({contiguous // 1024 // 1024} MiB contigu)"
+            )
             return contiguous, "quick"
 
         if hard_timeout:
             if can_start and _is_startable(
                 target, ready, file_size, handle=handle, file_index=file_index
             ):
-                print(
-                    f"\nannie: forced start ({contiguous // 1024 // 1024} MiB contigu, tentative mpv)",
-                    flush=True,
+                display.finish(
+                    f"annie: forced start ({contiguous // 1024 // 1024} MiB contigu, tentative mpv)"
                 )
                 return contiguous, "forced"
+            display.finish("")
             die(
                 "buffer timeout — fichier incomplet "
                 f"({contiguous // 1024 // 1024} MiB contigu / "
@@ -635,11 +671,12 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         if status.state == lt.torrent_status.seeding and _is_startable(
             target, ready, file_size, handle=handle, file_index=file_index
         ):
-            print(f"\nannie: local file ({contiguous // 1024 // 1024} MiB contigu)", flush=True)
+            display.finish(
+                f"annie: local file ({contiguous // 1024 // 1024} MiB contigu)"
+            )
             return contiguous, "seeding"
 
-        peer_hint = "waiting for peers…" if not has_transfer else f"{status.num_peers} peers"
-        progress_text = _format_progress(contiguous, target_bytes, file_size, ready)
+        peer_hint = "en attente de peers…" if not has_transfer else f"{status.num_peers} peers"
         probe_hint = ""
         if (
             target.suffix.lower() == ".mkv"
@@ -647,11 +684,16 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
             and not startable
         ):
             probe_hint = " · clusters…"
-        print(
-            f"\rannie: {progress_text} · {peer_hint} · "
-            f"{status.download_rate / 1024:.0f} KiB/s{probe_hint}",
-            end="",
-            flush=True,
+        display.update(
+            format_buffer_lines(
+                contiguous=contiguous,
+                ready=ready,
+                file_size=file_size,
+                target_bytes=target_bytes,
+                peer_hint=peer_hint,
+                download_kib=status.download_rate / 1024,
+                extra_hint=probe_hint,
+            )
         )
 
         if ready == last_ready:
@@ -723,12 +765,16 @@ def _play_while_downloading(
     file_size: int,
     *,
     ipc_path: Path | None = None,
+    session: lt.session | None = None,
+    seed_while_watching: bool = False,
 ) -> int:
     paused_for_buffer = False
     ipc_ready = ipc_path is not None and _wait_mpv_ipc(ipc_path)
 
     while proc.poll() is None:
         _enforce_sequential_frontier(handle, file_index)
+        if seed_while_watching and session is not None:
+            _enable_watch_seed(session, handle, file_index)
         contiguous = _contiguous_file_bytes(handle, file_index)
 
         if ipc_ready and ipc_path is not None:
@@ -776,6 +822,8 @@ def _launch_and_stream(
     file_size: int,
     player_name: str,
     *,
+    session: lt.session | None = None,
+    seed_while_watching: bool = False,
     retry: bool = True,
 ) -> int:
     wait_startable(handle, file_index, target, file_size)
@@ -806,7 +854,14 @@ def _launch_and_stream(
             player_command(player_name, target, ipc_path=ipc_path)
         )
         code = _play_while_downloading(
-            proc, handle, file_index, target, file_size, ipc_path=ipc_path
+            proc,
+            handle,
+            file_index,
+            target,
+            file_size,
+            ipc_path=ipc_path,
+            session=session,
+            seed_while_watching=seed_while_watching,
         )
     finally:
         if ipc_path is not None and ipc_path.exists():
@@ -831,7 +886,14 @@ def _launch_and_stream(
                 player_command(player_name, target, ipc_path=ipc_path)
             )
             code = _play_while_downloading(
-                proc, handle, file_index, target, file_size, ipc_path=ipc_path
+                proc,
+                handle,
+                file_index,
+                target,
+                file_size,
+                ipc_path=ipc_path,
+                session=session,
+                seed_while_watching=seed_while_watching,
             )
         finally:
             if ipc_path is not None and ipc_path.exists():
@@ -849,8 +911,9 @@ def play(
     player: str | None = None,
     episode: int | None = None,
     season: int | None = None,
+    seed_while_watching: bool = True,
 ) -> int:
-    session = make_session()
+    session = make_session(seed_while_watching=seed_while_watching)
     handle: lt.torrent_handle
     target: Path
     player_name: str
@@ -879,13 +942,26 @@ def play(
         configure_stream(handle, file_index, info.files().num_files(), target=target, file_size=file_size)
         player_name = player_future.result()
         print(f"annie: playing → {target.name} ({player_name})", flush=True)
+        if seed_while_watching:
+            print("annie: seed de l'épisode pendant la lecture", flush=True)
+            _enable_watch_seed(session, handle, file_index)
 
         code = 1
         try:
-            code = _launch_and_stream(handle, file_index, target, file_size, player_name)
+            code = _launch_and_stream(
+                handle,
+                file_index,
+                target,
+                file_size,
+                player_name,
+                session=session,
+                seed_while_watching=seed_while_watching,
+            )
             if code != 0:
                 print(f"annie: {player_name} code {code}", file=sys.stderr)
         finally:
+            if seed_while_watching:
+                _disable_watch_seed(session)
             session.remove_torrent(handle, 0 if keep else 1)
 
     return code
