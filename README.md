@@ -118,6 +118,18 @@ preferred_groups = ["Erai-raws"]  # bonus de score pour ces groupes
 
 Variable d’environnement : `ANNIE_PLAYER=mpv`
 
+### Streaming (`~/.config/annie/settings.toml`)
+
+Créé automatiquement au premier lancement si absent :
+
+```toml
+[streaming]
+# Partager l'épisode pendant la lecture (upload illimité sur le fichier lu)
+seed_while_watching = true
+```
+
+Variable d’environnement : `ANNIE_SEED_WHILE_WATCHING=0` pour désactiver.
+
 ---
 
 ## Flux
@@ -141,12 +153,22 @@ annie.py              Lanceur (active .venv si présent)
 annie/
   cli.py              Commandes & boucle interactive
   mal.py              Franchise MAL / Jikan
-  media.py            Parsing, scoring, catalogue
+  config.py           AnnieConfig (~/.config/annie/config.toml)
+  types.py            Types catalogue (MediaSection, MalRelease, …)
+  parsing.py          Parsing titres Nyaa
+  scoring.py          Scoring des releases
+  catalog.py          Construction catalogue aligné MAL
+  media.py            Façade de compatibilité (ré-exporte les modules ci-dessus)
+  settings.py         Options streaming (settings.toml)
   nyaa.py             Client Nyaa & cache
   stream.py           libtorrent + lecteurs
   ui.py               fzf & interface terminal
-  cache.py            Cache disque
+  cache.py            Cache disque JSON
   preview.py          Aperçus terminal
+tests/
+  test_parsing.py     Tests unitaires parsing / filtre saison
+scripts/
+  validate_franchise.py  Validation MAL vs Nyaa (dev, gitignored)
 ```
 
 ---
@@ -156,6 +178,8 @@ annie/
 ```bash
 make run      # lance le CLI
 make clean    # supprime venv & artefacts
+python3 -m unittest tests.test_parsing -v
+python3 scripts/validate_franchise.py --limit 10  # validation réseau (dev)
 ```
 
 ---

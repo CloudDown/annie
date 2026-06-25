@@ -266,8 +266,12 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                             pool=pool,
                         )
                         return catalog, options
-    except Exception:
-        pass
+    except Exception as exc:
+        print(
+            stylize(f"annie: catalogue MAL indisponible ({exc}), fallback Nyaa", C.MUTED),
+            file=sys.stderr,
+            flush=True,
+        )
 
     entries = search(query, category=category, filter_code=filter_code)
     if not entries:

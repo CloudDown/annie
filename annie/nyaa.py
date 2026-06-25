@@ -19,7 +19,7 @@ NYAA_BASE = "https://nyaa.si"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
 NYAA_PARALLEL = 10
 NYAA_SEARCH_PAGES = 2
-NYAA_FAST_PAGES = 1
+NYAA_FAST_PAGES = NYAA_SEARCH_PAGES
 DISK_CACHE_DIR = Path.home() / ".cache" / "annie" / "nyaa"
 DISK_CACHE_TTL = 45 * 60
 
@@ -34,7 +34,7 @@ MAGNET_RE = re.compile(r'href="(magnet:[^"]+)"')
 SIZE_RE = re.compile(r'<td class="text-center">([^<]+)</td>')
 NUMERIC_CELL_RE = re.compile(r'<td class="text-center">\s*(\d+)\s*</td>')
 
-_search_cache: dict[tuple[str, str, str], list["NyaaEntry"]] = {}
+_search_cache: dict[tuple[str, str, str, str], tuple[float, list["NyaaEntry"]]] = {}
 
 
 class _TokenBucket:
@@ -106,17 +106,20 @@ def _entries_from_json(payload: list[dict]) -> list[NyaaEntry]:
 def _cached_entries(cache_key: tuple[str, ...]) -> list[NyaaEntry] | None:
     cached = _search_cache.get(cache_key)
     if cached is not None:
-        return cached
+        stored_at, entries = cached
+        if time.monotonic() - stored_at <= DISK_CACHE_TTL:
+            return entries
+        del _search_cache[cache_key]
     disk_cached = read_json(_disk_cache_path(cache_key), ttl=DISK_CACHE_TTL)
     if disk_cached is not None:
         entries = _entries_from_json(disk_cached)
-        _search_cache[cache_key] = entries
+        _search_cache[cache_key] = (time.monotonic(), entries)
         return entries
     return None
 
 
 def _store_entries(cache_key: tuple[str, ...], entries: list[NyaaEntry]) -> list[NyaaEntry]:
-    _search_cache[cache_key] = entries
+    _search_cache[cache_key] = (time.monotonic(), entries)
     write_json(_disk_cache_path(cache_key), _entries_to_json(entries))
     return entries
 
