@@ -657,25 +657,68 @@ import math
 
 
 CRC_TAG_RE = re.compile(r"\[[0-9A-F]{8}\]", re.I)
+_NON_EPISODE_FILE_RE = re.compile(
+    r"\b(?:NCED|NCOP|NCEP|Credit|Menu|PV|CM|Preview|Trailer|Interview|Extra)\b",
+    re.I,
+)
 
 
 def _filename_for_episode_match(name: str) -> str:
     return CRC_TAG_RE.sub("", Path(name).name)
 
 
-def match_episode_filename(name: str, episode: int) -> bool:
-    """Match episode number in fansub filenames, ignoring CRC/hash tags."""
-    stem = _filename_for_episode_match(name)
+def _contradicts_season(stem: str, season: int) -> bool:
+    for match in re.finditer(r"\b[Ss]0?(\d+)[Ee]\d+", stem, re.I):
+        if int(match.group(1)) != season:
+            return True
+    for match in re.finditer(r"\b[Ss]eason\s*0?(\d+)\b", stem, re.I):
+        if int(match.group(1)) != season:
+            return True
+    if season == 1 and re.search(r"\bR2\b", stem, re.I):
+        return True
+    if season == 2 and re.search(r"\bR1\b", stem, re.I) and not re.search(r"\bR2\b", stem, re.I):
+        return True
+    return False
+
+
+def _match_dash_episode(stem: str, episode: int) -> bool:
     patterns = (
-        rf"[\s\-]0?{episode}(?:v\d+)?(?=\s|\[|\.|$)",
-        rf"[Ee]0?{episode}\b",
-        rf"[Ss]\d+[Ee]0?{episode}\b",
+        rf"[\s\-—–_]0?{episode}(?:v\d+)?\s*\[",
+        rf"[\s\-—–_]0?{episode}(?:v\d+)?\.(?:mkv|mp4|avi|webm|m4v|mov)\b",
     )
     return any(re.search(pattern, stem, re.I) for pattern in patterns)
 
 
-def episode_file_query(episode: int) -> str:
-    return rf"(?:[\s\-]0?{episode}(?:v\d+)?(?=\s|\[)|[Ee]0?{episode}\b|[Ss]\d+[Ee]0?{episode}\b)"
+def match_episode_filename(name: str, episode: int, *, season: int | None = None) -> bool:
+    """Match episode (and optional season) in fansub filenames, ignoring CRC/hash tags."""
+    stem = _filename_for_episode_match(name)
+    if _NON_EPISODE_FILE_RE.search(stem):
+        return False
+    if re.search(r"\bMovie\b", stem, re.I):
+        return False
+    if re.search(r"\bOVA\b", stem, re.I) or re.search(r"\bOVA\d", stem, re.I):
+        return False
+
+    if season is not None:
+        strict_patterns = (
+            rf"[Ss]{season:02d}[Ee]{episode:02d}\b",
+            rf"[Ss]0?{season}[Ee]0?{episode}\b",
+        )
+        if any(re.search(pattern, stem, re.I) for pattern in strict_patterns):
+            return True
+        if _contradicts_season(stem, season):
+            return False
+        return _match_dash_episode(stem, episode)
+
+    if re.search(rf"[Ss]\d+[Ee]0?{episode}\b", stem, re.I):
+        return True
+    return _match_dash_episode(stem, episode)
+
+
+def episode_file_query(episode: int, *, season: int | None = None) -> str:
+    if season is not None:
+        return rf"[Ss]0?{season}[Ee]0?{episode}\b"
+    return rf"(?:[Ss]\d+[Ee]0?{episode}\b|[Ee]0?{episode}\b|[\s\-_]0?{episode}(?:v\d+)?(?=\.mkv|\.mp4))"
 
 
 def rank_entry(

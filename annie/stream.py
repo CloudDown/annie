@@ -246,7 +246,7 @@ def human_size(num: int) -> str:
     return f"{size:.1f} GiB"
 
 
-def pick_file(files, index, query, *, episode: int | None = None):
+def pick_file(files, index, query, *, episode: int | None = None, season: int | None = None):
     if not files:
         die("no video files in torrent")
     if index is not None:
@@ -255,7 +255,9 @@ def pick_file(files, index, query, *, episode: int | None = None):
                 return item
         die(f"index {index} not found")
     if episode is not None:
-        matches = [f for f in files if match_episode_filename(f[1], episode)]
+        matches = [
+            f for f in files if match_episode_filename(f[1], episode, season=season)
+        ]
         if len(matches) == 1:
             return matches[0]
         if matches:
@@ -846,6 +848,7 @@ def play(
     *,
     player: str | None = None,
     episode: int | None = None,
+    season: int | None = None,
 ) -> int:
     session = make_session()
     handle: lt.torrent_handle
@@ -868,7 +871,9 @@ def play(
             handle = session.add_torrent(params)
 
         files = torrent_files(info)
-        file_index, rel_path, file_size = pick_file(files, index, query, episode=episode)
+        file_index, rel_path, file_size = pick_file(
+            files, index, query, episode=episode, season=season
+        )
         target = (save_path / rel_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         configure_stream(handle, file_index, info.files().num_files(), target=target, file_size=file_size)

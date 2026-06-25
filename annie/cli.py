@@ -301,6 +301,7 @@ def play_item(
     player: str | None = None,
 ) -> int:
     file_query = None
+    season = item.parsed.season if item.parsed.kind == MediaKind.BATCH else None
     episode = item.parsed.episode if item.parsed.kind == MediaKind.BATCH else None
 
     label = minimal_label(item.parsed)
@@ -314,6 +315,7 @@ def play_item(
         keep,
         player=config.resolved_player(player),
         episode=episode,
+        season=season,
     )
 
 
@@ -427,8 +429,9 @@ def run_watch(
     entry, parsed = picked
     label = minimal_label(parsed)
     file_query = query_file
-    episode = episode if parsed.kind == MediaKind.BATCH else None
-    if episode is not None:
+    batch_season = season if parsed.kind == MediaKind.BATCH else None
+    batch_episode = episode if parsed.kind == MediaKind.BATCH else None
+    if batch_episode is not None:
         file_query = None
     print_status_line(label, entry.seeders, parsed.release_group)
     from annie.stream import play
@@ -439,7 +442,8 @@ def run_watch(
         file_query,
         keep,
         player=config.resolved_player(player),
-        episode=episode,
+        episode=batch_episode,
+        season=batch_season,
     )
 
 
