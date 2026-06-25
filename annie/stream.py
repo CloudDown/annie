@@ -74,6 +74,9 @@ def player_command(player: str, path: Path, *, ipc_path: Path | None = None) -> 
             "mpv",
             "--force-window=immediate",
             "--keep-open=no",
+            "--no-terminal",
+            "--really-quiet",
+            "--msg-level=all=fatal",
             "--cache=yes",
             "--cache-secs=30",
             "--cache-pause=yes",
@@ -93,6 +96,9 @@ def player_command(player: str, path: Path, *, ipc_path: Path | None = None) -> 
     if player == "vlc":
         return [
             "vlc",
+            "--intf",
+            "dummy",
+            "--quiet",
             "--play-and-exit",
             "--no-video-title-show",
             "--file-caching=3000",
@@ -111,6 +117,10 @@ def player_command(player: str, path: Path, *, ipc_path: Path | None = None) -> 
             target,
         ]
     raise RuntimeError(f"unsupported player: {player}")
+
+
+def _player_popen(cmd: list[str]) -> subprocess.Popen:
+    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def make_session() -> lt.session:
@@ -790,7 +800,7 @@ def _launch_and_stream(
             ipc_path.unlink()
 
     try:
-        proc = subprocess.Popen(
+        proc = _player_popen(
             player_command(player_name, target, ipc_path=ipc_path)
         )
         code = _play_while_downloading(
@@ -815,7 +825,7 @@ def _launch_and_stream(
             if ipc_path.exists():
                 ipc_path.unlink()
         try:
-            proc = subprocess.Popen(
+            proc = _player_popen(
                 player_command(player_name, target, ipc_path=ipc_path)
             )
             code = _play_while_downloading(

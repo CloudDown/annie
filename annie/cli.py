@@ -34,6 +34,7 @@ from annie.ui import (
     fzf_available,
     pick_catalog,
     read_query,
+    run_search_spinner,
     print_banner,
     print_help,
     print_status,
@@ -127,7 +128,7 @@ def _print_entry(entry, parsed, *, highlight: bool = False) -> None:
     seeds = stylize(f"[{entry.seeders:>4}S]", C.GREEN if entry.seeders >= 50 else C.YELLOW)
     print(
         f"{prefix} {seeds} {stylize(entry.size, C.MUTED):>8}  "
-        f"{stylize(label, C.CYAN):28}  {entry.title}"
+        f"{stylize(label, C.GREEN):28}  {entry.title}"
     )
 
 
@@ -286,7 +287,7 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
     group = release_group or "—"
     print(
-        stylize(f"◆ {label}", C.CYAN, C.BOLD)
+        stylize(f"◆ {label}", C.YELLOW, C.BOLD)
         + stylize(f" · {seeders}S · {group}", C.MUTED),
         flush=True,
     )
@@ -476,8 +477,9 @@ def interactive_loop(config: AnnieConfig) -> int:
 
         try:
             query, options = parse_inline_target(raw_query)
-            print_status(f"Searching · {query}")
-            catalog, options = gather_catalog(raw_query, config)
+            catalog, options = run_search_spinner(
+                query, lambda: gather_catalog(raw_query, config)
+            )
         except Exception as exc:  # noqa: BLE001
             print_status(str(exc), kind="err")
             continue

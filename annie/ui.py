@@ -7,8 +7,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 from annie.media import MediaKind, MediaSection, ResultItem, minimal_label
 
@@ -133,9 +134,50 @@ def print_help() -> None:
 
 
 def print_status(message: str, *, kind: str = "info") -> None:
-    colors = {"info": C.CYAN, "ok": C.GREEN, "warn": C.YELLOW, "err": C.RED}
+    colors = {"info": C.GREEN, "ok": C.GREEN, "warn": C.YELLOW, "err": C.RED}
     icon = {"info": "◆", "ok": "✔", "warn": "!", "err": "✖"}.get(kind, "·")
     print(stylize(f"  {icon} {message}", colors.get(kind, C.FG)))
+
+
+_T = TypeVar("_T")
+_SEARCH_SPINNER = "/-\\|"
+
+
+def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
+    """Run *fn* while showing a /-\\| spinner on the current line."""
+    message = f"Searching · {query}"
+
+    if not sys.stdout.isatty():
+        print(stylize(f"◆ {message}", C.GREEN), flush=True)
+        return fn()
+
+    result: list[_T] = []
+    error: list[BaseException] = []
+    done = threading.Event()
+
+    def worker() -> None:
+        try:
+            result.append(fn())
+        except BaseException as exc:
+            error.append(exc)
+        finally:
+            done.set()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    frame = 0
+    while not done.is_set():
+        spin = _SEARCH_SPINNER[frame % len(_SEARCH_SPINNER)]
+        line = stylize(f"◆ {spin} {message}", C.GREEN)
+        print(f"\r{line}", end="", flush=True)
+        frame += 1
+        done.wait(0.09)
+
+    print("\r\033[K", end="", flush=True)
+
+    if error:
+        raise error[0]
+    return result[0]
 
 
 def fzf_available() -> bool:
