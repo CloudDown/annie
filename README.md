@@ -166,9 +166,20 @@ annie/
   cache.py            Cache disque JSON
   preview.py          Aperçus terminal
 tests/
-  test_parsing.py     Tests unitaires parsing / filtre saison
+  helpers.py          Factories & chargement fixtures
+  fixtures/           Cas JSON reproductibles (Re:Zero, filenames, …)
+  test_parsing.py     Parsing, filtre saison, normalisation
+  test_catalog.py     Catalogue offline (régression Re:Zero)
+  test_scoring.py     Scoring / pick_best
+  test_stream.py      Matching fichiers batch
+  test_fixtures.py    Pilotage par fixtures parse_titles.json
 scripts/
-  validate_franchise.py  Validation MAL vs Nyaa (dev, gitignored)
+  README.md           Guide des outils de debug
+  debug_parse.py      Parser un titre Nyaa
+  debug_match.py      Tester match épisode ↔ fichier
+  debug_catalog.py    Catalogue offline ou live
+  debug_franchise.py  Diagnostic détaillé (1 anime)
+  validate_franchise.py  Validation MAL vs Nyaa (100 anime)
 ```
 
 ---
@@ -176,10 +187,12 @@ scripts/
 ## Développement
 
 ```bash
-make run      # lance le CLI
-make clean    # supprime venv & artefacts
-python3 -m unittest tests.test_parsing -v
-python3 scripts/validate_franchise.py --limit 10  # validation réseau (dev)
+make test           # suite unitaire offline
+make test-offline   # scripts debug + fixtures (sans réseau)
+make debug-rezero   # régression catalogue Re:Zero
+make validate       # validation réseau (10 anime)
+make run            # lance le CLI
+make clean          # supprime venv & artefacts
 ```
 
 ---

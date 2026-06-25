@@ -1,0 +1,32 @@
+[
+  {
+    "id": "rezero-s2-single",
+    "title": "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season - 05 [1080p]",
+    "expect": {"season": 2, "episode": 5, "kind": "episode"}
+  },
+  {
+    "id": "rezero-s1-dash",
+    "title": "[HorribleSubs] Re Zero kara Hajimeru Isekai Seikatsu - 15 [1080p].mkv",
+    "expect": {"season": 1, "episode": 15, "kind": "episode"}
+  },
+  {
+    "id": "rezero-absolute",
+    "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 42 (720p).mkv",
+    "expect": {"season": null, "episode": 42, "kind": "episode"}
+  },
+  {
+    "id": "rezero-s2-batch",
+    "title": "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]",
+    "expect": {"season": 2, "kind": "batch", "batch_eps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]}
+  },
+  {
+    "id": "lostyears-pipe-alias",
+    "title": "[LostYears] Re: ZERO - S03E08 (CR WEB-DL) | Re: Zero Kara Hajimeru Isekai Seikatsu Season 3 - 08",
+    "expect": {"batch_eps": []}
+  },
+  {
+    "id": "subsplease-s1-single",
+    "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [ABCD1234].mkv",
+    "expect": {"season": 1, "episode": 8, "kind": "episode"}
+  }
+]

@@ -84,6 +84,98 @@ class MalAnime:
     via_relation: str = "Root"
 
 
+@dataclass(frozen=True)
+class TopAnimeEntry:
+    mal_id: int
+    rank: int
+    title: str
+    title_english: str | None
+    anime_type: str
+
+
+def fetch_top_anime(limit: int = 100, *, cache_path: Path | None = None) -> list[TopAnimeEntry]:
+    """Top anime MAL via Jikan (/top/anime), 25 entrées par page."""
+    if limit < 1:
+        return []
+
+    cache_file = cache_path or (DISK_CACHE_DIR / f"top_anime_{limit}.json")
+    entries: list[TopAnimeEntry] = []
+    if cache_file.exists():
+        cached = read_json(cache_file, ttl=7 * 24 * 3600)
+        if cached and isinstance(cached.get("entries"), list):
+            for row in cached["entries"]:
+                entries.append(
+                    TopAnimeEntry(
+                        mal_id=int(row["mal_id"]),
+                        rank=int(row["rank"]),
+                        title=str(row["title"]),
+                        title_english=row.get("title_english"),
+                        anime_type=str(row.get("anime_type") or "Unknown"),
+                    )
+                )
+
+    if len(entries) >= limit:
+        return entries[:limit]
+
+    page = max(1, len(entries) // 25 + 1)
+    max_pages = (limit + 24) // 25 + 2
+
+    def _persist() -> None:
+        write_json(
+            cache_file,
+            {
+                "entries": [
+                    {
+                        "mal_id": entry.mal_id,
+                        "rank": entry.rank,
+                        "title": entry.title,
+                        "title_english": entry.title_english,
+                        "anime_type": entry.anime_type,
+                    }
+                    for entry in entries
+                ]
+            },
+        )
+
+    while len(entries) < limit and page <= max_pages:
+        payload: dict | None = None
+        for attempt in range(20):
+            try:
+                payload = _get(f"/top/anime?page={page}")
+                break
+            except RuntimeError as exc:
+                if "504" not in str(exc) and "429" not in str(exc):
+                    raise
+                time.sleep(min(60.0, 3.0 * (attempt + 1)))
+        if payload is None:
+            _persist()
+            break
+
+        batch = payload.get("data") or []
+        if not batch:
+            break
+        for item in batch:
+            entries.append(
+                TopAnimeEntry(
+                    mal_id=int(item["mal_id"]),
+                    rank=int(item.get("rank") or len(entries) + 1),
+                    title=str(item.get("title") or ""),
+                    title_english=item.get("title_english"),
+                    anime_type=str(item.get("type") or "Unknown"),
+                )
+            )
+            if len(entries) >= limit:
+                break
+
+        _persist()
+        pagination = payload.get("pagination") or {}
+        if not pagination.get("has_next_page"):
+            break
+        page += 1
+        time.sleep(1.0)
+
+    return entries[:limit]
+
 def _disk_cache_path(path: str) -> Path:
     safe = path.strip("/").replace("/", "_")
     return DISK_CACHE_DIR / f"{safe}.json"

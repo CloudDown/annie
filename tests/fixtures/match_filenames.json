@@ -1,0 +1,37 @@
+[
+  {
+    "id": "subsplease-batch-s01e08",
+    "path": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [ABCD1234].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": true
+  },
+  {
+    "id": "erai-crc-bracket",
+    "path": "[Erai-raws] Re Zero - 08 [1080p][ABC12345].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": true
+  },
+  {
+    "id": "wrong-episode",
+    "path": "[SubsPlease] Re Zero - 09 (1080p) [ABCD1234].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": false
+  },
+  {
+    "id": "s01e08-explicit",
+    "path": "[Erai-raws] Re Zero S01E08 [1080p].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": true
+  },
+  {
+    "id": "nc-op-skip",
+    "path": "[SubsPlease] Re Zero NCOP [1080p].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": false
+  }
+]

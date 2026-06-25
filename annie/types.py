@@ -58,6 +58,7 @@ class MediaSection:
     batch_recommended: bool = False
     expected_episodes: int | None = None
     mal_id: int | None = None
+    absolute_episode_offset: int = 0
     nyaa_queries: list[str] = field(default_factory=list)
     episodes: dict[int, ResultItem] = field(default_factory=dict)
     singles: list[ResultItem] = field(default_factory=list)

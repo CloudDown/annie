@@ -6,11 +6,14 @@ import unittest
 
 from annie.catalog import (
     _episode_belongs_to_release,
+    _gap_search_queries,
+    franchise_absolute_offsets,
     is_spinoff,
+    normalize_section_episodes,
     parse_batch_episode_range,
 )
-from annie.parsing import parse_title
-from annie.types import MalRelease, MediaKind, ResultItem
+from annie.parsing import match_episode_filename, parse_title
+from annie.types import MalRelease, MediaKind, MediaSection, ResultItem
 from annie.nyaa import NyaaEntry
 
 
@@ -101,6 +104,106 @@ class EpisodeBelongsTests(unittest.TestCase):
     def test_rejects_absolute_high_episode(self) -> None:
         item = _item("[SubsPlease] Re Zero - 42 (720p).mkv")
         self.assertFalse(_episode_belongs_to_release(item, self.s1))
+
+    def test_s2_accepts_franchise_absolute(self) -> None:
+        s2 = MalRelease(
+            mal_id=2,
+            label="Season 02",
+            kind=MediaKind.EPISODE,
+            season=2,
+            episode_count=25,
+            nyaa_queries=["re zero"],
+            sort_key=(2, "season 02"),
+        )
+        item = _item("[SubsPlease] Re Zero - 42 (720p).mkv")
+        self.assertTrue(
+            _episode_belongs_to_release(item, s2, absolute_offset=25)
+        )
+
+
+class FranchiseOffsetTests(unittest.TestCase):
+    def test_cumulative_offsets(self) -> None:
+        releases = [
+            MalRelease(
+                mal_id=1,
+                label="S1",
+                kind=MediaKind.EPISODE,
+                season=1,
+                episode_count=25,
+                nyaa_queries=[],
+                sort_key=(1, "s1"),
+            ),
+            MalRelease(
+                mal_id=2,
+                label="S2",
+                kind=MediaKind.EPISODE,
+                season=2,
+                episode_count=25,
+                nyaa_queries=[],
+                sort_key=(2, "s2"),
+            ),
+            MalRelease(
+                mal_id=3,
+                label="S3",
+                kind=MediaKind.EPISODE,
+                season=3,
+                episode_count=16,
+                nyaa_queries=[],
+                sort_key=(3, "s3"),
+            ),
+        ]
+        offsets = franchise_absolute_offsets(releases)
+        self.assertEqual(offsets[1], 0)
+        self.assertEqual(offsets[2], 25)
+        self.assertEqual(offsets[3], 50)
+
+
+class NormalizeSectionTests(unittest.TestCase):
+    def test_absolute_to_relative_with_offset(self) -> None:
+        section = MediaSection(
+            key="season:02",
+            label="Season 02",
+            kind=MediaKind.EPISODE,
+            season=2,
+        )
+        section.episodes[42] = _item("[SubsPlease] Re Zero - 42 (720p).mkv")
+        normalize_section_episodes(section, 25, absolute_offset=25)
+        self.assertIn(17, section.episodes)
+        self.assertNotIn(42, section.episodes)
+
+
+class EpisodeFilenameTests(unittest.TestCase):
+    def test_subsplease_batch_filename(self) -> None:
+        name = (
+            "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 "
+            "(1080p) [ABCD1234].mkv"
+        )
+        self.assertTrue(match_episode_filename(name, 8, season=1))
+
+    def test_dash_episode_before_crc(self) -> None:
+        name = "[Erai-raws] Re Zero - 08 [1080p][ABC12345].mkv"
+        self.assertTrue(match_episode_filename(name, 8, season=1))
+
+    def test_rejects_other_episode(self) -> None:
+        name = "[SubsPlease] Re Zero - 09 (1080p) [ABCD1234].mkv"
+        self.assertFalse(match_episode_filename(name, 8, season=1))
+
+
+class GapQueryTests(unittest.TestCase):
+    def test_includes_absolute_numbers(self) -> None:
+        release = MalRelease(
+            mal_id=2,
+            label="Season 02",
+            kind=MediaKind.EPISODE,
+            season=2,
+            episode_count=25,
+            nyaa_queries=["Re:Zero kara Hajimeru Isekai Seikatsu"],
+            sort_key=(2, "season 02"),
+        )
+        queries = _gap_search_queries(release, [17], absolute_offset=25)
+        joined = " ".join(queries).lower()
+        self.assertIn("s02e17", joined)
+        self.assertIn("42", joined)
 
 
 if __name__ == "__main__":

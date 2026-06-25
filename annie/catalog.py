@@ -26,6 +26,9 @@ from annie.types import MalRelease, MediaKind, MediaSection, ParsedTitle, Result
 MAX_FRANCHISE_QUERIES = 12
 FRANCHISE_SEARCH_PAGES = 2
 PRIMARY_SEARCH_PAGES = 2
+GAP_SEARCH_PAGES = 1
+GAP_MAX_MISSING = 6
+GAP_MAX_QUERIES = 10
 
 RECAP_MOVIE_PATTERNS = (
     re.compile(r"\bjourney'?s\s+dawn\b", re.I),
@@ -94,7 +97,103 @@ def _batch_title_body(title: str) -> str:
     return body.split("|", 1)[0].strip()
 
 
-def _episode_belongs_to_release(item: ResultItem, release: MalRelease) -> bool:
+def scope_releases_for_target(
+    releases: list[MalRelease],
+    *,
+    season: int | None = None,
+    kind: MediaKind | None = None,
+) -> list[MalRelease]:
+    """Réduit les requêtes Nyaa quand la cible saison/type est connue."""
+    if season is None and kind is None:
+        return releases
+    scoped: list[MalRelease] = []
+    for release in releases:
+        if kind is not None and release.kind != kind:
+            continue
+        if (
+            season is not None
+            and release.kind == MediaKind.EPISODE
+            and release.season != season
+        ):
+            continue
+        scoped.append(release)
+    return scoped or releases
+
+
+def franchise_absolute_offsets(releases: list[MalRelease]) -> dict[int, int]:
+    """mal_id → index absolu (0-based) du premier épisode de la saison."""
+    tv = sorted(
+        [
+            release
+            for release in releases
+            if release.kind == MediaKind.EPISODE
+            and release.season is not None
+            and release.episode_count
+        ],
+        key=lambda release: (release.season or 0, release.sort_key),
+    )
+    offsets: dict[int, int] = {}
+    cursor = 0
+    for release in tv:
+        offsets[release.mal_id] = cursor
+        cursor += release.episode_count or 0
+    return offsets
+
+
+def franchise_absolute_offsets_from_sections(
+    sections: list[MediaSection],
+) -> dict[int, int]:
+    releases = [
+        MalRelease(
+            mal_id=section.mal_id or 0,
+            label=section.label,
+            kind=section.kind,
+            season=section.season,
+            episode_count=section.expected_episodes,
+            nyaa_queries=section.nyaa_queries or [section.label],
+            sort_key=(section.season or 0, section.label.lower()),
+        )
+        for section in sections
+        if section.kind == MediaKind.EPISODE
+        and section.season is not None
+        and section.expected_episodes
+        and section.mal_id
+    ]
+    return franchise_absolute_offsets(releases)
+
+
+def _relative_episode_number(
+    parsed: ParsedTitle,
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+) -> int | None:
+    if parsed.episode is None:
+        return None
+    expected = release.episode_count
+    if not expected:
+        return parsed.episode
+
+    episode = parsed.episode
+    if parsed.season is not None and release.season is not None:
+        if parsed.season != release.season:
+            return None
+        return episode if 1 <= episode <= expected else None
+
+    relative = episode - absolute_offset
+    if 1 <= relative <= expected:
+        return relative
+    if absolute_offset == 0 and 1 <= episode <= expected:
+        return episode
+    return None
+
+
+def _episode_belongs_to_release(
+    item: ResultItem,
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+) -> bool:
     if release.kind != MediaKind.EPISODE or release.season is None:
         return True
     if is_spinoff(item.entry.title):
@@ -102,21 +201,24 @@ def _episode_belongs_to_release(item: ResultItem, release: MalRelease) -> bool:
     parsed = item.parsed
     if parsed.season is not None and parsed.season != release.season:
         return False
-    if (
-        release.episode_count
-        and parsed.episode is not None
-        and parsed.episode > release.episode_count
-        and parsed.season in {None, release.season}
-    ):
-        return False
-    return True
+    if parsed.episode is None:
+        return True
+    return (
+        _relative_episode_number(parsed, release, absolute_offset=absolute_offset)
+        is not None
+    )
 
 
-def _filter_section_for_release(section: MediaSection, release: MalRelease) -> None:
+def _filter_section_for_release(
+    section: MediaSection,
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+) -> None:
     section.episodes = {
         ep: item
         for ep, item in section.episodes.items()
-        if _episode_belongs_to_release(item, release)
+        if _episode_belongs_to_release(item, release, absolute_offset=absolute_offset)
     }
     section.singles = [
         item for item in section.singles if not is_spinoff(item.entry.title)
@@ -265,7 +367,11 @@ def apply_batch_episodes(sections: dict[str, MediaSection], batches: list[Result
 
 
 def _merge_batches_into_section(
-    section: MediaSection, parts: list[MediaSection], release: MalRelease
+    section: MediaSection,
+    parts: list[MediaSection],
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
 ) -> None:
     """Expand batch torrents from catalog parts into the MAL-aligned section."""
     seen: set[str] = set()
@@ -286,7 +392,9 @@ def _merge_batches_into_section(
                 continue
             for episode in episodes:
                 candidate = item_for_episode(item, episode)
-                if not _episode_belongs_to_release(candidate, release):
+                if not _episode_belongs_to_release(
+                    candidate, release, absolute_offset=absolute_offset
+                ):
                     continue
                 upsert_episode(section, candidate)
 
@@ -452,41 +560,64 @@ def _pick_section_for_release(parts: list[MediaSection], release: MalRelease) ->
     return None
 
 
-def normalize_section_episodes(section: MediaSection, expected: int | None) -> None:
-    """Map absolute cours numbering (e.g. E29–E38 → S2E01–E10)."""
+def normalize_section_episodes(
+    section: MediaSection,
+    expected: int | None,
+    *,
+    absolute_offset: int = 0,
+) -> None:
+    """Remappe numérotation absolue franchise (ex. E42 → S2E17 si offset=25)."""
     if not expected or not section.episodes:
         return
-    nums = sorted(section.episodes.keys())
-    if not nums or max(nums) <= expected:
-        return
 
-    remapped: dict[int, ResultItem] = {
-        ep: item for ep, item in section.episodes.items() if ep <= expected
-    }
-    high = [n for n in nums if n > expected]
-    if not high:
-        section.episodes = remapped
-        return
+    remapped: dict[int, ResultItem] = {}
+    for episode, item in section.episodes.items():
+        relative: int | None
+        if 1 <= episode <= expected:
+            relative = episode
+        elif absolute_offset > 0 and episode > absolute_offset:
+            candidate = episode - absolute_offset
+            relative = candidate if 1 <= candidate <= expected else None
+        else:
+            relative = None
 
-    if min(high) != expected + 1:
-        section.episodes = remapped
-        return
-
-    offset = min(high) - 1
-    if offset < 1:
-        section.episodes = remapped
-        return
-
-    for ep in high:
-        rel = ep - offset
-        if not (1 <= rel <= expected):
+        if relative is None:
             continue
-        item = item_for_episode(section.episodes[ep], rel)
-        current = remapped.get(rel)
-        if current is None or item.score > current.score:
-            remapped[rel] = item
+
+        candidate = item if relative == episode else item_for_episode(item, relative)
+        current = remapped.get(relative)
+        if current is None or candidate.score > current.score:
+            remapped[relative] = candidate
+
+    if absolute_offset == 0:
+        _legacy_contiguous_remap(remapped, section.episodes, expected)
 
     section.episodes = remapped
+
+
+def _legacy_contiguous_remap(
+    remapped: dict[int, ResultItem],
+    source: dict[int, ResultItem],
+    expected: int,
+) -> None:
+    """Heuristique legacy : bloc contigu E26+ quand l'offset MAL est inconnu."""
+    nums = sorted(source.keys())
+    if not nums or max(nums) <= expected:
+        return
+    high = [episode for episode in nums if episode > expected]
+    if not high or min(high) != expected + 1:
+        return
+    offset = min(high) - 1
+    if offset < 1:
+        return
+    for episode in high:
+        relative = episode - offset
+        if not (1 <= relative <= expected):
+            continue
+        item = item_for_episode(source[episode], relative)
+        current = remapped.get(relative)
+        if current is None or item.score > current.score:
+            remapped[relative] = item
 
 
 def _safe_search(
@@ -506,7 +637,13 @@ def _safe_search(
         return []
 
 
-def _gap_search_queries(release: MalRelease, missing: list[int]) -> list[str]:
+def _gap_search_queries(
+    release: MalRelease,
+    missing: list[int],
+    *,
+    absolute_offset: int = 0,
+    max_missing: int = GAP_MAX_MISSING,
+) -> list[str]:
     queries: list[str] = []
     shorts: list[str] = []
     for base in release.nyaa_queries:
@@ -515,16 +652,21 @@ def _gap_search_queries(release: MalRelease, missing: list[int]) -> list[str]:
         short = base.split(":", 1)[0].strip()
         if short and short not in shorts:
             shorts.append(short)
-    for ep in missing:
-        for short in shorts[:2]:
+    for episode in missing[:max_missing]:
+        absolute_ep = episode + absolute_offset
+        for short in shorts[:1]:
             if release.season is not None:
-                se_variant = f"{short} S{release.season:02d}E{ep:02d}"
+                se_variant = f"{short} S{release.season:02d}E{episode:02d}"
                 if se_variant not in queries:
                     queries.append(se_variant)
-            variant = f"{short} {ep:02d}"
+            variant = f"{short} {episode:02d}"
             if variant not in queries:
                 queries.append(variant)
-    return queries[:16]
+            if absolute_offset > 0:
+                abs_variant = f"{short} {absolute_ep:02d}"
+                if abs_variant not in queries:
+                    queries.append(abs_variant)
+    return queries[:GAP_MAX_QUERIES]
 
 
 def _fill_missing_episodes(
@@ -536,6 +678,8 @@ def _fill_missing_episodes(
     filter_code: str,
     skip_recap_movies: bool,
     pool: ThreadPoolExecutor | None,
+    absolute_offset: int = 0,
+    max_missing: int = GAP_MAX_MISSING,
 ) -> None:
     expected = release.episode_count
     if not expected or release.kind != MediaKind.EPISODE:
@@ -544,7 +688,9 @@ def _fill_missing_episodes(
     if not missing:
         return
 
-    gap_queries = _gap_search_queries(release, missing)
+    gap_queries = _gap_search_queries(
+        release, missing, absolute_offset=absolute_offset, max_missing=max_missing
+    )
     if not gap_queries:
         return
 
@@ -557,7 +703,7 @@ def _fill_missing_episodes(
             search,
             category=category,
             filter_code=filter_code,
-            pages=2,
+            pages=GAP_SEARCH_PAGES,
         )
 
     if pool is None:
@@ -588,8 +734,8 @@ def _fill_missing_episodes(
         if current is None or item.score > current.score:
             section.episodes[ep] = item
 
-    _filter_section_for_release(section, release)
-    normalize_section_episodes(section, expected)
+    _filter_section_for_release(section, release, absolute_offset=absolute_offset)
+    normalize_section_episodes(section, expected, absolute_offset=absolute_offset)
 
 
 def fill_catalog_gaps(
@@ -610,6 +756,8 @@ def fill_catalog_gaps(
     if not sparse:
         return
 
+    offsets = franchise_absolute_offsets_from_sections(sections)
+
     def _run(executor: ThreadPoolExecutor) -> None:
         futures = [
             executor.submit(
@@ -620,6 +768,7 @@ def fill_catalog_gaps(
                 filter_code=filter_code,
                 skip_recap_movies=skip_recap_movies,
                 pool=None,
+                absolute_offset=offsets.get(section.mal_id or 0, section.absolute_episode_offset),
             )
             for section in sparse
         ]
@@ -641,6 +790,8 @@ def fill_section_gaps(
     filter_code: str,
     skip_recap_movies: bool = False,
     pool: ThreadPoolExecutor | None = None,
+    absolute_offset: int | None = None,
+    target_episode: int | None = None,
 ) -> None:
     expected = section.expected_episodes
     if not expected or section.kind != MediaKind.EPISODE:
@@ -650,6 +801,10 @@ def fill_section_gaps(
     missing = [ep for ep in range(1, expected + 1) if ep not in section.episodes]
     if not missing:
         return
+    if target_episode is not None:
+        if target_episode not in missing:
+            return
+        missing = [target_episode]
 
     release = MalRelease(
         mal_id=section.mal_id or 0,
@@ -660,6 +815,11 @@ def fill_section_gaps(
         nyaa_queries=section.nyaa_queries or [section.label],
         sort_key=(section.season or 0, section.label.lower()),
     )
+    offset = (
+        section.absolute_episode_offset
+        if absolute_offset is None
+        else absolute_offset
+    )
     _fill_missing_episodes(
         release,
         section,
@@ -668,6 +828,8 @@ def fill_section_gaps(
         filter_code=filter_code,
         skip_recap_movies=skip_recap_movies,
         pool=pool,
+        absolute_offset=offset,
+        max_missing=1 if target_episode is not None else GAP_MAX_MISSING,
     )
 
 
@@ -684,6 +846,7 @@ def build_catalog_from_releases(
     sections: list[MediaSection] = []
     seen_magnets: set[str] = set()
     workers = min(NYAA_PARALLEL, max(len(releases), 1))
+    absolute_offsets = franchise_absolute_offsets(releases)
 
     unique_queries: list[str] = []
     query_freq: dict[str, int] = {}
@@ -752,10 +915,15 @@ def build_catalog_from_releases(
             continue
 
         section.expected_episodes = release.episode_count
+        absolute_offset = absolute_offsets.get(release.mal_id, 0)
         _merge_arc_sections_into_section(section, parts)
-        _merge_batches_into_section(section, parts, release)
-        _filter_section_for_release(section, release)
-        normalize_section_episodes(section, release.episode_count)
+        _merge_batches_into_section(
+            section, parts, release, absolute_offset=absolute_offset
+        )
+        _filter_section_for_release(section, release, absolute_offset=absolute_offset)
+        normalize_section_episodes(
+            section, release.episode_count, absolute_offset=absolute_offset
+        )
         if fill_gaps:
             _fill_missing_episodes(
                 release,
@@ -765,8 +933,9 @@ def build_catalog_from_releases(
                 filter_code=filter_code,
                 skip_recap_movies=skip_recap_movies,
                 pool=pool,
+                absolute_offset=absolute_offset,
             )
-            _filter_section_for_release(section, release)
+            _filter_section_for_release(section, release, absolute_offset=absolute_offset)
 
         section.key = f"mal:{release.mal_id}"
         section.label = release.label
@@ -774,6 +943,7 @@ def build_catalog_from_releases(
         section.season = release.season
         section.expected_episodes = release.episode_count
         section.mal_id = release.mal_id
+        section.absolute_episode_offset = absolute_offset
         section.nyaa_queries = list(release.nyaa_queries)
 
         for item in section.choices():
@@ -794,3 +964,37 @@ def build_catalog_from_releases(
     sections.sort(key=lambda section: section_sort_key(section))
     _annotate_batch_hints(sections)
     return sections
+
+
+_MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
+
+
+def resolve_catalog_target(
+    sections: list[MediaSection],
+    *,
+    season: int | None = None,
+    episode: int | None = None,
+    kind: MediaKind | None = None,
+    movie_number: int | None = None,
+) -> ResultItem | None:
+    """Résout une cible précise dans un catalogue MAL sans fzf."""
+    if episode is not None:
+        for section in sections:
+            if kind is not None and section.kind != kind:
+                continue
+            if season is not None and section.season not in {season, None}:
+                continue
+            item = section.episodes.get(episode)
+            if item is not None:
+                return item
+
+    if movie_number is not None:
+        for section in sections:
+            if section.kind != MediaKind.MOVIE:
+                continue
+            for item in section.singles:
+                match = _MOVIE_NUMBER_RE.search(item.entry.title)
+                if match and int(match.group("num")) == movie_number:
+                    return item
+
+    return None

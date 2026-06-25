@@ -561,7 +561,7 @@ import math
 
 
 
-CRC_TAG_RE = re.compile(r"\[[0-9A-F]{8}\]", re.I)
+CRC_TAG_RE = re.compile(r"\[[0-9A-Fa-f]{8,16}\]")
 _NON_EPISODE_FILE_RE = re.compile(
     r"\b(?:NCED|NCOP|NCEP|Credit|Menu|PV|CM|Preview|Trailer|Interview|Extra)\b",
     re.I,
@@ -587,9 +587,13 @@ def _contradicts_season(stem: str, season: int) -> bool:
 
 
 def _match_dash_episode(stem: str, episode: int) -> bool:
+    quality = r"(?:\s*\([^)]+\))?"
+    crc = r"(?:\s*\[[A-Fa-f0-9]+\])?"
+    ext = r"\s*\.(?:mkv|mp4|avi|webm|m4v|mov)\b"
     patterns = (
-        rf"[\s\-—–_]0?{episode}(?:v\d+)?\s*\[",
-        rf"[\s\-—–_]0?{episode}(?:v\d+)?\.(?:mkv|mp4|avi|webm|m4v|mov)\b",
+        rf"[\s\-—–_]0?{episode}(?:v\d+)?{quality}?\s*\[",
+        rf"[\s\-—–_]0?{episode}(?:v\d+)?{quality}?{crc}?{ext}",
+        rf"[\s\-—–_]0?{episode}(?:v\d+)?{ext}",
     )
     return any(re.search(pattern, stem, re.I) for pattern in patterns)
 

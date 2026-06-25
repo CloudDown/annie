@@ -19,5 +19,5 @@ dist/
 # Local agent context (not part of the app)
 AGENTS.md
 
-# Dev-only validation scripts (network-heavy)
-scripts/
+# Rapports de validation réseau (lourds)
+scripts/results/

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from annie.media import _filename_for_episode_match, match_episode_filename
+from annie.parsing import _filename_for_episode_match, match_episode_filename
 from annie.ui import BufferStatusDisplay, format_buffer_lines
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}

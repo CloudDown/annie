@@ -20,6 +20,8 @@ from annie.media import (
     minimal_label,
     pick_best,
     rank_entry,
+    resolve_catalog_target,
+    scope_releases_for_target,
 )
 from annie.mal import (
     collect_franchise,
@@ -28,7 +30,7 @@ from annie.mal import (
     relation_nyaa_hints,
     search_anime,
 )
-from annie.nyaa import prefetch, search
+from annie.nyaa import search
 from annie.ui import (
     C,
     copy_magnet,
@@ -199,6 +201,9 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
     query, options = parse_inline_target(raw_query)
     category = overrides.get("category") or config.category
     filter_code = overrides.get("filter_code") or config.filter_code
+    fill_gaps = overrides.get("fill_gaps", False)
+    target_season = overrides.get("target_season", options.get("season"))
+    target_kind = overrides.get("target_kind", kind_from_options(options))
 
     try:
         with ThreadPoolExecutor(max_workers=16) as pool:
@@ -235,17 +240,10 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                     user_query=query,
                 )
                 if releases:
-                    all_queries = [
-                        q
-                        for release in releases
-                        for q in release.nyaa_queries
-                        if q
-                    ]
-                    prefetch(
-                        list(dict.fromkeys(all_queries)),
-                        category=category,
-                        filter_code=filter_code,
-                        pool=pool,
+                    releases = scope_releases_for_target(
+                        releases,
+                        season=target_season,
+                        kind=target_kind,
                     )
                     catalog = build_catalog_from_releases(
                         releases,
@@ -257,14 +255,15 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                         fill_gaps=False,
                     )
                     if catalog:
-                        fill_catalog_gaps(
-                            catalog,
-                            search=search,
-                            category=category,
-                            filter_code=filter_code,
-                            skip_recap_movies=config.skip_recap_movies,
-                            pool=pool,
-                        )
+                        if fill_gaps:
+                            fill_catalog_gaps(
+                                catalog,
+                                search=search,
+                                category=category,
+                                filter_code=filter_code,
+                                skip_recap_movies=config.skip_recap_movies,
+                                pool=pool,
+                            )
                         return catalog, options
     except Exception as exc:
         print(
@@ -335,6 +334,29 @@ def try_direct_play(
     query, options = parse_inline_target(raw_query)
     if not _should_direct(options):
         return None
+
+    season = options.get("season")
+    episode = options.get("episode")
+    movie_number = options.get("movie_number")
+    if season is not None or episode is not None or movie_number is not None:
+        try:
+            catalog, catalog_options = gather_catalog(
+                raw_query,
+                config,
+                target_season=season,
+                target_kind=kind_from_options(options),
+            )
+            item = resolve_catalog_target(
+                catalog,
+                season=season or catalog_options.get("season"),
+                episode=episode or catalog_options.get("episode"),
+                kind=kind_from_options(options),
+                movie_number=movie_number,
+            )
+            if item is not None:
+                return play_item(item, config, keep=keep, player=player)
+        except Exception:
+            pass
 
     entries = search(query, category=config.category, filter_code=config.filter_code)
     picked = _pick_for_options(entries, query, options, config)
@@ -412,11 +434,6 @@ def run_watch(
     filter_code: str | None = None,
     player: str | None = None,
 ) -> int:
-    entries = search(
-        query,
-        category=category or config.category,
-        filter_code=filter_code or config.filter_code,
-    )
     options = {
         "season": season,
         "episode": episode,
@@ -427,6 +444,39 @@ def run_watch(
         "movie_number": None,
         "direct": True,
     }
+
+    if season is not None or episode is not None or movie or ova or special:
+        raw_parts = [query]
+        if season is not None and episode is not None:
+            raw_parts.append(f"s{season:02d}e{episode:02d}")
+        elif season is not None:
+            raw_parts.append(f"s{season}")
+        raw_query = " ".join(raw_parts)
+        try:
+            catalog, _ = gather_catalog(
+                raw_query,
+                config,
+                category=category,
+                filter_code=filter_code,
+                target_season=season,
+                target_kind=kind_from_options(options),
+            )
+            item = resolve_catalog_target(
+                catalog,
+                season=season,
+                episode=episode,
+                kind=kind_from_options(options),
+            )
+            if item is not None:
+                return play_item(item, config, keep=keep, player=player)
+        except Exception:
+            pass
+
+    entries = search(
+        query,
+        category=category or config.category,
+        filter_code=filter_code or config.filter_code,
+    )
     picked = _pick_for_options(entries, query, options, config)
     if picked is None:
         print("  no torrent found.", file=sys.stderr)
@@ -489,7 +539,13 @@ def interactive_loop(config: AnnieConfig) -> int:
         try:
             query, options = parse_inline_target(raw_query)
             catalog, options = run_search_spinner(
-                query, lambda: gather_catalog(raw_query, config)
+                query,
+                lambda: gather_catalog(
+                    raw_query,
+                    config,
+                    target_season=options.get("season"),
+                    target_kind=kind_from_options(options),
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             print_status(str(exc), kind="err")
@@ -498,6 +554,26 @@ def interactive_loop(config: AnnieConfig) -> int:
         if not catalog:
             print_status("no results", kind="warn")
             continue
+
+        inline_episode = options.get("episode")
+        inline_season = options.get("season")
+        if inline_episode is not None:
+            for section in catalog:
+                if inline_season is not None and section.season not in {
+                    inline_season,
+                    None,
+                }:
+                    continue
+                if section.episodes.get(inline_episode) is not None:
+                    continue
+                fill_section_gaps(
+                    section,
+                    search=search,
+                    category=config.category,
+                    filter_code=config.filter_code,
+                    skip_recap_movies=config.skip_recap_movies,
+                    target_episode=inline_episode,
+                )
 
         picked = pick_catalog(
             catalog,
@@ -510,6 +586,7 @@ def interactive_loop(config: AnnieConfig) -> int:
                 category=config.category,
                 filter_code=config.filter_code,
                 skip_recap_movies=config.skip_recap_movies,
+                target_episode=inline_episode,
             ),
         )
         if picked is None:

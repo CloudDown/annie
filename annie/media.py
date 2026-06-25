@@ -13,6 +13,8 @@ from annie.catalog import (
     is_recap_movie,
     is_spinoff,
     parse_batch_episode_range,
+    resolve_catalog_target,
+    scope_releases_for_target,
 )
 from annie.config import CONFIG_DIR, CONFIG_FILE, AnnieConfig
 from annie.parsing import (
@@ -65,5 +67,7 @@ __all__ = [
     "parse_title",
     "pick_best",
     "rank_entry",
+    "resolve_catalog_target",
+    "scope_releases_for_target",
     "target_match_score",
 ]
