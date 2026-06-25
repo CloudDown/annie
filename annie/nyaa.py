@@ -17,8 +17,9 @@ from annie.net import fetch_text
 
 NYAA_BASE = "https://nyaa.si"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
-NYAA_PARALLEL = 6
-NYAA_SEARCH_PAGES = 3
+NYAA_PARALLEL = 10
+NYAA_SEARCH_PAGES = 2
+NYAA_FAST_PAGES = 1
 DISK_CACHE_DIR = Path.home() / ".cache" / "annie" / "nyaa"
 DISK_CACHE_TTL = 45 * 60
 
@@ -57,7 +58,7 @@ class _TokenBucket:
                 time.sleep((1.0 - self._tokens) / self._rate)
 
 
-_nyaa_limiter = _TokenBucket(rate=4.0, burst=4)
+_nyaa_limiter = _TokenBucket(rate=6.0, burst=8)
 
 
 @dataclass(frozen=True)
@@ -247,11 +248,16 @@ def prefetch(
     if pool is None:
         with ThreadPoolExecutor(max_workers=NYAA_PARALLEL) as local_pool:
             futures = [
-                local_pool.submit(search, q, category=category, filter_code=filter_code)
+                local_pool.submit(
+                    search, q, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES
+                )
                 for q in unique
             ]
             wait(futures)
         return
 
-    futures = [pool.submit(search, q, category=category, filter_code=filter_code) for q in unique]
+    futures = [
+        pool.submit(search, q, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES)
+        for q in unique
+    ]
     wait(futures)

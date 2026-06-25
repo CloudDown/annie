@@ -2,30 +2,41 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import libtorrent as lt
+
 from annie.media import _filename_for_episode_match, match_episode_filename
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}
 MKV_MAGIC = b"\x1a\x45\xdf\xa3"
+MKV_CLUSTER = b"\x1f\x43\xb6\x75"
 CACHE_DIR = Path.home() / ".cache" / "annie"
-DEFAULT_MIN_BUFFER = 16 * 1024 * 1024
-STREAM_MIN_BYTES = 48 * 1024 * 1024  # floor before playback
-STREAM_MIN_PCT = 5  # % of file size
-STREAM_BUFFER_CAP = 96 * 1024 * 1024  # ideal buffer ceiling (~1 min @ 1.5 MiB/s)
-BUFFER_MAX_WAIT_SEC = 10.0  # start playback after this even if ideal buffer not met
-BUFFER_FORCE_BYTES = 24 * 1024 * 1024  # minimum data for forced early start
-MKV_CLUSTER_MAGIC = b"\x1f\x43\xb6\x75"
-MKV_PROBE_BYTES = 4 * 1024 * 1024
+START_MIN_MKV_BYTES = 2 * 1024 * 1024
+MKV_START_CONTIGUOUS_BYTES = 16 * 1024 * 1024
+MKV_FRONTIER_PIECES = 64
+STREAM_MARGIN_BYTES = 12 * 1024 * 1024
+START_MIN_MP4_BYTES = 256 * 1024
+START_MIN_OTHER_BYTES = 4 * 1024 * 1024
+START_TARGET_BYTES = MKV_START_CONTIGUOUS_BYTES
+BUFFER_MAX_WAIT_SEC = 5.0
+BUFFER_NO_PEERS_SEC = 20.0
+BUFFER_ABSOLUTE_SEC = 45.0
+MP4_TAIL_BYTES = 8 * 1024 * 1024
+MPV_RETRY_WAIT_SEC = 15.0
+MKV_HEAD_BYTES = 16 * 1024 * 1024
 
 _player_cache: str | None = None
+_ffprobe_cache: bool | None = None
 
 
 def die(message: str, code: int = 1) -> None:
@@ -56,24 +67,29 @@ def resolve_player(requested: str | None = None) -> str:
     raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
 
 
-def player_command(player: str, path: Path) -> list[str]:
+def player_command(player: str, path: Path, *, ipc_path: Path | None = None) -> list[str]:
     target = str(path.resolve())
     if player == "mpv":
-        return [
+        cmd = [
             "mpv",
             "--force-window=immediate",
             "--keep-open=no",
             "--cache=yes",
             "--cache-secs=30",
-            "--demuxer-readahead-secs=5",
-            "--demuxer-lavf-analyzeduration=1",
-            "--demuxer-lavf-probesize=2097152",
-            "--demuxer-lavf-o=fflags=+genpts+discardcorrupt",
+            "--cache-pause=yes",
+            "--cache-pause-initial=yes",
+            "--demuxer-readahead-secs=3",
+            "--demuxer-max-bytes=32M",
+            "--demuxer-lavf-analyzeduration=5",
+            "--demuxer-lavf-probesize=5242880",
             "--vo=gpu",
             "--gpu-api=opengl",
             "--hwdec=auto-safe",
-            target,
         ]
+        if ipc_path is not None:
+            cmd.append(f"--input-ipc-server={ipc_path}")
+        cmd.append(target)
+        return cmd
     if player == "vlc":
         return [
             "vlc",
@@ -95,23 +111,6 @@ def player_command(player: str, path: Path) -> list[str]:
             target,
         ]
     raise RuntimeError(f"unsupported player: {player}")
-
-
-def launch_player(path: Path, player: str) -> int:
-    return subprocess.run(player_command(player, path)).returncode
-
-
-def min_buffer_for(path: Path) -> int:
-    if path.suffix.lower() == ".mkv":
-        return max(DEFAULT_MIN_BUFFER, 32 * 1024 * 1024)
-    return DEFAULT_MIN_BUFFER
-
-
-def playback_target_bytes(target: Path, file_size: int) -> int:
-    floor = min_buffer_for(target)
-    pct = file_size * STREAM_MIN_PCT // 100
-    ideal = max(floor, pct, STREAM_MIN_BYTES)
-    return min(file_size, ideal, STREAM_BUFFER_CAP)
 
 
 def make_session() -> lt.session:
@@ -138,21 +137,46 @@ def make_session() -> lt.session:
     return session
 
 
-def torrent_cache_dir(info: lt.torrent_info) -> Path:
-    safe_name = re.sub(r"[^\w\-.]+", "_", info.name()).strip("_.")[:56] or "torrent"
+def _info_hash_hex(info: lt.torrent_info) -> str:
     info_hash = info.info_hash()
     try:
-        tag = info_hash.to_bytes().hex()[:10]
+        return info_hash.to_bytes().hex().lower()
     except AttributeError:
-        tag = str(info_hash).replace(":", "")[:10]
+        return str(info_hash).replace(":", "").lower()
+
+
+def torrent_file_cache_path(info_hash: str) -> Path:
+    return CACHE_DIR / "stream" / f"{info_hash}.torrent"
+
+
+def magnet_info_hash(source: str) -> str:
+    match = re.search(r"btih:([0-9a-fA-F]{40})", source, re.I)
+    if not match:
+        die("magnet link missing info hash")
+    return match.group(1).lower()
+
+
+def torrent_cache_dir(info: lt.torrent_info) -> Path:
+    safe_name = re.sub(r"[^\w\-.]+", "_", info.name()).strip("_.")[:56] or "torrent"
+    tag = _info_hash_hex(info)[:10]
     return CACHE_DIR / "stream" / f"{safe_name}-{tag}"
 
 
 def magnet_save_path(source: str) -> Path:
-    match = re.search(r"btih:([0-9a-fA-F]{40})", source, re.I)
-    if not match:
-        die("magnet link missing info hash")
-    return CACHE_DIR / "stream" / match.group(1).lower()
+    return CACHE_DIR / "stream" / magnet_info_hash(source)
+
+
+def _save_torrent_file(info: lt.torrent_info) -> None:
+    path = torrent_file_cache_path(_info_hash_hex(info))
+    if path.is_file():
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        params = lt.add_torrent_params()
+        params.ti = info
+        path.write_bytes(lt.bencode(lt.write_torrent_file(params)))
+    except Exception:
+        pass
 
 
 def is_video(path: str) -> bool:
@@ -162,6 +186,13 @@ def is_video(path: str) -> bool:
 def add_torrent(session: lt.session, source: str, save_path: Path) -> lt.torrent_handle:
     save_path.mkdir(parents=True, exist_ok=True)
     if source.startswith("magnet:?"):
+        info_hash = magnet_info_hash(source)
+        cached = torrent_file_cache_path(info_hash)
+        if cached.is_file():
+            params = lt.add_torrent_params()
+            params.ti = lt.torrent_info(str(cached))
+            params.save_path = str(save_path)
+            return session.add_torrent(params)
         params = lt.parse_magnet_uri(source)
         params.save_path = str(save_path)
         return session.add_torrent(params)
@@ -174,15 +205,17 @@ def add_torrent(session: lt.session, source: str, save_path: Path) -> lt.torrent
     return session.add_torrent(params)
 
 
-def wait_metadata(handle: lt.torrent_handle, timeout: float = 120.0) -> lt.torrent_info:
+def wait_metadata(handle: lt.torrent_handle, timeout: float = 60.0) -> lt.torrent_info:
     deadline = time.monotonic() + timeout
-    delay = 0.05
+    delay = 0.03
     while not handle.status().has_metadata:
         if time.monotonic() > deadline:
             die("metadata timeout")
         time.sleep(delay)
-        delay = min(delay * 1.25, 0.2)
-    return handle.torrent_file()
+        delay = min(delay * 1.2, 0.15)
+    info = handle.torrent_file()
+    _save_torrent_file(info)
+    return info
 
 
 def torrent_files(info: lt.torrent_info) -> list[tuple[int, str, int]]:
@@ -235,6 +268,9 @@ def pick_file(files, index, query, *, episode: int | None = None):
 
 def load_torrent_info(source: str) -> lt.torrent_info:
     if source.startswith("magnet:?"):
+        cached = torrent_file_cache_path(magnet_info_hash(source))
+        if cached.is_file():
+            return lt.torrent_info(str(cached))
         session = make_session()
         handle = add_torrent(session, source, CACHE_DIR / "meta")
         try:
@@ -255,7 +291,57 @@ def list_files(source: str) -> int:
     return 0
 
 
-def configure_stream(handle, file_index, file_count):
+def _file_piece_bounds(handle: lt.torrent_handle, file_index: int) -> tuple[int, int]:
+    info = handle.torrent_file()
+    files = info.files()
+    piece_len = info.piece_length()
+    file_offset = files.file_offset(file_index)
+    file_size = files.file_size(file_index)
+    first_piece = file_offset // piece_len
+    last_piece = (file_offset + file_size - 1) // piece_len
+    return first_piece, last_piece
+
+
+def _frontier_piece(handle: lt.torrent_handle, file_index: int) -> int | None:
+    first_piece, last_piece = _file_piece_bounds(handle, file_index)
+    for piece in range(first_piece, last_piece + 1):
+        if not handle.have_piece(piece):
+            return piece
+    return None
+
+
+def _enforce_sequential_frontier(handle: lt.torrent_handle, file_index: int) -> None:
+    """Download only the next pieces after the contiguous frontier (no holes ahead)."""
+    first_piece, last_piece = _file_piece_bounds(handle, file_index)
+    frontier = _frontier_piece(handle, file_index)
+    if frontier is None:
+        return
+    window_end = min(last_piece, frontier + MKV_FRONTIER_PIECES - 1)
+    for piece in range(first_piece, last_piece + 1):
+        if frontier <= piece <= window_end:
+            handle.piece_priority(piece, 7)
+            try:
+                handle.set_piece_deadline(piece, (piece - frontier) * 15)
+            except AttributeError:
+                pass
+        elif piece > window_end:
+            handle.piece_priority(piece, 0)
+
+
+def _prioritize_file_head(handle: lt.torrent_handle, file_index: int, nbytes: int) -> None:
+    piece_range = _piece_range_for_file_bytes(handle, file_index, 0, nbytes)
+    if piece_range is None:
+        return
+    first_piece, last_piece = piece_range
+    for i, piece in enumerate(range(first_piece, min(first_piece + 32, last_piece + 1))):
+        handle.piece_priority(piece, 7)
+        try:
+            handle.set_piece_deadline(piece, i * 20)
+        except AttributeError:
+            pass
+
+
+def configure_stream(handle, file_index, file_count, *, target: Path | None = None, file_size: int = 0):
     handle.set_sequential_download(True)
     priorities = [0] * file_count
     priorities[file_index] = 7
@@ -264,70 +350,297 @@ def configure_stream(handle, file_index, file_count):
         handle.set_flags(lt.torrent_flags.sequential_download)
     except AttributeError:
         pass
+    _prioritize_file_head(handle, file_index, MKV_HEAD_BYTES)
+    if target is not None and target.suffix.lower() in {".mp4", ".m4v", ".mov"}:
+        _prioritize_mp4_tail(handle, file_index, file_size)
+
+
+def _file_ready(handle: lt.torrent_handle, file_index: int) -> int:
+    progress = handle.file_progress()
+    if file_index >= len(progress):
+        return 0
+    return int(progress[file_index])
+
+
+def _contiguous_file_bytes(handle: lt.torrent_handle, file_index: int) -> int:
+    """Bytes from file offset 0 through the last consecutive complete piece."""
+    info = handle.torrent_file()
+    files = info.files()
+    piece_len = info.piece_length()
+    if piece_len <= 0:
+        return 0
+    file_offset = files.file_offset(file_index)
+    file_size = files.file_size(file_index)
+    first_piece = file_offset // piece_len
+    last_piece = (file_offset + file_size - 1) // piece_len
+    end_byte = 0
+    for piece in range(first_piece, last_piece + 1):
+        if not handle.have_piece(piece):
+            break
+        piece_end = (piece + 1) * piece_len
+        overlap_end = min(piece_end, file_offset + file_size)
+        if overlap_end <= file_offset:
+            continue
+        end_byte = overlap_end - file_offset
+    return end_byte
 
 
 def _has_mkv_header(path: Path) -> bool:
-    try:
-        with path.open("rb") as f:
-            return f.read(4) == MKV_MAGIC
-    except OSError:
-        return False
+    for _ in range(4):
+        try:
+            if not path.exists():
+                time.sleep(0.05)
+                continue
+            with path.open("rb") as f:
+                if f.read(4) == MKV_MAGIC:
+                    return True
+        except OSError:
+            pass
+        time.sleep(0.05)
+    return False
 
 
-def _mkv_has_clusters(path: Path, *, limit: int = MKV_PROBE_BYTES) -> bool:
-    try:
-        size = path.stat().st_size
-        if size < 65536:
+def _piece_range_for_file_bytes(
+    handle: lt.torrent_handle, file_index: int, byte_start: int, byte_end: int
+) -> tuple[int, int] | None:
+    info = handle.torrent_file()
+    files = info.files()
+    piece_len = info.piece_length()
+    if piece_len <= 0:
+        return None
+    file_offset = files.file_offset(file_index)
+    file_size = files.file_size(file_index)
+    start = file_offset + max(0, byte_start)
+    end = file_offset + min(byte_end, file_size) - 1
+    if end < start:
+        return None
+    return start // piece_len, end // piece_len
+
+
+def _pieces_available(handle: lt.torrent_handle, first_piece: int, last_piece: int) -> bool:
+    for piece in range(first_piece, last_piece + 1):
+        if not handle.have_piece(piece):
             return False
+    return True
+
+
+def _file_header_on_disk(handle: lt.torrent_handle, file_index: int, nbytes: int = 65536) -> bool:
+    piece_range = _piece_range_for_file_bytes(handle, file_index, 0, nbytes)
+    if piece_range is None:
+        return False
+    return _pieces_available(handle, piece_range[0], piece_range[1])
+
+
+def _mp4_has_ftyp(path: Path) -> bool:
+    try:
         with path.open("rb") as f:
-            chunk = f.read(min(size, limit))
-        return MKV_CLUSTER_MAGIC in chunk
+            head = f.read(12)
+        return len(head) >= 8 and head[4:8] == b"ftyp"
     except OSError:
         return False
 
 
-def wait_buffer(handle, file_index, target: Path, file_size: int):
-    ideal_bytes = playback_target_bytes(target, file_size)
-    deadline = time.monotonic() + BUFFER_MAX_WAIT_SEC
-    is_mkv = target.suffix.lower() == ".mkv"
-    mkv_playable = not is_mkv
+def _mp4_has_moov_in_bytes(data: bytes) -> bool:
+    return b"moov" in data
+
+
+def _mp4_moov_in_head(path: Path, nbytes: int) -> bool:
+    try:
+        with path.open("rb") as f:
+            data = f.read(max(0, nbytes))
+        return _mp4_has_moov_in_bytes(data)
+    except OSError:
+        return False
+
+
+def _mp4_moov_in_tail(path: Path, file_size: int) -> bool:
+    try:
+        if not path.exists() or file_size < 1024:
+            return False
+        read_len = min(MP4_TAIL_BYTES, file_size)
+        start = max(0, file_size - read_len)
+        with path.open("rb") as f:
+            f.seek(start)
+            data = f.read(read_len)
+        return _mp4_has_moov_in_bytes(data)
+    except OSError:
+        return False
+
+
+def _ffprobe_available() -> bool:
+    global _ffprobe_cache
+    if _ffprobe_cache is None:
+        _ffprobe_cache = shutil.which("ffprobe") is not None
+    return _ffprobe_cache
+
+
+def _probe_with_ffprobe(path: Path) -> bool:
+    if not _ffprobe_available() or not path.exists():
+        return False
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=format_name",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _mkv_has_clusters(path: Path, nbytes: int) -> bool:
+    if nbytes < 1024:
+        return False
+    try:
+        with path.open("rb") as f:
+            data = f.read(nbytes)
+        return MKV_CLUSTER in data
+    except OSError:
+        return False
+
+
+def _mkv_playable(path: Path, contiguous: int) -> bool:
+    if contiguous < MKV_START_CONTIGUOUS_BYTES:
+        return False
+    if not _has_mkv_header(path):
+        return False
+    return _mkv_has_clusters(path, contiguous)
+
+
+def _is_startable(
+    path: Path,
+    ready: int,
+    file_size: int,
+    *,
+    handle: lt.torrent_handle | None = None,
+    file_index: int | None = None,
+) -> bool:
+    ext = path.suffix.lower()
+    if ext == ".mkv":
+        if handle is None or file_index is None:
+            return False
+        contiguous = _contiguous_file_bytes(handle, file_index)
+        return _mkv_playable(path, contiguous)
+    if ext in {".mp4", ".m4v", ".mov"}:
+        if ready < START_MIN_MP4_BYTES or not _mp4_has_ftyp(path):
+            return False
+        if _mp4_moov_in_head(path, min(ready, 32 * 1024 * 1024)):
+            return True
+        if _mp4_moov_in_tail(path, file_size):
+            return True
+        return file_size > 0 and ready >= file_size
+    return ready >= START_MIN_OTHER_BYTES
+
+
+def _prioritize_mp4_tail(handle: lt.torrent_handle, file_index: int, file_size: int) -> None:
+    if file_size < MP4_TAIL_BYTES * 2:
+        return
+    info = handle.torrent_file()
+    files = info.files()
+    offset = files.file_offset(file_index)
+    size = files.file_size(file_index)
+    piece_len = info.piece_length()
+    if piece_len <= 0:
+        return
+    first_piece = offset // piece_len
+    last_piece = (offset + size - 1) // piece_len
+    tail_pieces = max(4, (MP4_TAIL_BYTES + piece_len - 1) // piece_len)
+    for piece in range(max(first_piece, last_piece - tail_pieces + 1), last_piece + 1):
+        handle.piece_priority(piece, 6)
+
+
+def _format_progress(contiguous: int, target_bytes: int, file_size: int, total: int) -> str:
+    pct = min(100, contiguous * 100 // target_bytes) if target_bytes else 0
+    file_pct = total * 100 // file_size if file_size else 0
+    return (
+        f"{contiguous // 1024 // 1024}/{target_bytes // 1024 // 1024} MiB contigu ({pct}%)"
+        f" · fichier {file_pct}%"
+    )
+
+
+def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[int, str]:
+    """Wait until the file is startable or timeout. Returns (ready_bytes, mode)."""
+    started_at = time.monotonic()
+    deadline = started_at + BUFFER_MAX_WAIT_SEC
+    no_peers_deadline = started_at + BUFFER_NO_PEERS_SEC
+    absolute_deadline = started_at + BUFFER_ABSOLUTE_SEC
     last_ready = -1
     stall_ticks = 0
-    forced = False
+    target_bytes = START_TARGET_BYTES
 
-    label = f"buffer (≤{BUFFER_MAX_WAIT_SEC:.0f}s · ideal {ideal_bytes // 1024 // 1024} MiB)"
-    print(f"annie: {label}…", flush=True)
+    print(
+        f"annie: buffer (≤{BUFFER_MAX_WAIT_SEC:.0f}s · cible {target_bytes // 1024 // 1024} MiB)…",
+        flush=True,
+    )
 
     while True:
-        progress = handle.file_progress()
-        downloaded = progress[file_index] if file_index < len(progress) else 0
-        on_disk = target.stat().st_size if target.exists() else 0
-        ready = min(downloaded, on_disk)
-
-        if is_mkv and not mkv_playable and ready >= 65536:
-            if _has_mkv_header(target):
-                mkv_playable = _mkv_has_clusters(target)
-
-        timed_out = time.monotonic() >= deadline
-        ideal_met = ready >= ideal_bytes and mkv_playable
-        forced_met = timed_out and ready >= BUFFER_FORCE_BYTES and mkv_playable
-
-        if ideal_met or forced_met:
-            forced = forced_met and not ideal_met
-            break
-
+        ready = _file_ready(handle, file_index)
+        contiguous = _contiguous_file_bytes(handle, file_index)
+        now = time.monotonic()
         status = handle.status()
-        pct = ready * 100 // ideal_bytes if ideal_bytes else 0
-        progress_text = f"{ready // 1024 // 1024}/{ideal_bytes // 1024 // 1024} MiB ({pct}%)"
+        has_transfer = status.num_peers > 0 or status.download_rate > 0
+        can_start = has_transfer or ready >= int(file_size * 0.98)
+        startable = _is_startable(
+            target, ready, file_size, handle=handle, file_index=file_index
+        )
+
+        soft_timeout = now >= (no_peers_deadline if not has_transfer else deadline)
+        hard_timeout = now >= absolute_deadline
+
+        if startable and can_start and contiguous >= START_TARGET_BYTES:
+            print(f"\nannie: ready ({contiguous // 1024 // 1024} MiB contigu)", flush=True)
+            return contiguous, "ready"
+
+        if soft_timeout and startable and can_start:
+            print(f"\nannie: quick start ({contiguous // 1024 // 1024} MiB contigu)", flush=True)
+            return contiguous, "quick"
+
+        if hard_timeout:
+            if can_start and _is_startable(
+                target, ready, file_size, handle=handle, file_index=file_index
+            ):
+                print(
+                    f"\nannie: forced start ({contiguous // 1024 // 1024} MiB contigu, tentative mpv)",
+                    flush=True,
+                )
+                return contiguous, "forced"
+            die(
+                "buffer timeout — fichier incomplet "
+                f"({contiguous // 1024 // 1024} MiB contigu / "
+                f"{ready // 1024 // 1024} MiB total, en attente de peers ou données)"
+            )
+
+        if status.state == lt.torrent_status.seeding and _is_startable(
+            target, ready, file_size, handle=handle, file_index=file_index
+        ):
+            print(f"\nannie: local file ({contiguous // 1024 // 1024} MiB contigu)", flush=True)
+            return contiguous, "seeding"
+
+        peer_hint = "waiting for peers…" if not has_transfer else f"{status.num_peers} peers"
+        progress_text = _format_progress(contiguous, target_bytes, file_size, ready)
+        probe_hint = ""
+        if (
+            target.suffix.lower() == ".mkv"
+            and contiguous >= START_MIN_MKV_BYTES
+            and not startable
+        ):
+            probe_hint = " · clusters…"
         print(
-            f"\rannie: {progress_text} · {status.num_peers} peers · "
-            f"{status.download_rate / 1024:.0f} KiB/s",
+            f"\rannie: {progress_text} · {peer_hint} · "
+            f"{status.download_rate / 1024:.0f} KiB/s{probe_hint}",
             end="",
             flush=True,
         )
-
-        if status.state == lt.torrent_status.seeding and mkv_playable and ready >= BUFFER_FORCE_BYTES:
-            break
 
         if ready == last_ready:
             stall_ticks += 1
@@ -335,21 +648,200 @@ def wait_buffer(handle, file_index, target: Path, file_size: int):
             stall_ticks = 0
             last_ready = ready
 
+        _enforce_sequential_frontier(handle, file_index)
+
         if status.download_rate > 256 * 1024:
-            time.sleep(0.12)
+            time.sleep(0.08)
         elif stall_ticks > 6:
-            time.sleep(0.35)
-        else:
             time.sleep(0.2)
-    if forced:
-        print(f"\nannie: early start ({ready // 1024 // 1024} MiB buffered)", flush=True)
-    else:
-        print(flush=True)
+        else:
+            time.sleep(0.1)
 
 
-def play(source: str, index: int | None, query: str | None, keep: bool, *, player: str | None = None, episode: int | None = None) -> int:
+def _mpv_ipc_request(ipc_path: Path, command: list) -> object | None:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            sock.connect(str(ipc_path))
+            sock.sendall(json.dumps({"command": command}).encode() + b"\n")
+            chunks: list[bytes] = []
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if b"\n" in chunk:
+                    break
+            if not chunks:
+                return None
+            line = b"".join(chunks).split(b"\n", 1)[0]
+            payload = json.loads(line.decode())
+            if payload.get("error") == "success":
+                return payload.get("data")
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    return None
+
+
+def _estimate_play_byte(time_pos: object, duration: object, file_size: int) -> int:
+    try:
+        pos = float(time_pos)  # type: ignore[arg-type]
+        total = float(duration)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+    if total <= 0 or file_size <= 0:
+        return 0
+    return int(min(file_size, max(0, pos / total * file_size)))
+
+
+def _wait_mpv_ipc(ipc_path: Path, *, timeout_sec: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        if ipc_path.is_socket():
+            return True
+        time.sleep(0.05)
+    return ipc_path.is_socket()
+
+
+def _play_while_downloading(
+    proc: subprocess.Popen,
+    handle: lt.torrent_handle,
+    file_index: int,
+    target: Path,
+    file_size: int,
+    *,
+    ipc_path: Path | None = None,
+) -> int:
+    paused_for_buffer = False
+    ipc_ready = ipc_path is not None and _wait_mpv_ipc(ipc_path)
+
+    while proc.poll() is None:
+        _enforce_sequential_frontier(handle, file_index)
+        contiguous = _contiguous_file_bytes(handle, file_index)
+
+        if ipc_ready and ipc_path is not None:
+            time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
+            duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
+            play_byte = _estimate_play_byte(time_pos, duration, file_size)
+            need_pause = contiguous < play_byte + STREAM_MARGIN_BYTES
+
+            if need_pause and not paused_for_buffer:
+                _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
+                paused_for_buffer = True
+                print("\nannie: pause — attente buffer…", flush=True)
+            elif paused_for_buffer and contiguous >= play_byte + STREAM_MARGIN_BYTES:
+                _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
+                paused_for_buffer = False
+                print("\nannie: reprise", flush=True)
+
+        time.sleep(0.25)
+    return proc.wait()
+
+
+def _wait_mkv_playable(
+    handle: lt.torrent_handle,
+    file_index: int,
+    target: Path,
+    file_size: int,
+    *,
+    max_wait_sec: float,
+) -> int:
+    deadline = time.monotonic() + max_wait_sec
+    contiguous = _contiguous_file_bytes(handle, file_index)
+    while time.monotonic() < deadline:
+        contiguous = _contiguous_file_bytes(handle, file_index)
+        if _mkv_playable(target, contiguous):
+            return contiguous
+        _enforce_sequential_frontier(handle, file_index)
+        time.sleep(0.15)
+    return contiguous
+
+
+def _launch_and_stream(
+    handle: lt.torrent_handle,
+    file_index: int,
+    target: Path,
+    file_size: int,
+    player_name: str,
+    *,
+    retry: bool = True,
+) -> int:
+    wait_startable(handle, file_index, target, file_size)
+    if not target.exists():
+        die(f"file missing: {target}")
+
+    ready = _contiguous_file_bytes(handle, file_index)
+    if target.suffix.lower() == ".mkv":
+        ready = _wait_mkv_playable(
+            handle, file_index, target, file_size, max_wait_sec=8.0
+        )
+        if not _mkv_playable(target, ready):
+            die(
+                "fichier MKV illisible — données insuffisantes "
+                f"({ready // 1024 // 1024} MiB contigu)"
+            )
+
+    ipc_path: Path | None = None
+    if player_name == "mpv":
+        ipc_dir = CACHE_DIR / "ipc"
+        ipc_dir.mkdir(parents=True, exist_ok=True)
+        ipc_path = ipc_dir / f"{os.getpid()}-{int(time.time() * 1000)}.sock"
+        if ipc_path.exists():
+            ipc_path.unlink()
+
+    try:
+        proc = subprocess.Popen(
+            player_command(player_name, target, ipc_path=ipc_path)
+        )
+        code = _play_while_downloading(
+            proc, handle, file_index, target, file_size, ipc_path=ipc_path
+        )
+    finally:
+        if ipc_path is not None and ipc_path.exists():
+            ipc_path.unlink(missing_ok=True)
+
+    if code == 2 and retry:
+        print("annie: mpv n'a pas pu lire le fichier, nouvel essai…", flush=True)
+        ready = _wait_mkv_playable(
+            handle, file_index, target, file_size, max_wait_sec=MPV_RETRY_WAIT_SEC
+        )
+        if target.suffix.lower() == ".mkv" and not _mkv_playable(target, ready):
+            return code
+        ipc_path = None
+        if player_name == "mpv":
+            ipc_dir = CACHE_DIR / "ipc"
+            ipc_dir.mkdir(parents=True, exist_ok=True)
+            ipc_path = ipc_dir / f"{os.getpid()}-{int(time.time() * 1000)}.sock"
+            if ipc_path.exists():
+                ipc_path.unlink()
+        try:
+            proc = subprocess.Popen(
+                player_command(player_name, target, ipc_path=ipc_path)
+            )
+            code = _play_while_downloading(
+                proc, handle, file_index, target, file_size, ipc_path=ipc_path
+            )
+        finally:
+            if ipc_path is not None and ipc_path.exists():
+                ipc_path.unlink(missing_ok=True)
+
+    return code
+
+
+def play(
+    source: str,
+    index: int | None,
+    query: str | None,
+    keep: bool,
+    *,
+    player: str | None = None,
+    episode: int | None = None,
+) -> int:
     session = make_session()
-    player_future = None
+    handle: lt.torrent_handle
+    target: Path
+    player_name: str
+
     with ThreadPoolExecutor(max_workers=1) as pool:
         player_future = pool.submit(resolve_player, player)
 
@@ -367,19 +859,18 @@ def play(source: str, index: int | None, query: str | None, keep: bool, *, playe
 
         files = torrent_files(info)
         file_index, rel_path, file_size = pick_file(files, index, query, episode=episode)
-        configure_stream(handle, file_index, info.files().num_files())
         target = (save_path / rel_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
+        configure_stream(handle, file_index, info.files().num_files(), target=target, file_size=file_size)
         player_name = player_future.result()
         print(f"annie: playing → {target.name} ({player_name})", flush=True)
-        wait_buffer(handle, file_index, target, file_size)
 
-    if not target.is_file():
-        die(f"file missing after download: {target}")
-    try:
-        code = launch_player(target, player_name)
-        if code != 0:
-            print(f"annie: {player_name} code {code}", file=sys.stderr)
-    finally:
-        session.remove_torrent(handle, 0 if keep else 1)
+        code = 1
+        try:
+            code = _launch_and_stream(handle, file_index, target, file_size, player_name)
+            if code != 0:
+                print(f"annie: {player_name} code {code}", file=sys.stderr)
+        finally:
+            session.remove_torrent(handle, 0 if keep else 1)
+
     return code

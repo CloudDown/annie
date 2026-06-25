@@ -17,7 +17,9 @@ except ModuleNotFoundError:
 
 from annie.nyaa import NYAA_PARALLEL, NyaaEntry
 
-MAX_FRANCHISE_QUERIES = 20
+MAX_FRANCHISE_QUERIES = 12
+FRANCHISE_SEARCH_PAGES = 1
+PRIMARY_SEARCH_PAGES = 2
 
 CONFIG_DIR = Path.home() / ".config" / "annie"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
@@ -107,6 +109,7 @@ class MediaSection:
     batch_recommended: bool = False
     expected_episodes: int | None = None
     mal_id: int | None = None
+    nyaa_queries: list[str] = field(default_factory=list)
     episodes: dict[int, ResultItem] = field(default_factory=dict)
     singles: list[ResultItem] = field(default_factory=list)
 
@@ -913,6 +916,23 @@ def apply_batch_episodes(sections: dict[str, MediaSection], batches: list[Result
             upsert_episode(section, item_for_episode(item, episode))
 
 
+def _merge_batches_into_section(section: MediaSection, parts: list[MediaSection]) -> None:
+    """Expand batch torrents from catalog parts into the MAL-aligned section."""
+    seen: set[str] = set()
+    for part in parts:
+        for item in part.singles:
+            if item.parsed.kind != MediaKind.BATCH:
+                continue
+            if item.entry.magnet in seen:
+                continue
+            seen.add(item.entry.magnet)
+            _, episodes = parse_batch_episode_range(item.entry.title)
+            if not episodes:
+                continue
+            for episode in episodes:
+                upsert_episode(section, item_for_episode(item, episode))
+
+
 def _strict_target(
     query: str,
     *,
@@ -1108,7 +1128,7 @@ def _gap_search_queries(release: MalRelease, missing: list[int]) -> list[str]:
             variant = f"{short} {ep:02d}"
             if variant not in queries:
                 queries.append(variant)
-    return queries[:24]
+    return queries[:10]
 
 
 def _fill_missing_episodes(
@@ -1175,6 +1195,85 @@ def _fill_missing_episodes(
     normalize_section_episodes(section, expected)
 
 
+def fill_catalog_gaps(
+    sections: list[MediaSection],
+    *,
+    search,
+    category: str,
+    filter_code: str,
+    skip_recap_movies: bool = False,
+    pool: ThreadPoolExecutor | None = None,
+) -> None:
+    sparse = [
+        section
+        for section in sections
+        if section.expected_episodes
+        and len(section.episodes) < max(1, int(section.expected_episodes * 0.85))
+    ]
+    if not sparse:
+        return
+
+    def _run(executor: ThreadPoolExecutor) -> None:
+        futures = [
+            executor.submit(
+                fill_section_gaps,
+                section,
+                search=search,
+                category=category,
+                filter_code=filter_code,
+                skip_recap_movies=skip_recap_movies,
+                pool=None,
+            )
+            for section in sparse
+        ]
+        for future in as_completed(futures):
+            future.result()
+
+    if pool is None:
+        with ThreadPoolExecutor(max_workers=4) as local_pool:
+            _run(local_pool)
+    else:
+        _run(pool)
+
+
+def fill_section_gaps(
+    section: MediaSection,
+    *,
+    search,
+    category: str,
+    filter_code: str,
+    skip_recap_movies: bool = False,
+    pool: ThreadPoolExecutor | None = None,
+) -> None:
+    expected = section.expected_episodes
+    if not expected or section.kind != MediaKind.EPISODE:
+        return
+    if len(section.episodes) >= max(1, int(expected * 0.85)):
+        return
+    missing = [ep for ep in range(1, expected + 1) if ep not in section.episodes]
+    if not missing:
+        return
+
+    release = MalRelease(
+        mal_id=section.mal_id or 0,
+        label=section.label,
+        kind=section.kind,
+        season=section.season,
+        episode_count=expected,
+        nyaa_queries=section.nyaa_queries or [section.label],
+        sort_key=(section.season or 0, section.label.lower()),
+    )
+    _fill_missing_episodes(
+        release,
+        section,
+        search=search,
+        category=category,
+        filter_code=filter_code,
+        skip_recap_movies=skip_recap_movies,
+        pool=pool,
+    )
+
+
 def build_catalog_from_releases(
     releases: list[MalRelease],
     *,
@@ -1183,6 +1282,7 @@ def build_catalog_from_releases(
     filter_code: str,
     skip_recap_movies: bool = False,
     pool: ThreadPoolExecutor | None = None,
+    fill_gaps: bool = False,
 ) -> list[MediaSection]:
     sections: list[MediaSection] = []
     seen_magnets: set[str] = set()
@@ -1213,8 +1313,9 @@ def build_catalog_from_releases(
                 search,
                 category=category,
                 filter_code=filter_code,
+                pages=PRIMARY_SEARCH_PAGES if index < 2 else FRANCHISE_SEARCH_PAGES,
             ): query
-            for query in unique_queries
+            for index, query in enumerate(unique_queries)
         }
         for future in as_completed(futures):
             query = futures[future]
@@ -1255,16 +1356,18 @@ def build_catalog_from_releases(
         if section is None:
             continue
 
+        _merge_batches_into_section(section, parts)
         normalize_section_episodes(section, release.episode_count)
-        _fill_missing_episodes(
-            release,
-            section,
-            search=search,
-            category=category,
-            filter_code=filter_code,
-            skip_recap_movies=skip_recap_movies,
-            pool=pool,
-        )
+        if fill_gaps:
+            _fill_missing_episodes(
+                release,
+                section,
+                search=search,
+                category=category,
+                filter_code=filter_code,
+                skip_recap_movies=skip_recap_movies,
+                pool=pool,
+            )
 
         section.key = f"mal:{release.mal_id}"
         section.label = release.label
@@ -1272,6 +1375,7 @@ def build_catalog_from_releases(
         section.season = release.season
         section.expected_episodes = release.episode_count
         section.mal_id = release.mal_id
+        section.nyaa_queries = list(release.nyaa_queries)
 
         for item in section.choices():
             seen_magnets.add(item.entry.magnet)

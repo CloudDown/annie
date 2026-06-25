@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from annie.media import MediaKind, MediaSection, ResultItem, minimal_label
 
@@ -508,6 +508,7 @@ def pick_catalog(
     season: int | None = None,
     episode: int | None = None,
     kind: MediaKind | None = None,
+    on_section: Callable[[MediaSection], None] | None = None,
 ) -> tuple[str, ResultItem] | None:
     if not sections:
         return None
@@ -545,6 +546,9 @@ def pick_catalog(
         item = section.episodes.get(episode)
         if item is not None:
             return "enter", item
+
+    if on_section is not None:
+        on_section(section)
 
     return pick_episode(section)
 

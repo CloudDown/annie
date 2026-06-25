@@ -18,7 +18,7 @@ from annie.net import fetch_json
 
 JIKAN_BASE = "https://api.jikan.moe/v4"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
-MAL_PARALLEL = 8
+MAL_PARALLEL = 10
 DISK_CACHE_DIR = Path.home() / ".cache" / "annie" / "jikan"
 DISK_CACHE_TTL = 7 * 24 * 3600
 
@@ -68,7 +68,7 @@ class _TokenBucket:
                 time.sleep((1.0 - self._tokens) / self._rate)
 
 
-_jikan_limiter = _TokenBucket(rate=3.0, burst=3)
+_jikan_limiter = _TokenBucket(rate=4.0, burst=5)
 
 
 @dataclass(frozen=True)
@@ -452,7 +452,7 @@ def nyaa_queries_for(
             if variant.strip() and variant not in queries:
                 queries.append(variant)
 
-    return queries[:8]
+    return queries[:5]
 
 
 def franchise_to_releases(

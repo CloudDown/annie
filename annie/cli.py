@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor
 
 from annie.media import (
     AnnieConfig,
@@ -14,6 +14,8 @@ from annie.media import (
     WatchTarget,
     build_catalog,
     build_catalog_from_releases,
+    fill_catalog_gaps,
+    fill_section_gaps,
     minimal_label,
     pick_best,
     rank_entry,
@@ -184,7 +186,9 @@ def _warm_nyaa(query: str, *, category: str, filter_code: str) -> None:
     if not query:
         return
     try:
-        search(query, category=category, filter_code=filter_code)
+        from annie.nyaa import NYAA_FAST_PAGES
+
+        search(query, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES)
     except Exception:
         pass
 
@@ -195,30 +199,26 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
     filter_code = overrides.get("filter_code") or config.filter_code
 
     try:
-        candidates = search_anime(query)
-        chosen = pick_candidate(candidates, query) if candidates else None
-        if chosen is not None:
-            warm_futures = []
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            candidates_future = pool.submit(search_anime, query)
+            pool.submit(_warm_nyaa, query, category=category, filter_code=filter_code)
 
-            with ThreadPoolExecutor(max_workers=16) as pool:
+            candidates = candidates_future.result()
+            chosen = pick_candidate(candidates, query) if candidates else None
+            if chosen is not None:
                 for warm_q in dict.fromkeys(
                     [
-                        query,
                         chosen.title_english or "",
                         chosen.title,
                         chosen.title_japanese or "",
                     ]
                 ):
                     if warm_q:
-                        warm_futures.append(
-                            pool.submit(_warm_nyaa, warm_q, category=category, filter_code=filter_code)
-                        )
+                        pool.submit(_warm_nyaa, warm_q, category=category, filter_code=filter_code)
 
                 def on_root(root_data: dict) -> None:
                     for hint in relation_nyaa_hints(root_data):
-                        warm_futures.append(
-                            pool.submit(_warm_nyaa, hint, category=category, filter_code=filter_code)
-                        )
+                        pool.submit(_warm_nyaa, hint, category=category, filter_code=filter_code)
 
                 franchise = pool.submit(
                     collect_franchise,
@@ -234,10 +234,10 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                 )
                 if releases:
                     all_queries = [
-                        query
+                        q
                         for release in releases
-                        for query in release.nyaa_queries
-                        if query
+                        for q in release.nyaa_queries
+                        if q
                     ]
                     prefetch(
                         list(dict.fromkeys(all_queries)),
@@ -245,7 +245,6 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                         filter_code=filter_code,
                         pool=pool,
                     )
-                    wait(warm_futures)
                     catalog = build_catalog_from_releases(
                         releases,
                         search=search,
@@ -253,8 +252,17 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                         filter_code=filter_code,
                         skip_recap_movies=config.skip_recap_movies,
                         pool=pool,
+                        fill_gaps=False,
                     )
                     if catalog:
+                        fill_catalog_gaps(
+                            catalog,
+                            search=search,
+                            category=category,
+                            filter_code=filter_code,
+                            skip_recap_movies=config.skip_recap_movies,
+                            pool=pool,
+                        )
                         return catalog, options
     except Exception:
         pass
@@ -483,6 +491,13 @@ def interactive_loop(config: AnnieConfig) -> int:
             season=options.get("season"),
             episode=options.get("episode"),
             kind=kind_from_options(options),
+            on_section=lambda section: fill_section_gaps(
+                section,
+                search=search,
+                category=config.category,
+                filter_code=config.filter_code,
+                skip_recap_movies=config.skip_recap_movies,
+            ),
         )
         if picked is None:
             continue
