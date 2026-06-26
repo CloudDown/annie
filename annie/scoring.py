@@ -59,7 +59,14 @@ def catalog_episode_rank(item: ResultItem) -> tuple:
 def catalog_episode_score(item: ResultItem) -> float:
     """Score scalaire pour affichage / tests."""
     alive, seeds, quality, neg_variant, trusted, match = catalog_episode_pick_rank(item)
-    return float(match * 1000 + seeds * 30 + quality + neg_variant * 500 + trusted * 60 + int(alive) * 100)
+    return float(
+        match * 1000
+        + seeds * 30
+        + quality
+        + neg_variant * 500
+        + trusted * 60
+        + int(alive) * 100
+    )
 
 
 def filter_entry(
@@ -154,7 +161,13 @@ class EpisodeAssessment:
 
     @property
     def strict_ok(self) -> bool:
-        blocked = {"dead", "low_seeders", "low_quality", "directors_cut", "suspect_source"}
+        blocked = {
+            "dead",
+            "low_seeders",
+            "low_quality",
+            "directors_cut",
+            "suspect_source",
+        }
         return not blocked.intersection(self.flags)
 
     @property
@@ -197,7 +210,9 @@ class CatalogQualityReport:
         ) and all(season.relaxed_ok for season in self.seasons)
 
 
-def assess_episode_item(item: ResultItem, *, season: int | None = None) -> EpisodeAssessment:
+def assess_episode_item(
+    item: ResultItem, *, season: int | None = None
+) -> EpisodeAssessment:
     episode = item.parsed.episode
     if episode is None:
         raise ValueError("episode required")

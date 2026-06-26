@@ -76,7 +76,9 @@ def language_for(code: str) -> SubtitleLanguage | None:
 
 
 def build_query(item: ResultItem, *, series_title: str | None = None) -> SubtitleQuery:
-    title = (series_title or item.parsed.display_name or item.parsed.series or "").strip()
+    title = (
+        series_title or item.parsed.display_name or item.parsed.series or ""
+    ).strip()
     kind = "movie" if item.parsed.kind == MediaKind.MOVIE else "tv"
     extra_titles: list[str] = []
     for candidate in (series_title, item.parsed.display_name, item.parsed.series):
@@ -106,8 +108,12 @@ def _resolve_credentials() -> tuple[str, str]:
     from annie.config import AnnieConfig
 
     config = AnnieConfig.load()
-    username = os.environ.get("OPENSUBTITLES_USERNAME", config.opensubtitles_username).strip()
-    password = os.environ.get("OPENSUBTITLES_PASSWORD", config.opensubtitles_password).strip()
+    username = os.environ.get(
+        "OPENSUBTITLES_USERNAME", config.opensubtitles_username
+    ).strip()
+    password = os.environ.get(
+        "OPENSUBTITLES_PASSWORD", config.opensubtitles_password
+    ).strip()
     return username, password
 
 
@@ -144,7 +150,9 @@ def _api_request(
 ) -> dict:
     query = ""
     if params:
-        query = "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+        query = "?" + urllib.parse.urlencode(
+            {k: v for k, v in params.items() if v is not None}
+        )
     url = f"{API_BASE}{path}{query}"
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = urllib.request.Request(
@@ -220,7 +228,9 @@ def parse_api_results(payload: dict) -> list[SubtitleCandidate]:
     return candidates
 
 
-def subtitle_title_variants(title: str, *, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
+def subtitle_title_variants(
+    title: str, *, extra: tuple[str, ...] = ()
+) -> tuple[str, ...]:
     """Variantes de titre pour OpenSubtitles (indexation souvent plus courte que Nyaa)."""
     from annie.mal import _title_shortcuts
 
@@ -239,7 +249,11 @@ def subtitle_title_variants(title: str, *, extra: tuple[str, ...] = ()) -> tuple
 
     def colon_re_zero(value: str) -> None:
         parts = value.split()
-        if len(parts) >= 2 and parts[0].casefold() == "re" and parts[1].casefold().startswith("zero"):
+        if (
+            len(parts) >= 2
+            and parts[0].casefold() == "re"
+            and parts[1].casefold().startswith("zero")
+        ):
             add(f"{parts[0]}:{parts[1]}")
 
     add(title)
@@ -351,7 +365,9 @@ def _cache_file_path(query: SubtitleQuery, lang_code: str, suffix: str) -> Path:
 
 
 def _subtitle_basename(query: SubtitleQuery, lang_code: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", query.title.casefold()).strip("-")[:48] or "subtitle"
+    slug = (
+        re.sub(r"[^a-z0-9]+", "-", query.title.casefold()).strip("-")[:48] or "subtitle"
+    )
     parts = [slug]
     if query.season is not None:
         parts.append(f"s{query.season:02d}")

@@ -48,9 +48,6 @@ from annie.ui import (
 MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
 
 
-
-
-
 def parse_inline_target(query: str) -> tuple[str, dict]:
     lowered = query.strip()
     options = {
@@ -121,15 +118,15 @@ def kind_from_options(options: dict) -> MediaKind | None:
     return None
 
 
-
-
 MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
 
 
 def _print_entry(entry, parsed, *, highlight: bool = False) -> None:
     prefix = stylize(">>", C.GREEN, C.BOLD) if highlight else "  "
     label = minimal_label(parsed)
-    seeds = stylize(f"[{entry.seeders:>4}S]", C.GREEN if entry.seeders >= 50 else C.YELLOW)
+    seeds = stylize(
+        f"[{entry.seeders:>4}S]", C.GREEN if entry.seeders >= 50 else C.YELLOW
+    )
     print(
         f"{prefix} {seeds} {stylize(entry.size, C.MUTED):>8}  "
         f"{stylize(label, C.GREEN):28}  {entry.title}"
@@ -198,7 +195,9 @@ def _warm_nyaa(query: str, *, category: str, filter_code: str) -> None:
         pass
 
 
-def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[list, dict]:
+def gather_catalog(
+    raw_query: str, config: AnnieConfig, **overrides
+) -> tuple[list, dict]:
     query, options = parse_inline_target(raw_query)
     category = overrides.get("category") or config.category
     filter_code = overrides.get("filter_code") or config.filter_code
@@ -222,11 +221,18 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                     ]
                 ):
                     if warm_q:
-                        pool.submit(_warm_nyaa, warm_q, category=category, filter_code=filter_code)
+                        pool.submit(
+                            _warm_nyaa,
+                            warm_q,
+                            category=category,
+                            filter_code=filter_code,
+                        )
 
                 def on_root(root_data: dict) -> None:
                     for hint in relation_nyaa_hints(root_data):
-                        pool.submit(_warm_nyaa, hint, category=category, filter_code=filter_code)
+                        pool.submit(
+                            _warm_nyaa, hint, category=category, filter_code=filter_code
+                        )
 
                 franchise = pool.submit(
                     collect_franchise,
@@ -268,7 +274,9 @@ def gather_catalog(raw_query: str, config: AnnieConfig, **overrides) -> tuple[li
                         return catalog, options
     except Exception as exc:
         print(
-            stylize(f"annie: catalogue MAL indisponible ({exc}), fallback Nyaa", C.MUTED),
+            stylize(
+                f"annie: catalogue MAL indisponible ({exc}), fallback Nyaa", C.MUTED
+            ),
             file=sys.stderr,
             flush=True,
         )
@@ -438,7 +446,15 @@ def run_search(
         print("  no results.")
         return 1
 
-    kind = MediaKind.MOVIE if movie else MediaKind.OVA if ova else MediaKind.SPECIAL if special else None
+    kind = (
+        MediaKind.MOVIE
+        if movie
+        else MediaKind.OVA
+        if ova
+        else MediaKind.SPECIAL
+        if special
+        else None
+    )
     target = WatchTarget(query=query, season=season, episode=episode, kind=kind)
 
     if season is not None or episode is not None or movie or ova or special:
@@ -703,7 +719,9 @@ def _add_target_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_nyaa_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-c", "--category", default=None, help="Nyaa category")
-    parser.add_argument("-f", "--filter", default=None, dest="filter", help="Nyaa filter")
+    parser.add_argument(
+        "-f", "--filter", default=None, dest="filter", help="Nyaa filter"
+    )
 
 
 def main() -> int:
@@ -770,8 +788,10 @@ def main() -> int:
             filter_code=args.filter,
         )
     if args.command == "watch":
-        if args.season is None and args.episode is None and not any(
-            [args.movie, args.ova, args.special, args.batch]
+        if (
+            args.season is None
+            and args.episode is None
+            and not any([args.movie, args.ova, args.special, args.batch])
         ):
             print("  usage: watch <anime> -s 2 -e 5", file=sys.stderr)
             return 1

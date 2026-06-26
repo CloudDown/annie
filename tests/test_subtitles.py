@@ -86,8 +86,14 @@ class SubtitleFilenameTests(unittest.TestCase):
             patch("annie.subtitles._auth_token", return_value=None),
             patch("annie.subtitles._read_cache", return_value=None),
             patch("annie.subtitles._write_cache"),
-            patch("annie.subtitles.search", return_value=[SubtitleCandidate(file_id=99, release="x", downloads=1)]),
-            patch("annie.subtitles._fetch_download_link", return_value="https://example.com/sub.zip"),
+            patch(
+                "annie.subtitles.search",
+                return_value=[SubtitleCandidate(file_id=99, release="x", downloads=1)],
+            ),
+            patch(
+                "annie.subtitles._fetch_download_link",
+                return_value="https://example.com/sub.zip",
+            ),
             patch("annie.subtitles.fetch_bytes", return_value=fake_zip.getvalue()),
             patch("annie.subtitles.CACHE_DIR", cache_dir),
         ):
@@ -104,7 +110,9 @@ class SubtitleFilenameTests(unittest.TestCase):
 
 class SearchFallbackTests(unittest.TestCase):
     def test_search_tries_title_variants(self) -> None:
-        query = SubtitleQuery(title="Re Zero kara Hajimeru Isekai Seikatsu", season=1, episode=8)
+        query = SubtitleQuery(
+            title="Re Zero kara Hajimeru Isekai Seikatsu", season=1, episode=8
+        )
         lang = language_for("fr")
         self.assertIsNotNone(lang)
 
@@ -112,7 +120,9 @@ class SearchFallbackTests(unittest.TestCase):
             self.assertEqual(method, "GET")
             if params and params.get("query") == "Re:Zero":
                 return json.loads(
-                    (FIXTURES_DIR / "opensubtitles_api_search.json").read_text(encoding="utf-8")
+                    (FIXTURES_DIR / "opensubtitles_api_search.json").read_text(
+                        encoding="utf-8"
+                    )
                 )
             return {"data": []}
 

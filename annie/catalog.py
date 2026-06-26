@@ -11,15 +11,20 @@ from annie.parsing import (
     SPINOFF_PATTERNS,
     VIDEO_EXT_RE,
     is_manga,
-    match_episode_filename,
     minimal_label,
     normalize,
     parse_season,
-    parse_title,
     strip_release_group,
 )
 from annie.scoring import catalog_episode_pick_rank, rank_entry, target_match_score
-from annie.types import MalRelease, MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
+from annie.types import (
+    MalRelease,
+    MediaKind,
+    MediaSection,
+    ParsedTitle,
+    ResultItem,
+    WatchTarget,
+)
 
 MAX_FRANCHISE_QUERIES = 20
 FRANCHISE_SEARCH_PAGES = 2
@@ -227,7 +232,9 @@ def upsert_episode(section: MediaSection, item: ResultItem) -> None:
         section.singles.append(item)
         return
     current = section.episodes.get(episode)
-    if current is None or catalog_episode_pick_rank(item) > catalog_episode_pick_rank(current):
+    if current is None or catalog_episode_pick_rank(item) > catalog_episode_pick_rank(
+        current
+    ):
         section.episodes[episode] = item
 
 
@@ -336,7 +343,9 @@ def upsert_movie(section: MediaSection, item: ResultItem) -> None:
     section.singles.append(item)
 
 
-def apply_batch_episodes(sections: dict[str, MediaSection], batches: list[ResultItem]) -> None:
+def apply_batch_episodes(
+    sections: dict[str, MediaSection], batches: list[ResultItem]
+) -> None:
     for item in batches:
         season, episodes = parse_batch_episode_range(item.entry.title)
         if not episodes:
@@ -374,8 +383,10 @@ def _merge_batches_into_section(
             batch_season, episodes = parse_batch_episode_range(item.entry.title)
             if not episodes:
                 continue
-            effective_season = batch_season if batch_season is not None else infer_batch_season(
-                item.entry.title, item.parsed.season
+            effective_season = (
+                batch_season
+                if batch_season is not None
+                else infer_batch_season(item.entry.title, item.parsed.season)
             )
             if section.season is not None and effective_season != section.season:
                 continue
@@ -404,8 +415,12 @@ def _strict_target(
 
 
 def _annotate_batch_hints(sections: list[MediaSection]) -> None:
-    episode_sections = [section for section in sections if section.kind == MediaKind.EPISODE]
-    batch_sections = [section for section in sections if section.kind == MediaKind.BATCH]
+    episode_sections = [
+        section for section in sections if section.kind == MediaKind.EPISODE
+    ]
+    batch_sections = [
+        section for section in sections if section.kind == MediaKind.BATCH
+    ]
     for section in episode_sections:
         if not section.has_episodes:
             continue
@@ -442,7 +457,10 @@ def build_catalog(
         if ranked is None:
             continue
         score, parsed = ranked
-        if strict_target is not None and target_match_score(parsed, strict_target, match_queries=queries) is None:
+        if (
+            strict_target is not None
+            and target_match_score(parsed, strict_target, match_queries=queries) is None
+        ):
             continue
 
         item = ResultItem(entry=entry, parsed=parsed, score=score)
@@ -470,7 +488,9 @@ def build_catalog(
 
     apply_batch_episodes(sections, batches)
 
-    result = [section for section in sections.values() if section.episodes or section.singles]
+    result = [
+        section for section in sections.values() if section.episodes or section.singles
+    ]
     result.sort(key=section_sort_key)
     _annotate_batch_hints(result)
     return result
@@ -535,7 +555,9 @@ def _pick_section_for_release(
         return _empty_section_for_release(release)
 
     if release.kind == MediaKind.MOVIE:
-        movie_sections = [section for section in parts if section.kind == MediaKind.MOVIE]
+        movie_sections = [
+            section for section in parts if section.kind == MediaKind.MOVIE
+        ]
         if movie_sections:
             return max(movie_sections, key=lambda section: len(section.singles))
         singles = [section for section in parts if section.singles]
@@ -758,7 +780,9 @@ def fill_catalog_gaps(
                 filter_code=filter_code,
                 skip_recap_movies=skip_recap_movies,
                 pool=None,
-                absolute_offset=offsets.get(section.mal_id or 0, section.absolute_episode_offset),
+                absolute_offset=offsets.get(
+                    section.mal_id or 0, section.absolute_episode_offset
+                ),
             )
             for section in sparse
         ]
@@ -806,9 +830,7 @@ def fill_section_gaps(
         sort_key=(section.season or 0, section.label.lower()),
     )
     offset = (
-        section.absolute_episode_offset
-        if absolute_offset is None
-        else absolute_offset
+        section.absolute_episode_offset if absolute_offset is None else absolute_offset
     )
     _fill_missing_episodes(
         release,
@@ -935,11 +957,15 @@ def build_catalog_from_releases(
                 pool=pool,
                 absolute_offset=absolute_offset,
             )
-            _filter_section_for_release(section, release, absolute_offset=absolute_offset)
+            _filter_section_for_release(
+                section, release, absolute_offset=absolute_offset
+            )
 
         section.key = f"mal:{release.mal_id}"
         section.label = release.label
-        section.kind = release.kind if release.kind != MediaKind.UNKNOWN else section.kind
+        section.kind = (
+            release.kind if release.kind != MediaKind.UNKNOWN else section.kind
+        )
         section.season = release.season
         section.expected_episodes = release.episode_count
         section.mal_id = release.mal_id

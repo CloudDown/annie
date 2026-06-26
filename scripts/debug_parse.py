@@ -27,7 +27,9 @@ def show_title(title: str) -> None:
     print(f"  quality  = {parsed.resolution or parsed.quality}")
     print(f"  label    = {minimal_label(parsed)}")
     if batch_eps:
-        print(f"  batch    = S{batch_season:02d} E{batch_eps[0]:02d}–E{batch_eps[-1]:02d} ({len(batch_eps)} ep)")
+        print(
+            f"  batch    = S{batch_season:02d} E{batch_eps[0]:02d}–E{batch_eps[-1]:02d} ({len(batch_eps)} ep)"
+        )
     print()
 
 
@@ -44,7 +46,9 @@ def main(argv: list[str] | None = None) -> int:
 
     titles: list[str] = list(args.titles)
     if args.fixture:
-        data = json.loads((FIXTURES / f"{args.fixture}.json").read_text(encoding="utf-8"))
+        data = json.loads(
+            (FIXTURES / f"{args.fixture}.json").read_text(encoding="utf-8")
+        )
         titles.extend(row["title"] for row in data)
 
     if not titles:

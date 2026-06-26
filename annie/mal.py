@@ -38,7 +38,9 @@ FRANCHISE_EXPAND_RELATIONS = frozenset(
         "Full story",
     }
 )
-SPLIT_COUR_RE = re.compile(r"\b(?:part\s*2|2(?:nd)?\s*cour|second\s*cour|cour\s*2)\b", re.I)
+SPLIT_COUR_RE = re.compile(
+    r"\b(?:part\s*2|2(?:nd)?\s*cour|second\s*cour|cour\s*2)\b", re.I
+)
 SPINOFF_MARKERS_RE = re.compile(
     r"\b(nikki|diaries|picture drama|mini anime|chibi|break time|petit)\b",
     re.I,
@@ -93,7 +95,9 @@ class TopAnimeEntry:
     anime_type: str
 
 
-def fetch_top_anime(limit: int = 100, *, cache_path: Path | None = None) -> list[TopAnimeEntry]:
+def fetch_top_anime(
+    limit: int = 100, *, cache_path: Path | None = None
+) -> list[TopAnimeEntry]:
     """Top anime MAL via Jikan (/top/anime), 25 entrées par page."""
     if limit < 1:
         return []
@@ -175,6 +179,7 @@ def fetch_top_anime(limit: int = 100, *, cache_path: Path | None = None) -> list
         time.sleep(1.0)
 
     return entries[:limit]
+
 
 def _disk_cache_path(path: str) -> Path:
     safe = path.strip("/").replace("/", "_")
@@ -286,7 +291,9 @@ def _ingest_franchise_node(
                 queued.add(child_id)
 
 
-def _parse_anime(data: dict, *, is_recap: bool = False, via_relation: str = "Root") -> MalAnime:
+def _parse_anime(
+    data: dict, *, is_recap: bool = False, via_relation: str = "Root"
+) -> MalAnime:
     aired = data.get("aired") or {}
     return MalAnime(
         mal_id=int(data["mal_id"]),
@@ -320,7 +327,11 @@ def fetch_anime_full(mal_id: int) -> MalAnime:
 def _score_candidate(anime: MalAnime, query: str) -> int:
     tokens = [token for token in normalize(query).split() if len(token) > 1]
     title = anime.title_english or anime.title or ""
-    haystacks = [normalize(anime.title), normalize(anime.title_english or ""), normalize(anime.title_japanese or "")]
+    haystacks = [
+        normalize(anime.title),
+        normalize(anime.title_english or ""),
+        normalize(anime.title_japanese or ""),
+    ]
     score = 0
     for token in tokens:
         if any(token in hay for hay in haystacks):
@@ -415,7 +426,9 @@ def collect_franchise(
     except Exception:
         return []
 
-    def _run_batch(batch: list[tuple[int, bool, str]], executor: ThreadPoolExecutor) -> None:
+    def _run_batch(
+        batch: list[tuple[int, bool, str]], executor: ThreadPoolExecutor
+    ) -> None:
         if not batch:
             return
         cached: list[tuple[dict, bool, str]] = []
@@ -444,7 +457,11 @@ def collect_franchise(
             return
 
         futures: dict[Future[dict], tuple[int, bool, str]] = {
-            executor.submit(_fetch_anime_full, mal_id): (mal_id, from_recap, via_relation)
+            executor.submit(_fetch_anime_full, mal_id): (
+                mal_id,
+                from_recap,
+                via_relation,
+            )
             for mal_id, from_recap, via_relation in pending
         }
         for future in as_completed(futures):
@@ -611,7 +628,11 @@ def franchise_to_releases(
         queries: list[str] = []
         for value in (
             *nyaa_queries_for(anime, user_query=user_query, season=index),
-            *(nyaa_queries_for(part2, user_query=user_query, season=index) if part2 else ()),
+            *(
+                nyaa_queries_for(part2, user_query=user_query, season=index)
+                if part2
+                else ()
+            ),
             root_query,
         ):
             if value and value not in queries:

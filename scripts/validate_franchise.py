@@ -190,9 +190,13 @@ def _franchise_search_query(
         [node for node in franchise if node.type == "TV" and not node.is_recap],
         key=lambda node: node.aired_from or "9999",
     )
-    base = tv_nodes[0] if tv_nodes else next(
-        (node for node in franchise if node.mal_id == mal_id),
-        franchise[0],
+    base = (
+        tv_nodes[0]
+        if tv_nodes
+        else next(
+            (node for node in franchise if node.mal_id == mal_id),
+            franchise[0],
+        )
     )
     candidates = nyaa_queries_for(base, user_query=stripped)
     picked = _pick_nyaa_query(candidates)
@@ -213,7 +217,9 @@ def _mal_from_id(mal_id: int, fallback_query: str) -> tuple[str, list, str, str]
     return title, tv, root.type, search_query
 
 
-def _mal_tv_from_id(mal_id: int, query: str) -> tuple[str, list[tuple[str, int | None]], str, str] | None:
+def _mal_tv_from_id(
+    mal_id: int, query: str
+) -> tuple[str, list[tuple[str, int | None]], str, str] | None:
     data = _mal_from_id(mal_id, query)
     if data is None:
         return None
@@ -221,7 +227,9 @@ def _mal_tv_from_id(mal_id: int, query: str) -> tuple[str, list[tuple[str, int |
     return title, tv, anime_type, search_query
 
 
-def _mal_tv_from_query(query: str) -> tuple[str, list[tuple[str, int | None]], str, str] | None:
+def _mal_tv_from_query(
+    query: str,
+) -> tuple[str, list[tuple[str, int | None]], str, str] | None:
     candidates = search_anime(query)
     chosen = pick_candidate(candidates, query) if candidates else None
     if chosen is None:
@@ -277,14 +285,27 @@ def _score_tv(
             1
             for s in report.seasons
             for ep in s.episodes
-            if any(f in ep.flags for f in ("directors_cut", "new_edition", "suspect_source"))
+            if any(
+                f in ep.flags
+                for f in ("directors_cut", "new_edition", "suspect_source")
+            )
         ),
     }
 
-    return strict_ok, relaxed_ok, quality_strict, quality_relaxed, issues, nyaa_detail, stats
+    return (
+        strict_ok,
+        relaxed_ok,
+        quality_strict,
+        quality_relaxed,
+        issues,
+        nyaa_detail,
+        stats,
+    )
 
 
-def _gather_with_retry(query: str, config: AnnieConfig, *, attempts: int = 3) -> tuple[list, dict]:
+def _gather_with_retry(
+    query: str, config: AnnieConfig, *, attempts: int = 3
+) -> tuple[list, dict]:
     last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
@@ -359,13 +380,21 @@ def validate_target(target: ValidateTarget, config: AnnieConfig) -> dict:
         result["elapsed"] = round(time.monotonic() - t0, 1)
         return result
 
-    nyaa_tv = [s for s in catalog if s.kind == MediaKind.EPISODE and s.season is not None]
+    nyaa_tv = [
+        s for s in catalog if s.kind == MediaKind.EPISODE and s.season is not None
+    ]
     nyaa_tv.sort(key=lambda s: s.season or 0)
     result["nyaa_seasons"] = len(nyaa_tv)
 
-    strict_ok, relaxed_ok, quality_strict, quality_relaxed, issues, nyaa_detail, stats = _score_tv(
-        mal_tv, nyaa_tv
-    )
+    (
+        strict_ok,
+        relaxed_ok,
+        quality_strict,
+        quality_relaxed,
+        issues,
+        nyaa_detail,
+        stats,
+    ) = _score_tv(mal_tv, nyaa_tv)
     result["strict_ok"] = strict_ok
     result["relaxed_ok"] = relaxed_ok
     result["quality_strict_ok"] = quality_strict
@@ -418,7 +447,9 @@ def _save_results(path: Path, results: list[dict], *, meta: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         **meta,
-        "results": sorted(results, key=lambda r: (r.get("rank") or 99999, r.get("query", ""))),
+        "results": sorted(
+            results, key=lambda r: (r.get("rank") or 99999, r.get("query", ""))
+        ),
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -440,13 +471,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=100,
         help="Liste intégrée: nombre max d'anime (défaut: 100)",
     )
-    parser.add_argument("--workers", type=int, default=2, help="Parallélisme (défaut: 2)")
+    parser.add_argument(
+        "--workers", type=int, default=2, help="Parallélisme (défaut: 2)"
+    )
     parser.add_argument(
         "--output",
         type=Path,
         help="Fichier JSON de sortie (défaut: scripts/results/…)",
     )
-    parser.add_argument("--resume", action="store_true", help="Reprendre depuis --output")
+    parser.add_argument(
+        "--resume", action="store_true", help="Reprendre depuis --output"
+    )
     parser.add_argument("--json", action="store_true", help="Résumé JSON sur stdout")
     return parser.parse_args(argv)
 
@@ -460,9 +495,7 @@ def main(argv: list[str] | None = None) -> int:
 
     done: dict[int | str, dict] = _load_resume(output_path) if args.resume else {}
     pending = [
-        target
-        for target in targets
-        if (target.mal_id or target.query) not in done
+        target for target in targets if (target.mal_id or target.query) not in done
     ]
 
     config = AnnieConfig()
@@ -476,16 +509,21 @@ def main(argv: list[str] | None = None) -> int:
 
     completed = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(validate_target, target, config): target for target in pending}
+        futures = {
+            pool.submit(validate_target, target, config): target for target in pending
+        }
         for future in as_completed(futures):
-            target = futures[future]
             result = future.result()
             results.append(result)
             completed += 1
 
-            status = "STRICT" if result.get("strict_ok") else (
-                "RELAXED" if result.get("relaxed_ok") else (
-                    "QUALITY" if result.get("quality_relaxed_ok") else "FAIL"
+            status = (
+                "STRICT"
+                if result.get("strict_ok")
+                else (
+                    "RELAXED"
+                    if result.get("relaxed_ok")
+                    else ("QUALITY" if result.get("quality_relaxed_ok") else "FAIL")
                 )
             )
             title = result.get("title", "?")

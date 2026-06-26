@@ -19,7 +19,9 @@ def load_fixture(name: str) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def nyaa_entry(title: str, *, seeders: int = 50, magnet: str | None = None) -> NyaaEntry:
+def nyaa_entry(
+    title: str, *, seeders: int = 50, magnet: str | None = None
+) -> NyaaEntry:
     return NyaaEntry(
         title=title,
         magnet=magnet or f"magnet:?xt=urn:btih:{abs(hash(title)) % 10**16:016x}",

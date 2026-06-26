@@ -75,11 +75,15 @@ class NyaaEntry:
 
 def _disk_cache_path(cache_key: tuple[str, ...]) -> Path:
     query, category, filter_code, pages = cache_key
-    safe = re.sub(r"[^\w\-.]+", "_", f"{query}-{category}-{filter_code}-p{pages}").strip("_")[:120]
+    safe = re.sub(
+        r"[^\w\-.]+", "_", f"{query}-{category}-{filter_code}-p{pages}"
+    ).strip("_")[:120]
     return DISK_CACHE_DIR / f"{safe}.json"
 
 
-def _cache_key(query: str, category: str, filter_code: str, pages: int) -> tuple[str, str, str, str]:
+def _cache_key(
+    query: str, category: str, filter_code: str, pages: int
+) -> tuple[str, str, str, str]:
     return (query, category, filter_code, str(pages))
 
 
@@ -118,7 +122,9 @@ def _cached_entries(cache_key: tuple[str, ...]) -> list[NyaaEntry] | None:
     return None
 
 
-def _store_entries(cache_key: tuple[str, ...], entries: list[NyaaEntry]) -> list[NyaaEntry]:
+def _store_entries(
+    cache_key: tuple[str, ...], entries: list[NyaaEntry]
+) -> list[NyaaEntry]:
     _search_cache[cache_key] = (time.monotonic(), entries)
     write_json(_disk_cache_path(cache_key), _entries_to_json(entries))
     return entries
@@ -243,7 +249,9 @@ def prefetch(
     unique = [
         q
         for q in dict.fromkeys(queries)
-        if q and _cached_entries(_cache_key(q, category, filter_code, NYAA_SEARCH_PAGES)) is None
+        if q
+        and _cached_entries(_cache_key(q, category, filter_code, NYAA_SEARCH_PAGES))
+        is None
     ]
     if not unique:
         return
@@ -252,7 +260,11 @@ def prefetch(
         with ThreadPoolExecutor(max_workers=NYAA_PARALLEL) as local_pool:
             futures = [
                 local_pool.submit(
-                    search, q, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES
+                    search,
+                    q,
+                    category=category,
+                    filter_code=filter_code,
+                    pages=NYAA_FAST_PAGES,
                 )
                 for q in unique
             ]
@@ -260,7 +272,9 @@ def prefetch(
         return
 
     futures = [
-        pool.submit(search, q, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES)
+        pool.submit(
+            search, q, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES
+        )
         for q in unique
     ]
     wait(futures)

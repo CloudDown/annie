@@ -111,7 +111,9 @@ class CatalogQualityFixtureTests(unittest.TestCase):
         nyaa_tv = [s for s in sections if s.kind == MediaKind.EPISODE]
         report = assess_tv_catalog(mal_tv, nyaa_tv)
 
-        for season_str, episodes in self.fixture.get("quality_expectations", {}).items():
+        for season_str, episodes in self.fixture.get(
+            "quality_expectations", {}
+        ).items():
             season = int(season_str)
             section = next(s for s in report.seasons if s.season == season)
             for ep_str, rules in episodes.items():

@@ -10,7 +10,6 @@ from annie.subtitles import (
     SubtitleQuery,
     build_query,
     language_for,
-    probe_search,
     search,
     subtitle_title_variants,
 )
@@ -31,7 +30,9 @@ class SubtitleFixtureVariantTests(unittest.TestCase):
         for case in load_fixture("subtitle_queries.json"):
             with self.subTest(case=case["id"]):
                 query = _query_from_case(case)
-                variants = subtitle_title_variants(query.title, extra=query.extra_titles)
+                variants = subtitle_title_variants(
+                    query.title, extra=query.extra_titles
+                )
                 lowered = {value.casefold() for value in variants}
                 for expected in case.get("variants_contain", []):
                     self.assertIn(
@@ -44,7 +45,9 @@ class SubtitleFixtureVariantTests(unittest.TestCase):
 class SubtitleFixtureSearchTests(unittest.TestCase):
     def test_search_uses_first_matching_variant(self) -> None:
         case = next(
-            item for item in load_fixture("subtitle_queries.json") if item["id"] == "re-zero-s01e08-subsplease"
+            item
+            for item in load_fixture("subtitle_queries.json")
+            if item["id"] == "re-zero-s01e08-subsplease"
         )
         query = _query_from_case(case)
         lang = language_for("fr")

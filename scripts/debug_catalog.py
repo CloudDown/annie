@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bootstrap import FIXTURES, print  # noqa: E402
+from _bootstrap import print  # noqa: E402
 
 from annie.catalog import build_catalog, build_catalog_from_releases
 from annie.media import AnnieConfig

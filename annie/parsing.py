@@ -5,14 +5,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from annie.types import MediaKind, ParsedTitle
+from annie.types import MediaKind, ParsedTitle, WatchTarget
+
 
 def normalize(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^\w\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
-import re
 
 RESOLUTION_SCORES = (
     (re.compile(r"\b2160p\b|\b4k\b", re.I), 45),
@@ -70,7 +70,6 @@ def quality_score(title: str, release_group: str | None) -> int:
         score += 2
     return score
 
-import re
 
 MANGA_KEYWORDS = (
     re.compile(r"\bmanga\b", re.I),
@@ -122,9 +121,14 @@ def is_manga(title: str, release_group: str | None = None) -> bool:
     if volume_match and not re.search(r"\bS\d{1,2}E\d{1,3}\b", title, re.I):
         if not re.search(r"[-–—]\s*\d{1,2}(?:v\d+)?(?:\s|\[|\(|$)", title):
             return True
-    if release_group and release_group.lower() in MANGA_SCAN_GROUPS and MANGA_DIGITAL_RE.search(title):
+    if (
+        release_group
+        and release_group.lower() in MANGA_SCAN_GROUPS
+        and MANGA_DIGITAL_RE.search(title)
+    ):
         return True
     return False
+
 
 RELEASE_GROUP_RE = re.compile(r"^\[([^\]]+)\]\s*")
 TECH_BRACKET_RE = re.compile(
@@ -190,8 +194,6 @@ def strip_release_group(title: str) -> tuple[str | None, str]:
     if not match:
         return None, title
     return match.group(1), title[match.end() :].strip()
-
-
 
 
 def matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
@@ -262,7 +264,9 @@ def series_key(body: str, display_name: str) -> str:
     return normalize(display_name or body)
 
 
-def detect_kind(body: str, season: int | None, episode: int | None, arc: str | None) -> MediaKind:
+def detect_kind(
+    body: str, season: int | None, episode: int | None, arc: str | None
+) -> MediaKind:
     if matches_any(MOVIE_PATTERNS, body):
         return MediaKind.MOVIE
     if matches_any(BATCH_PATTERNS, body):
@@ -362,9 +366,6 @@ def parse_title(title: str) -> ParsedTitle:
         arc=arc,
     )
 
-import re
-from pathlib import Path
-
 
 INVALID_CHARS = re.compile(r'[<>:"/\\|?*]')
 
@@ -417,9 +418,6 @@ def minimal_filename(parsed: ParsedTitle, source_name: str | None = None) -> str
     if ext not in {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}:
         ext = ".mkv"
     return f"{minimal_label(parsed)}{ext}"
-
-import re
-
 
 
 def query_tokens(query: str) -> list[str]:
@@ -519,9 +517,6 @@ def same_section(a: ParsedTitle, b: ParsedTitle) -> bool:
         return _resolved_season(a) == _resolved_season(b)
     return True
 
-import math
-
-
 
 CRC_TAG_RE = re.compile(r"\[[0-9A-Fa-f]{8,16}\]")
 _NON_EPISODE_FILE_RE = re.compile(
@@ -543,7 +538,11 @@ def _contradicts_season(stem: str, season: int) -> bool:
             return True
     if season == 1 and re.search(r"\bR2\b", stem, re.I):
         return True
-    if season == 2 and re.search(r"\bR1\b", stem, re.I) and not re.search(r"\bR2\b", stem, re.I):
+    if (
+        season == 2
+        and re.search(r"\bR1\b", stem, re.I)
+        and not re.search(r"\bR2\b", stem, re.I)
+    ):
         return True
     return False
 
@@ -560,7 +559,9 @@ def _match_dash_episode(stem: str, episode: int) -> bool:
     return any(re.search(pattern, stem, re.I) for pattern in patterns)
 
 
-def match_episode_filename(name: str, episode: int, *, season: int | None = None) -> bool:
+def match_episode_filename(
+    name: str, episode: int, *, season: int | None = None
+) -> bool:
     """Match episode (and optional season) in fansub filenames, ignoring CRC/hash tags."""
     stem = _filename_for_episode_match(name)
     if _NON_EPISODE_FILE_RE.search(stem):
@@ -590,4 +591,3 @@ def episode_file_query(episode: int, *, season: int | None = None) -> str:
     if season is not None:
         return rf"[Ss]0?{season}[Ee]0?{episode}\b"
     return rf"(?:[Ss]\d+[Ee]0?{episode}\b|[Ee]0?{episode}\b|[\s\-_]0?{episode}(?:v\d+)?(?=\.mkv|\.mp4))"
-

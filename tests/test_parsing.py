@@ -41,17 +41,23 @@ def _item(title: str, **parsed_kw) -> ResultItem:
 
 class ParseTitleTests(unittest.TestCase):
     def test_single_episode_not_batch(self) -> None:
-        p = parse_title("[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season - 05 [1080p]")
+        p = parse_title(
+            "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season - 05 [1080p]"
+        )
         self.assertEqual(p.season, 2)
         self.assertEqual(p.episode, 5)
 
     def test_dash_episode_defaults_season_one(self) -> None:
-        p = parse_title("[HorribleSubs] Re Zero kara Hajimeru Isekai Seikatsu - 15 [1080p].mkv")
+        p = parse_title(
+            "[HorribleSubs] Re Zero kara Hajimeru Isekai Seikatsu - 15 [1080p].mkv"
+        )
         self.assertEqual(p.season, 1)
         self.assertEqual(p.episode, 15)
 
     def test_absolute_episode_no_default_season(self) -> None:
-        p = parse_title("[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 42 (720p).mkv")
+        p = parse_title(
+            "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 42 (720p).mkv"
+        )
         self.assertIsNone(p.season)
         self.assertEqual(p.episode, 42)
 
@@ -69,7 +75,9 @@ class ParseTitleTests(unittest.TestCase):
 
 class BatchRangeTests(unittest.TestCase):
     def test_second_season_batch(self) -> None:
-        title = "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]"
+        title = (
+            "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]"
+        )
         season, eps = parse_batch_episode_range(title)
         self.assertEqual(season, 2)
         self.assertEqual(eps, list(range(1, 14)))
@@ -123,9 +131,7 @@ class EpisodeBelongsTests(unittest.TestCase):
             sort_key=(2, "season 02"),
         )
         item = _item("[SubsPlease] Re Zero - 42 (720p).mkv")
-        self.assertTrue(
-            _episode_belongs_to_release(item, s2, absolute_offset=25)
-        )
+        self.assertTrue(_episode_belongs_to_release(item, s2, absolute_offset=25))
 
 
 class FranchiseOffsetTests(unittest.TestCase):

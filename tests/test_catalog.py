@@ -37,7 +37,9 @@ class ReZeroCatalogFixtureTests(unittest.TestCase):
                 self.assertTrue(is_spinoff(title), msg=title)
 
     def test_s2_batch_not_parsed_as_s1_range(self) -> None:
-        title = "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]"
+        title = (
+            "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]"
+        )
         season, eps = parse_batch_episode_range(title)
         self.assertEqual(season, 2)
         self.assertEqual(eps, list(range(1, 14)))
@@ -63,7 +65,9 @@ class ReZeroCatalogFixtureTests(unittest.TestCase):
             for ep in rules["must_have"]:
                 self.assertIn(ep, section.episodes, msg=f"S{season:02d} E{ep}")
             for ep in rules.get("must_not_have", []):
-                self.assertNotIn(ep, section.episodes, msg=f"S{season:02d} pollue E{ep}")
+                self.assertNotIn(
+                    ep, section.episodes, msg=f"S{season:02d} pollue E{ep}"
+                )
 
     def test_s1_ep15_is_not_from_s2_release(self) -> None:
         def fake_search(query: str, **kwargs):
@@ -117,7 +121,6 @@ class ScopeReleasesTests(unittest.TestCase):
 
 class ResolveCatalogTargetTests(unittest.TestCase):
     def test_finds_episode_in_section(self) -> None:
-        section = mal_release(mal_id=1, season=1, episode_count=25)
         from annie.types import MediaSection
 
         media = MediaSection(
@@ -141,7 +144,9 @@ class BuildCatalogSmokeTests(unittest.TestCase):
     def test_groups_episodes_by_season(self) -> None:
         entries = entries_from_fixture(load_fixture("catalog_re_zero.json"))
         catalog = build_catalog(entries, "re zero")
-        episode_sections = [s for s in catalog if s.kind == MediaKind.EPISODE and s.season]
+        episode_sections = [
+            s for s in catalog if s.kind == MediaKind.EPISODE and s.season
+        ]
         self.assertGreaterEqual(len(episode_sections), 2)
 
 

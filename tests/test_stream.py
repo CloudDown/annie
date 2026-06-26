@@ -22,9 +22,21 @@ if HAS_LT:
 class PickFileTests(unittest.TestCase):
     def test_picks_subsplease_batch_episode(self) -> None:
         files = [
-            (0, "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 07 (1080p) [ABCD1234].mkv", 500_000_000),
-            (1, "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [ABCD1234].mkv", 500_000_000),
-            (2, "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 09 (1080p) [ABCD1234].mkv", 500_000_000),
+            (
+                0,
+                "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 07 (1080p) [ABCD1234].mkv",
+                500_000_000,
+            ),
+            (
+                1,
+                "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [ABCD1234].mkv",
+                500_000_000,
+            ),
+            (
+                2,
+                "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 09 (1080p) [ABCD1234].mkv",
+                500_000_000,
+            ),
         ]
         picked = pick_file(files, None, None, episode=8, season=1)
         self.assertEqual(picked[0], 1)

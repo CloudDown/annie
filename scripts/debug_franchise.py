@@ -14,7 +14,12 @@ from _bootstrap import print  # noqa: E402
 
 from annie.cli import gather_catalog
 from annie.media import AnnieConfig, MediaKind
-from annie.mal import collect_franchise, franchise_to_releases, pick_candidate, search_anime
+from annie.mal import (
+    collect_franchise,
+    franchise_to_releases,
+    pick_candidate,
+    search_anime,
+)
 
 
 def diagnose(query: str, config: AnnieConfig) -> dict:
@@ -35,13 +40,14 @@ def diagnose(query: str, config: AnnieConfig) -> dict:
     releases = franchise_to_releases(franchise, root_id=chosen.mal_id, user_query=query)
     tv = [r for r in releases if r.kind == MediaKind.EPISODE]
     report["mal_seasons"] = [
-        {"label": r.label, "season": r.season, "episodes": r.episode_count}
-        for r in tv
+        {"label": r.label, "season": r.season, "episodes": r.episode_count} for r in tv
     ]
 
     catalog, options = gather_catalog(query, config)
     report["inline_options"] = options
-    nyaa_tv = [s for s in catalog if s.kind == MediaKind.EPISODE and s.season is not None]
+    nyaa_tv = [
+        s for s in catalog if s.kind == MediaKind.EPISODE and s.season is not None
+    ]
     nyaa_tv.sort(key=lambda s: s.season or 0)
     report["nyaa_seasons"] = []
     for section in nyaa_tv:
@@ -62,8 +68,7 @@ def diagnose(query: str, config: AnnieConfig) -> dict:
                 "offset": section.absolute_episode_offset,
                 "missing": missing[:20],
                 "sample_titles": [
-                    section.episodes[ep].entry.title[:100]
-                    for ep in eps[:3]
+                    section.episodes[ep].entry.title[:100] for ep in eps[:3]
                 ],
             }
         )
@@ -102,7 +107,9 @@ def main(argv: list[str] | None = None) -> int:
     print("\nCatalogue Annie:")
     for row in report.get("nyaa_seasons", []):
         miss = row["missing"]
-        miss_hint = f"  manque: {miss[:8]}{'…' if len(miss) > 8 else ''}" if miss else ""
+        miss_hint = (
+            f"  manque: {miss[:8]}{'…' if len(miss) > 8 else ''}" if miss else ""
+        )
         print(
             f"  S{row['season']:02d}  {row['found']}/{row['expected']} ep  "
             f"offset={row['offset']}{miss_hint}"

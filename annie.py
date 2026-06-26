@@ -15,7 +15,7 @@ if VENV_PYTHON.exists() and Path(sys.executable).resolve() != VENV_PYTHON.resolv
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from annie.cli import main
+from annie.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())

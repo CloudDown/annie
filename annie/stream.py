@@ -299,7 +299,9 @@ def human_size(num: int) -> str:
     return f"{size:.1f} GiB"
 
 
-def pick_file(files, index, query, *, episode: int | None = None, season: int | None = None):
+def pick_file(
+    files, index, query, *, episode: int | None = None, season: int | None = None
+):
     if not files:
         die("no video files in torrent")
     if index is not None:
@@ -314,21 +316,32 @@ def pick_file(files, index, query, *, episode: int | None = None, season: int | 
         if len(matches) == 1:
             return matches[0]
         if matches:
-            die(" multiple files match:\n" + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches))
+            die(
+                " multiple files match:\n"
+                + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches)
+            )
         die(f"no file matches episode {episode}")
     if query:
         pattern = re.compile(query, re.I)
         matches = [
-            f for f in files if pattern.search(_filename_for_episode_match(Path(f[1]).name))
+            f
+            for f in files
+            if pattern.search(_filename_for_episode_match(Path(f[1]).name))
         ]
         if len(matches) == 1:
             return matches[0]
         if matches:
-            die(" multiple files match:\n" + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches))
+            die(
+                " multiple files match:\n"
+                + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches)
+            )
         die(f"no file matches « {query} »")
     if len(files) == 1:
         return files[0]
-    die(" multiple files — use -n:\n" + "\n".join(f"  -n {i} {Path(n).name}" for i, n, _ in files))
+    die(
+        " multiple files — use -n:\n"
+        + "\n".join(f"  -n {i} {Path(n).name}" for i, n, _ in files)
+    )
 
 
 def load_torrent_info(source: str) -> lt.torrent_info:
@@ -393,12 +406,16 @@ def _enforce_sequential_frontier(handle: lt.torrent_handle, file_index: int) -> 
             handle.piece_priority(piece, 0)
 
 
-def _prioritize_file_head(handle: lt.torrent_handle, file_index: int, nbytes: int) -> None:
+def _prioritize_file_head(
+    handle: lt.torrent_handle, file_index: int, nbytes: int
+) -> None:
     piece_range = _piece_range_for_file_bytes(handle, file_index, 0, nbytes)
     if piece_range is None:
         return
     first_piece, last_piece = piece_range
-    for i, piece in enumerate(range(first_piece, min(first_piece + 32, last_piece + 1))):
+    for i, piece in enumerate(
+        range(first_piece, min(first_piece + 32, last_piece + 1))
+    ):
         handle.piece_priority(piece, 7)
         try:
             handle.set_piece_deadline(piece, i * 20)
@@ -406,7 +423,9 @@ def _prioritize_file_head(handle: lt.torrent_handle, file_index: int, nbytes: in
             pass
 
 
-def configure_stream(handle, file_index, file_count, *, target: Path | None = None, file_size: int = 0):
+def configure_stream(
+    handle, file_index, file_count, *, target: Path | None = None, file_size: int = 0
+):
     handle.set_sequential_download(True)
     priorities = [0] * file_count
     priorities[file_index] = 7
@@ -482,14 +501,18 @@ def _piece_range_for_file_bytes(
     return start // piece_len, end // piece_len
 
 
-def _pieces_available(handle: lt.torrent_handle, first_piece: int, last_piece: int) -> bool:
+def _pieces_available(
+    handle: lt.torrent_handle, first_piece: int, last_piece: int
+) -> bool:
     for piece in range(first_piece, last_piece + 1):
         if not handle.have_piece(piece):
             return False
     return True
 
 
-def _file_header_on_disk(handle: lt.torrent_handle, file_index: int, nbytes: int = 65536) -> bool:
+def _file_header_on_disk(
+    handle: lt.torrent_handle, file_index: int, nbytes: int = 65536
+) -> bool:
     piece_range = _piece_range_for_file_bytes(handle, file_index, 0, nbytes)
     if piece_range is None:
         return False
@@ -607,7 +630,9 @@ def _is_startable(
     return ready >= START_MIN_OTHER_BYTES
 
 
-def _prioritize_mp4_tail(handle: lt.torrent_handle, file_index: int, file_size: int) -> None:
+def _prioritize_mp4_tail(
+    handle: lt.torrent_handle, file_index: int, file_size: int
+) -> None:
     if file_size < MP4_TAIL_BYTES * 2:
         return
     info = handle.torrent_file()
@@ -650,9 +675,7 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         hard_timeout = now >= absolute_deadline
 
         if startable and can_start and contiguous >= START_TARGET_BYTES:
-            display.finish(
-                f"annie: ready ({contiguous // 1024 // 1024} MiB contigu)"
-            )
+            display.finish(f"annie: ready ({contiguous // 1024 // 1024} MiB contigu)")
             return contiguous, "ready"
 
         if soft_timeout and startable and can_start:
@@ -684,7 +707,9 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
             )
             return contiguous, "seeding"
 
-        peer_hint = "en attente de peers…" if not has_transfer else f"{status.num_peers} peers"
+        peer_hint = (
+            "en attente de peers…" if not has_transfer else f"{status.num_peers} peers"
+        )
         probe_hint = ""
         if (
             target.suffix.lower() == ".mkv"
@@ -965,7 +990,13 @@ def play(
         )
         target = (save_path / rel_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
-        configure_stream(handle, file_index, info.files().num_files(), target=target, file_size=file_size)
+        configure_stream(
+            handle,
+            file_index,
+            info.files().num_files(),
+            target=target,
+            file_size=file_size,
+        )
         player_name = player_future.result()
         sub_file: Path | None = None
         if sub_future is not None:

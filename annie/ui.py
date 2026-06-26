@@ -82,7 +82,9 @@ def format_buffer_lines(
     file_pct = ready * 100 // file_size if file_size else 0
     bar_cont = stylize(progress_bar(cont_pct), C.GREEN)
     bar_file = stylize(progress_bar(file_pct), C.PALE_PINK)
-    rate_part = stylize(f"{download_kib:.0f} KiB/s", C.GREEN) if download_kib > 0 else ""
+    rate_part = (
+        stylize(f"{download_kib:.0f} KiB/s", C.GREEN) if download_kib > 0 else ""
+    )
     hint = stylize(extra_hint, C.MUTED) if extra_hint else ""
     if rate_part:
         meta = f"{stylize(peer_hint, C.MUTED)} · {rate_part}{hint}"
@@ -149,17 +151,17 @@ BANNER_ART = [
 
 
 HELP = f"""
-{stylize('Navigation', C.PALE_PINK, C.BOLD)}
-  {stylize('①', C.PALE_PINK)} season / movie / ova
-  {stylize('②', C.PALE_PINK)} episode (best torrent)
-  {stylize('Enter', C.GREEN)} stream · {stylize('Ctrl-O', C.CYAN)} magnet · {stylize('Esc', C.YELLOW)} back
+{stylize("Navigation", C.PALE_PINK, C.BOLD)}
+  {stylize("①", C.PALE_PINK)} season / movie / ova
+  {stylize("②", C.PALE_PINK)} episode (best torrent)
+  {stylize("Enter", C.GREEN)} stream · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("Esc", C.YELLOW)} back
 
-{stylize('Shortcuts', C.PALE_PINK, C.BOLD)}
+{stylize("Shortcuts", C.PALE_PINK, C.BOLD)}
   frieren s2e10        stream directly
   frieren s2           pick episode in S2
   frieren movie 3        movie #3
 
-{stylize('Commands', C.PALE_PINK, C.BOLD)}
+{stylize("Commands", C.PALE_PINK, C.BOLD)}
   help · quit
 """
 
@@ -303,7 +305,10 @@ def _preview_window() -> str:
 
 def _list_item_label(item: ResultItem) -> str:
     parsed = item.parsed
-    if parsed.episode is not None and parsed.kind in {MediaKind.EPISODE, MediaKind.BATCH}:
+    if parsed.episode is not None and parsed.kind in {
+        MediaKind.EPISODE,
+        MediaKind.BATCH,
+    }:
         return f"{parsed.episode:02d}"
     return _clip(minimal_label(parsed), 36)
 
@@ -360,7 +365,9 @@ def format_preview_item(item: ResultItem) -> str:
 def format_preview_section(section: MediaSection) -> str:
     lines = [stylize(section.label, C.LIST, C.BOLD)]
     if section.expected_episodes:
-        lines.append(stylize(f"{section.kind.value} · {section.expected_episodes} ep", C.META))
+        lines.append(
+            stylize(f"{section.kind.value} · {section.expected_episodes} ep", C.META)
+        )
     else:
         lines.append(stylize(section.kind.value, C.META))
     if section.batch_recommended:
@@ -709,7 +716,9 @@ def copy_magnet(magnet: str) -> bool:
         subprocess.run(["wl-copy", magnet], check=False)
         return True
     if shutil.which("xclip"):
-        subprocess.run(["xclip", "-selection", "clipboard"], input=magnet, text=True, check=False)
+        subprocess.run(
+            ["xclip", "-selection", "clipboard"], input=magnet, text=True, check=False
+        )
         return True
     return False
 

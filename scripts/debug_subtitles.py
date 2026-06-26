@@ -38,7 +38,11 @@ def _print_variants(query: SubtitleQuery) -> None:
     print(f"primary : {query.title}")
     if query.extra_titles:
         print(f"extra   : {', '.join(query.extra_titles)}")
-    print(f"target  : S{query.season or '?'}E{query.episode:02d}" if query.episode is not None else f"target  : S{query.season or '?'}E?")
+    print(
+        f"target  : S{query.season or '?'}E{query.episode:02d}"
+        if query.episode is not None
+        else f"target  : S{query.season or '?'}E?"
+    )
     print("variantes:")
     for index, title in enumerate(variants, start=1):
         print(f"  {index:2}. {title}")
@@ -82,7 +86,8 @@ def _run_fixture(*, live: bool, failures_only: bool, lang_filter: str | None) ->
         variants = subtitle_title_variants(query.title, extra=query.extra_titles)
         lowered = {value.casefold() for value in variants}
         variant_ok = all(
-            expected.casefold() in lowered for expected in case.get("variants_contain", [])
+            expected.casefold() in lowered
+            for expected in case.get("variants_contain", [])
         )
 
         if not live:
@@ -140,7 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Debug sous-titres OpenSubtitles (variantes offline, probe API live)"
     )
-    parser.add_argument("query", nargs="?", help="Titre utilisateur ou requête (ex. re zero)")
+    parser.add_argument(
+        "query", nargs="?", help="Titre utilisateur ou requête (ex. re zero)"
+    )
     parser.add_argument(
         "--nyaa",
         help="Titre Nyaa complet pour build_query (ex. '[SubsPlease] Re Zero - 08 ...')",
