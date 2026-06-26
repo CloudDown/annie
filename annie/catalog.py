@@ -20,7 +20,7 @@ from annie.parsing import (
     parse_title,
     strip_release_group,
 )
-from annie.scoring import rank_entry, target_match_score
+from annie.scoring import catalog_episode_rank, rank_entry, target_match_score
 from annie.types import MalRelease, MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
 
 MAX_FRANCHISE_QUERIES = 20
@@ -231,7 +231,7 @@ def upsert_episode(section: MediaSection, item: ResultItem) -> None:
         section.singles.append(item)
         return
     current = section.episodes.get(episode)
-    if current is None or item.score > current.score:
+    if current is None or catalog_episode_rank(item) > catalog_episode_rank(current):
         section.episodes[episode] = item
 
 

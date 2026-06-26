@@ -203,6 +203,7 @@ VIDEO_EXT_RE = re.compile(r"\.(?:mkv|mp4|avi|webm|m4v|mov)\b", re.I)
 HASH_BRACKET_RE = re.compile(r"\[[0-9A-Fa-f]{6,}\]")
 SEASON_EP_RE = re.compile(r"\bS(?P<season>\d{1,2})E(?P<episode>\d{1,3})\b", re.I)
 ORDINAL_SEASON_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s+Season", re.I)
+ORDINAL_DASH_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s*[-–—]", re.I)
 SEASON_WORD_RE = re.compile(r"\bSeason\s*(?P<season>\d+)\b", re.I)
 SEASON_SHORT_RE = re.compile(r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})(?!E\d)", re.I)
 PART_RE = re.compile(r"\bPart\s*(?P<season>\d+)\b", re.I)
@@ -234,6 +235,7 @@ def matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
 def parse_season(body: str) -> int | None:
     for pattern in (
         ORDINAL_SEASON_RE,
+        ORDINAL_DASH_RE,
         SEASON_WORD_RE,
         PART_RE,
         COUR_RE,

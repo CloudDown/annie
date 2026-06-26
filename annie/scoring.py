@@ -12,7 +12,29 @@ from annie.parsing import (
     parse_title,
     target_match_score,
 )
-from annie.types import MediaKind, ParsedTitle, WatchTarget
+from annie.types import MediaKind, ParsedTitle, ResultItem, WatchTarget
+
+_VARIANT_PENALTY_RE = (
+    (re.compile(r"director'?s?\s*cut", re.I), 4_000),
+    (re.compile(r"\bnew\s+edition\b", re.I), 2_500),
+)
+
+def catalog_episode_rank(item: ResultItem) -> tuple[int, int, float]:
+    """Clé de tri pour upsert_episode : seeders d'abord, puis confiance/titre."""
+    penalty = 0.0
+    for pattern, value in _VARIANT_PENALTY_RE:
+        if pattern.search(item.entry.title):
+            penalty += value
+    title = item.score - penalty
+    trusted = 1 if item.entry.trusted else 0
+    return (item.entry.seeders, trusted, title)
+
+
+def catalog_episode_score(item: ResultItem) -> float:
+    """Score scalaire legacy (tests / affichage)."""
+    seeds, trusted, title = catalog_episode_rank(item)
+    return title + seeds * 30 + trusted * 60
+
 
 def rank_entry(
     entry: NyaaEntry,

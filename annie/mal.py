@@ -518,6 +518,17 @@ def _title_shortcuts(title: str) -> list[str]:
     return shortcuts
 
 
+def _franchise_short_query(user_query: str, anime: MalAnime) -> str:
+    if user_query.strip():
+        return user_query.strip()
+    title = (anime.title_english or anime.title or "").strip()
+    if ": " in title:
+        return title.split(": ", 1)[0].strip()
+    if " - " in title:
+        return title.split(" - ", 1)[0].strip()
+    return title
+
+
 def nyaa_queries_for(
     anime: MalAnime,
     *,
@@ -530,21 +541,15 @@ def nyaa_queries_for(
 
     season_variants: list[str] = []
     if season is not None:
-        short_sources: list[str] = []
-        if user_query.strip():
-            short_sources.append(user_query.strip())
-        for value in (anime.title_english, anime.title):
-            if value:
-                short_sources.append(value.split(":", 1)[0].strip())
-        seen_variants: set[str] = set()
-        for base in short_sources:
-            short = base.split(":", 1)[0].strip()
-            if not short:
-                continue
+        short = _franchise_short_query(user_query, anime)
+        if short:
             for variant in (f"{short} S{season:02d}", f"{short} Season {season:02d}"):
-                if variant.strip() and variant not in seen_variants:
-                    seen_variants.add(variant)
+                if variant not in season_variants:
                     season_variants.append(variant)
+            if anime.episodes and anime.episodes <= 52:
+                batch_variant = f"{short} batch"
+                if batch_variant not in season_variants:
+                    season_variants.append(batch_variant)
 
     for value in (anime.title_english, anime.title, anime.title_japanese):
         if not value:
@@ -561,7 +566,7 @@ def nyaa_queries_for(
             queries.insert(insert_at, variant)
             insert_at += 1
 
-    return queries[:8]
+    return queries[:10]
 
 
 def franchise_to_releases(

@@ -59,6 +59,13 @@ class ParseTitleTests(unittest.TestCase):
         title = "[Pn8] Re:PETIT -Starting Life in Another World From PETIT- S01E14"
         self.assertTrue(is_spinoff(title))
 
+    def test_ordinal_dash_season(self) -> None:
+        p = parse_title(
+            "[AsukaRaws] Re Zero kara Hajimeru Isekai Seikatsu 4th - 08 (74) (WEB-DL 1280x720)"
+        )
+        self.assertEqual(p.season, 4)
+        self.assertEqual(p.episode, 8)
+
 
 class BatchRangeTests(unittest.TestCase):
     def test_second_season_batch(self) -> None:

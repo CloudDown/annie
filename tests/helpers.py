@@ -60,4 +60,16 @@ def mal_release(
 
 
 def entries_from_fixture(fixture: dict) -> list[NyaaEntry]:
-    return [nyaa_entry(title) for title in fixture.get("entries", [])]
+    entries: list[NyaaEntry] = []
+    for row in fixture.get("entries", []):
+        if isinstance(row, str):
+            entries.append(nyaa_entry(row))
+            continue
+        entries.append(
+            nyaa_entry(
+                row["title"],
+                seeders=row.get("seeders", 50),
+                magnet=row.get("magnet"),
+            )
+        )
+    return entries

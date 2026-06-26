@@ -19,7 +19,7 @@ python scripts/debug_parse.py --fixture parse_titles
 | `debug_match.py` | Non | Teste `match_episode_filename` (batch SubsPlease, etc.) |
 | `debug_catalog.py` | Optionnel | Catalogue offline via `tests/fixtures/catalog_re_zero.json` |
 | `debug_franchise.py` | Oui | Rapport détaillé MAL ↔ catalogue pour **un** anime |
-| `validate_franchise.py` | Oui | Validation en masse (100 anime par défaut) |
+| `validate_franchise.py` | Oui | Couverture MAL + **seeders/qualité** par épisode (100 anime par défaut) |
 
 ## Exemples
 
@@ -44,5 +44,8 @@ python scripts/validate_franchise.py --limit 10
 - `parse_titles.json` — titres Nyaa + résultat attendu du parsing
 - `match_filenames.json` — noms de fichiers torrent + épisode cible
 - `catalog_re_zero.json` — entrées simulées + attentes par saison (régression Re:Zero)
+- `catalog_quality_re_zero.json` — S1E8 : batch seedé vs Director's Cut (seeders + qualité)
 
 Ajouter un cas dans la fixture puis lancer `make test` ou le script `--fixture` associé.
+
+`validate_franchise.py` signale aussi les épisodes à faible seed (&lt;10), basse qualité (&lt;720p) ou variantes (Director's Cut).

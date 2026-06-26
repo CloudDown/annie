@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import ROOT, print  # noqa: E402
 
 from annie.cli import gather_catalog
+from annie.episode_quality import assess_tv_catalog
 from annie.mal import (
     TopAnimeEntry,
     collect_franchise,
@@ -160,7 +161,31 @@ def _query_for_top(entry: TopAnimeEntry) -> str:
     return (entry.title_english or entry.title).strip()
 
 
-def _franchise_search_query(franchise, mal_id: int) -> str:
+def _pick_nyaa_query(candidates: list[str]) -> str:
+    cleaned = [query.strip() for query in candidates if len(query.strip()) >= 3]
+    if not cleaned:
+        return ""
+    return min(
+        cleaned,
+        key=lambda text: (
+            10 if len(text.split()) == 1 else 0,
+            5 if len(text) > 48 else 0,
+            len(text.split()),
+            len(text),
+        ),
+    )
+
+
+def _franchise_search_query(
+    franchise,
+    mal_id: int,
+    *,
+    user_query: str = "",
+) -> str:
+    stripped = user_query.strip()
+    if stripped and len(stripped.split()) <= 4 and len(stripped) <= 40:
+        return stripped
+
     tv_nodes = sorted(
         [node for node in franchise if node.type == "TV" and not node.is_recap],
         key=lambda node: node.aired_from or "9999",
@@ -169,11 +194,11 @@ def _franchise_search_query(franchise, mal_id: int) -> str:
         (node for node in franchise if node.mal_id == mal_id),
         franchise[0],
     )
-    candidates = nyaa_queries_for(base, user_query="")
-    cleaned = [query.strip() for query in candidates if len(query.strip()) >= 3]
-    if not cleaned:
-        return base.title_english or base.title
-    return min(cleaned, key=lambda text: (len(text.split()), len(text)))
+    candidates = nyaa_queries_for(base, user_query=stripped)
+    picked = _pick_nyaa_query(candidates)
+    if picked:
+        return picked
+    return base.title_english or base.title
 
 
 def _mal_from_id(mal_id: int, fallback_query: str) -> tuple[str, list, str, str] | None:
@@ -181,7 +206,7 @@ def _mal_from_id(mal_id: int, fallback_query: str) -> tuple[str, list, str, str]
     if not franchise:
         return None
     root = next((node for node in franchise if node.mal_id == mal_id), franchise[0])
-    search_query = _franchise_search_query(franchise, mal_id)
+    search_query = _franchise_search_query(franchise, mal_id, user_query=fallback_query)
     releases = franchise_to_releases(franchise, root_id=mal_id, user_query=search_query)
     tv = [(r.label, r.episode_count) for r in releases if r.kind == MediaKind.EPISODE]
     title = root.title_english or root.title
@@ -207,44 +232,56 @@ def _mal_tv_from_query(query: str) -> tuple[str, list[tuple[str, int | None]], s
 def _score_tv(
     mal_tv: list[tuple[str, int | None]],
     nyaa_tv: list,
-) -> tuple[bool, bool, list[str], list[tuple[str, int, int | None]]]:
-    issues: list[str] = []
-    nyaa_detail: list[tuple[str, int, int | None]] = []
+) -> tuple[bool, bool, bool, bool, list[str], list[tuple[str, int, int | None]], dict]:
+    report = assess_tv_catalog(mal_tv, nyaa_tv, coverage_relaxed=COVERAGE_RELAXED)
+    issues = list(report.issues)
+    for season in report.seasons:
+        issues.extend(season.issues)
+
+    nyaa_detail = [(s.label, s.found, s.expected) for s in report.seasons]
     mal_by_season = {index + 1: count for index, (_, count) in enumerate(mal_tv)}
 
+    coverage_strict = True
+    coverage_relaxed = True
+    for season in report.seasons:
+        expected = mal_by_season.get(season.season or 0) or season.expected
+        if expected and season.found < expected:
+            coverage_strict = False
+            if season.found < max(1, int(expected * COVERAGE_RELAXED)):
+                coverage_relaxed = False
     if len(nyaa_tv) != len(mal_tv):
-        issues.append(f"saisons: MAL={len(mal_tv)} Nyaa={len(nyaa_tv)}")
+        coverage_strict = False
+        coverage_relaxed = False
 
-    strict_ok = True
-    relaxed_ok = True
+    quality_strict = all(ep.strict_ok for s in report.seasons for ep in s.episodes)
+    quality_relaxed = all(ep.relaxed_ok for s in report.seasons for ep in s.episodes)
 
-    for section in nyaa_tv:
-        season = section.season or 0
-        found = len(section.episodes)
-        expected = mal_by_season.get(season) or section.expected_episodes
-        nyaa_detail.append((section.label, found, expected))
-        if expected and found < expected:
-            strict_ok = False
-            issues.append(f"{section.label}: {found}/{expected} épisodes")
-            if found < max(1, int(expected * COVERAGE_RELAXED)):
-                relaxed_ok = False
+    strict_ok = coverage_strict and quality_strict
+    relaxed_ok = coverage_relaxed and quality_relaxed
 
-    for season, expected in mal_by_season.items():
-        if not any(s.season == season for s in nyaa_tv):
-            strict_ok = False
-            relaxed_ok = False
-            issues.append(f"saison {season:02d} absente du catalogue Nyaa")
-        elif expected:
-            section = next(s for s in nyaa_tv if s.season == season)
-            found = len(section.episodes)
-            if found < max(1, int(expected * COVERAGE_RELAXED)):
-                relaxed_ok = False
+    stats = {
+        "episodes_checked": sum(len(s.episodes) for s in report.seasons),
+        "low_seed_episodes": sum(
+            1
+            for s in report.seasons
+            for ep in s.episodes
+            if "low_seeders" in ep.flags or "dead" in ep.flags
+        ),
+        "low_quality_episodes": sum(
+            1
+            for s in report.seasons
+            for ep in s.episodes
+            if "low_quality" in ep.flags or "sd_quality" in ep.flags
+        ),
+        "variant_episodes": sum(
+            1
+            for s in report.seasons
+            for ep in s.episodes
+            if any(f in ep.flags for f in ("directors_cut", "new_edition", "suspect_source"))
+        ),
+    }
 
-    if len(nyaa_tv) != len(mal_tv):
-        strict_ok = False
-        relaxed_ok = False
-
-    return strict_ok, relaxed_ok, issues, nyaa_detail
+    return strict_ok, relaxed_ok, quality_strict, quality_relaxed, issues, nyaa_detail, stats
 
 
 def _gather_with_retry(query: str, config: AnnieConfig, *, attempts: int = 3) -> tuple[list, dict]:
@@ -273,6 +310,8 @@ def validate_target(target: ValidateTarget, config: AnnieConfig) -> dict:
         "issues": [],
         "strict_ok": False,
         "relaxed_ok": False,
+        "quality_strict_ok": False,
+        "quality_relaxed_ok": False,
         "catalog_ok": False,
     }
 
@@ -324,11 +363,16 @@ def validate_target(target: ValidateTarget, config: AnnieConfig) -> dict:
     nyaa_tv.sort(key=lambda s: s.season or 0)
     result["nyaa_seasons"] = len(nyaa_tv)
 
-    strict_ok, relaxed_ok, issues, nyaa_detail = _score_tv(mal_tv, nyaa_tv)
+    strict_ok, relaxed_ok, quality_strict, quality_relaxed, issues, nyaa_detail, stats = _score_tv(
+        mal_tv, nyaa_tv
+    )
     result["strict_ok"] = strict_ok
     result["relaxed_ok"] = relaxed_ok
+    result["quality_strict_ok"] = quality_strict
+    result["quality_relaxed_ok"] = quality_relaxed
     result["issues"].extend(issues)
     result["nyaa_detail"] = nyaa_detail
+    result["quality_stats"] = stats
     result["elapsed"] = round(time.monotonic() - t0, 1)
     return result
 
@@ -440,7 +484,9 @@ def main(argv: list[str] | None = None) -> int:
             completed += 1
 
             status = "STRICT" if result.get("strict_ok") else (
-                "RELAXED" if result.get("relaxed_ok") else "FAIL"
+                "RELAXED" if result.get("relaxed_ok") else (
+                    "QUALITY" if result.get("quality_relaxed_ok") else "FAIL"
+                )
             )
             title = result.get("title", "?")
             rank = result.get("rank")
@@ -471,6 +517,8 @@ def main(argv: list[str] | None = None) -> int:
     strict_ok = sum(1 for r in results if r.get("strict_ok"))
     relaxed_ok = sum(1 for r in results if r.get("relaxed_ok"))
     catalog_ok = sum(1 for r in results if r.get("catalog_ok"))
+    quality_strict_ok = sum(1 for r in results if r.get("quality_strict_ok"))
+    quality_relaxed_ok = sum(1 for r in results if r.get("quality_relaxed_ok"))
     fail = len(results) - relaxed_ok
 
     summary = {
@@ -478,6 +526,8 @@ def main(argv: list[str] | None = None) -> int:
         "catalog_ok": catalog_ok,
         "strict_ok": strict_ok,
         "relaxed_ok": relaxed_ok,
+        "quality_strict_ok": quality_strict_ok,
+        "quality_relaxed_ok": quality_relaxed_ok,
         "fail": fail,
         "output": str(output_path),
         "results": results,
@@ -491,6 +541,8 @@ def main(argv: list[str] | None = None) -> int:
             "catalog_ok": catalog_ok,
             "strict_ok": strict_ok,
             "relaxed_ok": relaxed_ok,
+            "quality_strict_ok": quality_strict_ok,
+            "quality_relaxed_ok": quality_relaxed_ok,
             "fail": fail,
             "source": f"top_{args.top}" if args.top else "list",
         },
@@ -504,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Catalogue non vide : {catalog_ok}/{len(results)}")
     print(f"Strict (100% ep.)  : {strict_ok}/{len(results)}")
     print(f"Relaxed (≥85% ep.) : {relaxed_ok}/{len(results)}")
+    print(f"Qualité stricte    : {quality_strict_ok}/{len(results)}")
+    print(f"Qualité relaxée    : {quality_relaxed_ok}/{len(results)}")
     print(f"Échecs             : {fail}/{len(results)}")
     print(f"Rapport            : {output_path}")
 
@@ -513,7 +567,9 @@ def main(argv: list[str] | None = None) -> int:
         for row in sorted(results, key=lambda r: r.get("rank") or 99999):
             if row.get("relaxed_ok"):
                 continue
-            print(f"  #{row.get('rank', '?'):>4} {row.get('query')} — {row.get('title', '?')}")
+            rank = row.get("rank")
+            rank_s = f"#{rank:4d} " if rank is not None else "      "
+            print(f"  {rank_s}{row.get('query')} — {row.get('title', '?')}")
             for issue in row.get("issues", [])[:2]:
                 print(f"       ! {issue}")
             shown += 1

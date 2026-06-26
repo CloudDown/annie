@@ -99,6 +99,9 @@ class NyaaQueriesForTests(unittest.TestCase):
         queries = nyaa_queries_for(anime, user_query="re zero", season=1)
         self.assertIn("re zero S01", queries)
         self.assertIn("re zero Season 01", queries)
+        self.assertIn("re zero batch", queries)
+        self.assertNotIn("Re S01", queries)
+        self.assertNotIn("Re Season 01", queries)
 
 
 class ScopeReleasesTests(unittest.TestCase):
