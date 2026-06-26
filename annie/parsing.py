@@ -439,7 +439,6 @@ def series_match_score(parsed: ParsedTitle, query: str) -> int:
     haystacks = {
         parsed.series,
         normalize(parsed.display_name),
-        normalize(parsed.raw),
     }
     hits = 0
     for token in tokens:

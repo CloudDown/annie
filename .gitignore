@@ -22,6 +22,9 @@ AGENTS.md
 # Rapports de validation réseau (lourds)
 scripts/results/
 
+# Scripts de repro locale (non publiés)
+scripts/debug_aot_s2.py
+
 # Artefacts makepkg (AUR)
 packaging/aur/pkg/
 packaging/aur/src/

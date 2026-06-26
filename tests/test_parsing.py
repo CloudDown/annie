@@ -12,7 +12,8 @@ from annie.catalog import (
     normalize_section_episodes,
     parse_batch_episode_range,
 )
-from annie.parsing import match_episode_filename, parse_title
+from annie.parsing import match_episode_filename, parse_title, series_match_score
+from annie.mal import _title_shortcuts
 from annie.types import MalRelease, MediaKind, MediaSection, ResultItem
 from annie.nyaa import NyaaEntry
 
@@ -217,6 +218,56 @@ class GapQueryTests(unittest.TestCase):
         joined = " ".join(queries).lower()
         self.assertIn("s02e17", joined)
         self.assertIn("42", joined)
+
+
+class SeriesMatchTests(unittest.TestCase):
+    def test_series_match_ignores_nyaa_alias(self) -> None:
+        title = (
+            "[Group] Other Anime - S02E02 (1080p) "
+            "| (Subtitle 2nd Quest Edition)"
+        )
+        parsed = parse_title(title)
+        self.assertLess(series_match_score(parsed, "hero quest"), 0)
+
+    def test_title_shortcuts_skips_long_titles(self) -> None:
+        self.assertEqual(_title_shortcuts("Attack on Titan"), [])
+        self.assertEqual(_title_shortcuts("Cowboy Bebop"), ["Cowboy"])
+
+
+class FinalSeasonBelongsTests(unittest.TestCase):
+    def test_final_season_rejected_on_non_max_release(self) -> None:
+        title = "[Group] Example Series - Final Season - 26 [1080p]"
+        release = MalRelease(
+            mal_id=2,
+            label="Season 02",
+            kind=MediaKind.EPISODE,
+            season=2,
+            episode_count=12,
+            nyaa_queries=["example series"],
+            sort_key=(2, "season 02"),
+        )
+        item = _item(title)
+        self.assertFalse(
+            _episode_belongs_to_release(
+                item, release, absolute_offset=25, max_tv_season=4
+            )
+        )
+
+    def test_final_season_accepted_on_max_release(self) -> None:
+        title = "[Group] Example Series - Final Season - 05 [1080p]"
+        release = MalRelease(
+            mal_id=4,
+            label="Season 04",
+            kind=MediaKind.EPISODE,
+            season=4,
+            episode_count=28,
+            nyaa_queries=["example series"],
+            sort_key=(4, "season 04"),
+        )
+        item = _item(title)
+        self.assertTrue(
+            _episode_belongs_to_release(item, release, max_tv_season=4)
+        )
 
 
 if __name__ == "__main__":

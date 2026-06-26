@@ -529,9 +529,11 @@ def _title_shortcuts(title: str) -> list[str]:
         head = cleaned.split(":", 1)[0].strip()
         if len(head) >= 3:
             shortcuts.append(head)
-    first = cleaned.split()[0]
-    if len(first) >= 3 and first not in shortcuts:
-        shortcuts.append(first)
+    words = cleaned.split()
+    if len(words) <= 2:
+        first = words[0]
+        if len(first) >= 3 and first not in shortcuts:
+            shortcuts.append(first)
     return shortcuts
 
 
