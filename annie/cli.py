@@ -298,12 +298,8 @@ def gather_catalog(
 
 
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
-    group = release_group or "—"
-    print(
-        stylize(f"◆ {label}", C.YELLOW, C.BOLD)
-        + stylize(f" · {seeders}S · {group}", C.MUTED),
-        flush=True,
-    )
+    del seeders, release_group
+    print(stylize(f"◆ {label}", C.YELLOW, C.BOLD), flush=True)
 
 
 def _resolve_subtitle_lang(

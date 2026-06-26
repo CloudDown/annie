@@ -91,16 +91,16 @@ def format_buffer_lines(
     else:
         meta = f"{stylize(peer_hint, C.MUTED)}{hint}"
     lines = [
-        f"{_annie_prefix()}{_s('buffer', C.MUTED)}",
+        _s("buffer", C.MUTED),
         (
-            f"  {stylize('contigu', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
+            f"{stylize('contigu', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
             f"{_mib_label(contiguous, target_bytes)}"
         ),
         (
-            f"  {stylize('fichier', C.MUTED)}  [{bar_file}] {file_pct:3d}%  "
+            f"{stylize('fichier', C.MUTED)}  [{bar_file}] {file_pct:3d}%  "
             f"{_mib_label(ready, file_size)}"
         ),
-        f"  {meta}",
+        meta,
     ]
     return "\n".join(lines)
 
@@ -239,10 +239,8 @@ def _s(text: str, *codes: str, stream: Any = None) -> str:
 
 
 def _annie_prefix(*, stream: Any = None) -> str:
-    return (
-        f"{_s('annie', C.PALE_PINK, C.BOLD, stream=stream)}"
-        f"{_s(' · ', C.MUTED, stream=stream)}"
-    )
+    del stream
+    return ""
 
 
 def format_stream_log(
