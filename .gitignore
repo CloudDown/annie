@@ -21,3 +21,8 @@ AGENTS.md
 
 # Rapports de validation réseau (lourds)
 scripts/results/
+
+# Artefacts makepkg (AUR)
+packaging/aur/pkg/
+packaging/aur/src/
+*.pkg.tar.zst

@@ -528,6 +528,24 @@ def nyaa_queries_for(
     if user_query.strip():
         queries.append(user_query.strip())
 
+    season_variants: list[str] = []
+    if season is not None:
+        short_sources: list[str] = []
+        if user_query.strip():
+            short_sources.append(user_query.strip())
+        for value in (anime.title_english, anime.title):
+            if value:
+                short_sources.append(value.split(":", 1)[0].strip())
+        seen_variants: set[str] = set()
+        for base in short_sources:
+            short = base.split(":", 1)[0].strip()
+            if not short:
+                continue
+            for variant in (f"{short} S{season:02d}", f"{short} Season {season:02d}"):
+                if variant.strip() and variant not in seen_variants:
+                    seen_variants.add(variant)
+                    season_variants.append(variant)
+
     for value in (anime.title_english, anime.title, anime.title_japanese):
         if not value:
             continue
@@ -537,14 +555,13 @@ def nyaa_queries_for(
             if short not in queries:
                 queries.append(short)
 
-    if season is not None:
-        base = queries[0] if queries else ""
-        short = base.split(":", 1)[0].strip() if base else base
-        for variant in (f"{short} S{season:02d}", f"{short} Season {season:02d}"):
-            if variant.strip() and variant not in queries:
-                queries.append(variant)
+    insert_at = 1 if queries else 0
+    for variant in season_variants:
+        if variant not in queries:
+            queries.insert(insert_at, variant)
+            insert_at += 1
 
-    return queries[:5]
+    return queries[:8]
 
 
 def franchise_to_releases(

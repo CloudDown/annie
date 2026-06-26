@@ -56,6 +56,27 @@ CLI pour chercher des anime sur [Nyaa.si](https://nyaa.si), parcourir un catalog
 
 ## Installation
 
+### Arch Linux (AUR)
+
+```bash
+yay -S annie
+# ou : paru -S annie
+```
+
+Prérequis : `fzf`, lecteur vidéo (`mpv` recommandé). `python-libtorrent` est installé comme dépendance du paquet.
+
+<details>
+<summary>Build AUR depuis les sources du dépôt</summary>
+
+```bash
+cd packaging/aur
+makepkg -si
+```
+
+</details>
+
+### Depuis Git (développement)
+
 ```bash
 git clone https://github.com/CloudDown/annie.git
 cd annie
@@ -180,6 +201,8 @@ scripts/
   debug_catalog.py    Catalogue offline ou live
   debug_franchise.py  Diagnostic détaillé (1 anime)
   validate_franchise.py  Validation MAL vs Nyaa (100 anime)
+packaging/
+  aur/                PKGBUILD AUR (makepkg -si)
 ```
 
 ---

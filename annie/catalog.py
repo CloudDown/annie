@@ -23,7 +23,7 @@ from annie.parsing import (
 from annie.scoring import rank_entry, target_match_score
 from annie.types import MalRelease, MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
 
-MAX_FRANCHISE_QUERIES = 12
+MAX_FRANCHISE_QUERIES = 20
 FRANCHISE_SEARCH_PAGES = 2
 PRIMARY_SEARCH_PAGES = 2
 GAP_SEARCH_PAGES = 1
@@ -527,21 +527,47 @@ def _merge_arc_sections_into_section(section: MediaSection, parts: list[MediaSec
             upsert_episode(section, item)
 
 
-def _pick_section_for_release(parts: list[MediaSection], release: MalRelease) -> MediaSection | None:
+def _pick_section_for_release(
+    parts: list[MediaSection],
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+) -> MediaSection | None:
     if not parts:
         return None
 
     if release.kind == MediaKind.EPISODE and release.season is not None:
+        merged = _empty_section_for_release(release)
+
+        for section in parts:
+            if section.kind != MediaKind.EPISODE:
+                continue
+            if section.season is not None and section.season != release.season:
+                if not (section.arc and arc_to_season(section.arc) == release.season):
+                    continue
+            if section.arc and section.season is None:
+                mapped = arc_to_season(section.arc)
+                if mapped is not None and mapped != release.season:
+                    continue
+            for _ep, item in section.episodes.items():
+                if _episode_belongs_to_release(
+                    item, release, absolute_offset=absolute_offset
+                ):
+                    upsert_episode(merged, item)
+
+        if merged.episodes:
+            return merged
+
         for section in parts:
             if section.kind == MediaKind.EPISODE and section.season == release.season:
                 return section
         for section in parts:
             if section.kind == MediaKind.EPISODE and section.arc:
                 if arc_to_season(section.arc) == release.season:
-                    merged = _empty_section_for_release(release)
+                    arc_merged = _empty_section_for_release(release)
                     for ep, item in section.episodes.items():
-                        upsert_episode(merged, item)
-                    return merged
+                        upsert_episode(arc_merged, item)
+                    return arc_merged
         return _empty_section_for_release(release)
 
     if release.kind == MediaKind.MOVIE:
@@ -725,7 +751,7 @@ def _fill_missing_episodes(
         skip_recap_movies=skip_recap_movies,
         match_queries=release.nyaa_queries,
     )
-    extra = _pick_section_for_release(parts, release)
+    extra = _pick_section_for_release(parts, release, absolute_offset=absolute_offset)
     if extra is None:
         return
 
@@ -895,6 +921,15 @@ def build_catalog_from_releases(
         local_magnets: set[str] = set()
         source_queries = list(dict.fromkeys(release.nyaa_queries))
         for query in source_queries:
+            if query not in query_entries:
+                query_entries[query] = _safe_search(
+                    query,
+                    search,
+                    category=category,
+                    filter_code=filter_code,
+                    pages=FRANCHISE_SEARCH_PAGES,
+                )
+        for query in source_queries:
             for entry in query_entries.get(query, []):
                 if entry.magnet in seen_magnets or entry.magnet in local_magnets:
                     continue
@@ -910,12 +945,14 @@ def build_catalog_from_releases(
             skip_recap_movies=skip_recap_movies,
             match_queries=release.nyaa_queries,
         )
-        section = _pick_section_for_release(parts, release)
+        absolute_offset = absolute_offsets.get(release.mal_id, 0)
+        section = _pick_section_for_release(
+            parts, release, absolute_offset=absolute_offset
+        )
         if section is None:
             continue
 
         section.expected_episodes = release.episode_count
-        absolute_offset = absolute_offsets.get(release.mal_id, 0)
         _merge_arc_sections_into_section(section, parts)
         _merge_batches_into_section(
             section, parts, release, absolute_offset=absolute_offset

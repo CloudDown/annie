@@ -81,6 +81,26 @@ class ReZeroCatalogFixtureTests(unittest.TestCase):
         self.assertNotIn("2nd Season", ep15.entry.title)
 
 
+class NyaaQueriesForTests(unittest.TestCase):
+    def test_season_variants_not_truncated(self) -> None:
+        from annie.mal import MalAnime, nyaa_queries_for
+
+        anime = MalAnime(
+            mal_id=1,
+            title="Re:ZERO -Starting Life in Another World-",
+            title_english="Re:ZERO -Starting Life in Another World-",
+            title_japanese="",
+            type="TV",
+            episodes=25,
+            aired_from="2016",
+            is_recap=False,
+            via_relation="Root",
+        )
+        queries = nyaa_queries_for(anime, user_query="re zero", season=1)
+        self.assertIn("re zero S01", queries)
+        self.assertIn("re zero Season 01", queries)
+
+
 class ScopeReleasesTests(unittest.TestCase):
     def test_filters_to_target_season(self) -> None:
         releases = [
