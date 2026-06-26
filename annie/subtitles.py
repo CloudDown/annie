@@ -57,6 +57,7 @@ class SubtitleQuery:
     season: int | None = None
     episode: int | None = None
     kind: str = "tv"
+    extra_titles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,11 +78,16 @@ def language_for(code: str) -> SubtitleLanguage | None:
 def build_query(item: ResultItem, *, series_title: str | None = None) -> SubtitleQuery:
     title = (series_title or item.parsed.display_name or item.parsed.series or "").strip()
     kind = "movie" if item.parsed.kind == MediaKind.MOVIE else "tv"
+    extra_titles: list[str] = []
+    for candidate in (series_title, item.parsed.display_name, item.parsed.series):
+        if candidate and candidate.strip() and candidate.strip() != title:
+            extra_titles.append(candidate.strip())
     return SubtitleQuery(
         title=title,
         season=item.parsed.season,
         episode=item.parsed.episode,
         kind=kind,
+        extra_titles=tuple(extra_titles),
     )
 
 
@@ -214,6 +220,90 @@ def parse_api_results(payload: dict) -> list[SubtitleCandidate]:
     return candidates
 
 
+def subtitle_title_variants(title: str, *, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """Variantes de titre pour OpenSubtitles (indexation souvent plus courte que Nyaa)."""
+    from annie.mal import _title_shortcuts
+
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        cleaned = value.strip()
+        if not cleaned:
+            return
+        key = cleaned.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        variants.append(cleaned)
+
+    def colon_re_zero(value: str) -> None:
+        parts = value.split()
+        if len(parts) >= 2 and parts[0].casefold() == "re" and parts[1].casefold().startswith("zero"):
+            add(f"{parts[0]}:{parts[1]}")
+
+    add(title)
+    for value in extra:
+        add(value)
+
+    lowered = title.casefold()
+    for sep in (" kara ", " wo "):
+        idx = lowered.find(sep)
+        if idx > 0:
+            add(title[:idx])
+
+    idx_no = lowered.find(" no ")
+    if idx_no >= 0:
+        tail = title[idx_no + 4 :].strip()
+        if tail:
+            add(tail)
+
+    if ":" in title:
+        head = title.split(":", 1)[0].strip()
+        if len(head) >= 3:
+            add(head)
+
+    if " - " in title:
+        add(title.split(" - ", 1)[0].strip())
+
+    for candidate in list(variants):
+        for short in _title_shortcuts(candidate):
+            add(short)
+
+    for candidate in list(variants):
+        colon_re_zero(candidate)
+
+    return tuple(variants)
+
+
+def probe_search(
+    query: SubtitleQuery,
+    lang: SubtitleLanguage,
+    *,
+    api_key: str | None = None,
+) -> list[tuple[str, list[SubtitleCandidate]]]:
+    """Essaie chaque variante de titre et retourne les résultats (outil debug)."""
+    key = _require_api_key(api_key)
+    token = _auth_token(key)
+    probed: list[tuple[str, list[SubtitleCandidate]]] = []
+    for title in subtitle_title_variants(query.title, extra=query.extra_titles):
+        variant = SubtitleQuery(
+            title=title,
+            season=query.season,
+            episode=query.episode,
+            kind=query.kind,
+        )
+        payload = _api_request(
+            "GET",
+            "/subtitles",
+            api_key=key,
+            token=token,
+            params=search_params(variant, lang),
+        )
+        probed.append((title, parse_api_results(payload)))
+    return probed
+
+
 def search_params(query: SubtitleQuery, lang: SubtitleLanguage) -> dict[str, str | int]:
     params: dict[str, str | int] = {
         "query": query.title,
@@ -235,16 +325,10 @@ def search(
     *,
     api_key: str | None = None,
 ) -> list[SubtitleCandidate]:
-    key = _require_api_key(api_key)
-    token = _auth_token(key)
-    payload = _api_request(
-        "GET",
-        "/subtitles",
-        api_key=key,
-        token=token,
-        params=search_params(query, lang),
-    )
-    return parse_api_results(payload)
+    for _title, candidates in probe_search(query, lang, api_key=api_key):
+        if candidates:
+            return candidates
+    return []
 
 
 def _pick_best(candidates: list[SubtitleCandidate]) -> SubtitleCandidate | None:
@@ -262,8 +346,19 @@ def _cache_meta_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.json"
 
 
-def _cache_file_path(key: str, suffix: str) -> Path:
-    return CACHE_DIR / f"{key}{suffix}"
+def _cache_file_path(query: SubtitleQuery, lang_code: str, suffix: str) -> Path:
+    return CACHE_DIR / f"{_subtitle_basename(query, lang_code)}{suffix}"
+
+
+def _subtitle_basename(query: SubtitleQuery, lang_code: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", query.title.casefold()).strip("-")[:48] or "subtitle"
+    parts = [slug]
+    if query.season is not None:
+        parts.append(f"s{query.season:02d}")
+    if query.episode is not None:
+        parts.append(f"e{query.episode:02d}")
+    parts.append(lang_code.casefold())
+    return "-".join(parts)
 
 
 def _read_cache(key: str) -> Path | None:
@@ -357,7 +452,7 @@ def fetch_best(
 
     out_dir = dest_dir or CACHE_DIR
     path = download(best, out_dir, api_key=key)
-    final = _cache_file_path(cache_key, path.suffix)
+    final = _cache_file_path(query, lang.code, path.suffix)
     if path != final:
         final.write_bytes(path.read_bytes())
         path.unlink(missing_ok=True)

@@ -1,4 +1,4 @@
-.PHONY: install dev run test test-offline validate debug-rezero clean help
+.PHONY: install dev run test test-offline validate validate-subs debug-rezero clean help
 
 PYTHON ?= python3
 VENV := .venv
@@ -14,6 +14,7 @@ help:
 	@echo "  make test         suite unitaire (offline)"
 	@echo "  make test-offline scripts debug sans réseau"
 	@echo "  make validate     validation réseau (10 anime)"
+	@echo "  make validate-subs validation sous-titres OpenSubtitles (réseau)"
 	@echo "  make debug-rezero régression catalogue Re:Zero offline"
 	@echo "  make clean        remove venv and build artifacts"
 
@@ -34,11 +35,15 @@ test: install
 
 test-offline: install
 	$(PY) scripts/debug_match.py --fixture
+	$(PY) scripts/debug_subtitles.py --fixture
 	$(PY) scripts/debug_catalog.py --offline
 	$(PY) scripts/debug_parse.py --fixture parse_titles
 
 validate: install
 	$(PY) scripts/validate_franchise.py --limit 10
+
+validate-subs: install
+	$(PY) scripts/debug_subtitles.py --fixture --live
 
 validate-top: install
 	$(PY) scripts/validate_franchise.py --top 1000 --workers 2 --output scripts/results/validate_top1000.json

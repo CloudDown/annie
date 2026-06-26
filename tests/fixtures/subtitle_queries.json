@@ -1,0 +1,80 @@
+[
+  {
+    "id": "re-zero-s01e08-subsplease",
+    "nyaa_title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [A1597F0E].mkv",
+    "series_title": "re zero",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["Re:Zero", "re:zero"],
+    "langs": ["fr", "en"],
+    "min_hits": { "fr": 1, "en": 1 }
+  },
+  {
+    "id": "re-zero-display-name-only",
+    "nyaa_title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [A1597F0E].mkv",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["Re:Zero"],
+    "langs": ["fr"],
+    "min_hits": { "fr": 1 }
+  },
+  {
+    "id": "frieren-s01e08-subsplease",
+    "nyaa_title": "[SubsPlease] Sousou no Frieren - 08 (1080p) [ABCD1234].mkv",
+    "series_title": "frieren",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["Frieren", "Sousou no Frieren"],
+    "langs": ["fr", "en"],
+    "min_hits": { "fr": 1, "en": 1 }
+  },
+  {
+    "id": "frieren-display-name-only",
+    "nyaa_title": "[SubsPlease] Sousou no Frieren - 08 (1080p) [ABCD1234].mkv",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["Frieren"],
+    "langs": ["fr"],
+    "min_hits": { "fr": 1 }
+  },
+  {
+    "id": "death-note-s01e08",
+    "nyaa_title": "[SubsPlease] Death Note - 08 (1080p) [ABCD1234].mkv",
+    "series_title": "death note",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["death note"],
+    "langs": ["fr", "en"],
+    "min_hits": { "fr": 1, "en": 1 }
+  },
+  {
+    "id": "spy-family-s01e08",
+    "nyaa_title": "[SubsPlease] Spy x Family - 08 (1080p) [ABCD1234].mkv",
+    "series_title": "spy x family",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["spy x family"],
+    "langs": ["fr", "en"],
+    "min_hits": { "fr": 1, "en": 1 }
+  },
+  {
+    "id": "chainsaw-man-s01e08",
+    "nyaa_title": "[SubsPlease] Chainsaw Man - 08 (1080p) [ABCD1234].mkv",
+    "series_title": "chainsaw man",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["chainsaw man"],
+    "langs": ["fr", "en"],
+    "min_hits": { "fr": 1, "en": 1 }
+  },
+  {
+    "id": "one-piece-s01e08",
+    "nyaa_title": "[SubsPlease] One Piece - 08 (1080p) [ABCD1234].mkv",
+    "series_title": "one piece",
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["one piece"],
+    "langs": ["fr", "en"],
+    "min_hits": { "fr": 1, "en": 1 }
+  }
+]
