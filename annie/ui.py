@@ -91,7 +91,7 @@ def format_buffer_lines(
     else:
         meta = f"{stylize(peer_hint, C.MUTED)}{hint}"
     lines = [
-        stylize("annie: buffer", C.MUTED),
+        f"{_annie_prefix()}{_s('buffer', C.MUTED)}",
         (
             f"  {stylize('contigu', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
             f"{_mib_label(contiguous, target_bytes)}"
@@ -209,6 +209,102 @@ def print_status(message: str, *, kind: str = "info") -> None:
     print(stylize(f"  {icon} {message}", colors.get(kind, C.FG)))
 
 
+_STREAM_TONES = {
+    "info": C.FG,
+    "ok": C.GREEN,
+    "warn": C.YELLOW,
+    "muted": C.MUTED,
+    "accent": C.CYAN,
+    "err": C.RED,
+}
+
+
+def _color_enabled(stream: Any = None) -> bool:
+    stream = stream or sys.stdout
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty and isatty())
+
+
+def _s(text: str, *codes: str, stream: Any = None) -> str:
+    if not _color_enabled(stream):
+        return text
+    return stylize(text, *codes)
+
+
+def _annie_prefix(*, stream: Any = None) -> str:
+    return (
+        f"{_s('annie', C.PALE_PINK, C.BOLD, stream=stream)}"
+        f"{_s(' · ', C.MUTED, stream=stream)}"
+    )
+
+
+def format_stream_log(
+    tag: str,
+    detail: str = "",
+    *,
+    tone: str = "info",
+    stream: Any = None,
+) -> str:
+    color = _STREAM_TONES.get(tone, C.FG)
+    tag_part = _s(tag, C.MUTED, stream=stream)
+    if detail:
+        detail_part = _s(detail, color, stream=stream)
+        return f"{_annie_prefix(stream=stream)}{tag_part}  {detail_part}"
+    return f"{_annie_prefix(stream=stream)}{tag_part}"
+
+
+def stream_log(tag: str, detail: str = "", *, tone: str = "info") -> None:
+    print(format_stream_log(tag, detail, tone=tone), flush=True)
+
+
+def stream_log_err(tag: str, detail: str = "", *, tone: str = "err") -> None:
+    print(
+        format_stream_log(tag, detail, tone=tone, stream=sys.stderr),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def format_stream_fatal(message: str) -> str:
+    return (
+        f"{_annie_prefix(stream=sys.stderr)}"
+        f"{_s(message, C.RED, stream=sys.stderr)}"
+    )
+
+
+def format_buffer_ready(mib: int) -> str:
+    return format_stream_log("prêt", f"{mib} MiB contigu", tone="ok")
+
+
+def format_buffer_quick_start(mib: int) -> str:
+    return format_stream_log("démarrage rapide", f"{mib} MiB contigu", tone="info")
+
+
+def format_buffer_forced_start(mib: int) -> str:
+    return format_stream_log(
+        "démarrage forcé",
+        f"{mib} MiB contigu, tentative mpv",
+        tone="warn",
+    )
+
+
+def format_buffer_local_file(mib: int) -> str:
+    return format_stream_log("fichier local", f"{mib} MiB contigu", tone="ok")
+
+
+def log_buffer_pause() -> None:
+    line = (
+        f"{_annie_prefix()}{_s('⏸', C.YELLOW)}  "
+        f"{_s('buffer insuffisant', C.YELLOW)}"
+    )
+    print(line, flush=True)
+
+
+def log_buffer_resume() -> None:
+    line = f"{_annie_prefix()}{_s('▶', C.GREEN)}  {_s('reprise', C.GREEN)}"
+    print(line, flush=True)
+
+
 _T = TypeVar("_T")
 _SEARCH_SPINNER = "/-\\|"
 
@@ -271,6 +367,16 @@ def _clip(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit]
+
+
+def log_playback_start(filename: str, player: str) -> None:
+    cols, _ = _terminal_size()
+    name = _clip(filename, max(40, cols - 28))
+    line = (
+        f"{_annie_prefix()}{_s('lecture', C.MUTED)}  "
+        f"{_s(name, C.FG)}  {_s(player, C.MUTED)}"
+    )
+    print(line, flush=True)
 
 
 def _fzf_header(text: str) -> str:

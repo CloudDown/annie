@@ -16,7 +16,20 @@ from pathlib import Path
 import libtorrent as lt
 
 from annie.parsing import _filename_for_episode_match, match_episode_filename
-from annie.ui import BufferStatusDisplay, format_buffer_lines
+from annie.ui import (
+    BufferStatusDisplay,
+    format_buffer_forced_start,
+    format_buffer_lines,
+    format_buffer_local_file,
+    format_buffer_quick_start,
+    format_buffer_ready,
+    format_stream_fatal,
+    log_buffer_pause,
+    log_buffer_resume,
+    log_playback_start,
+    stream_log,
+    stream_log_err,
+)
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}
 MKV_MAGIC = b"\x1a\x45\xdf\xa3"
@@ -42,7 +55,7 @@ _ffprobe_cache: bool | None = None
 
 
 def die(message: str, code: int = 1) -> None:
-    print(f"annie: {message}", file=sys.stderr)
+    print(format_stream_fatal(message), file=sys.stderr)
     raise SystemExit(code)
 
 
@@ -675,22 +688,18 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         hard_timeout = now >= absolute_deadline
 
         if startable and can_start and contiguous >= START_TARGET_BYTES:
-            display.finish(f"annie: ready ({contiguous // 1024 // 1024} MiB contigu)")
+            display.finish(format_buffer_ready(contiguous // 1024 // 1024))
             return contiguous, "ready"
 
         if soft_timeout and startable and can_start:
-            display.finish(
-                f"annie: quick start ({contiguous // 1024 // 1024} MiB contigu)"
-            )
+            display.finish(format_buffer_quick_start(contiguous // 1024 // 1024))
             return contiguous, "quick"
 
         if hard_timeout:
             if can_start and _is_startable(
                 target, ready, file_size, handle=handle, file_index=file_index
             ):
-                display.finish(
-                    f"annie: forced start ({contiguous // 1024 // 1024} MiB contigu, tentative mpv)"
-                )
+                display.finish(format_buffer_forced_start(contiguous // 1024 // 1024))
                 return contiguous, "forced"
             display.finish("")
             die(
@@ -703,7 +712,7 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
             target, ready, file_size, handle=handle, file_index=file_index
         ):
             display.finish(
-                f"annie: local file ({contiguous // 1024 // 1024} MiB contigu)"
+                format_buffer_local_file(contiguous // 1024 // 1024)
             )
             return contiguous, "seeding"
 
@@ -819,11 +828,11 @@ def _play_while_downloading(
             if need_pause and not paused_for_buffer:
                 _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
                 paused_for_buffer = True
-                print("\nannie: pause — attente buffer…", flush=True)
+                log_buffer_pause()
             elif paused_for_buffer and contiguous >= play_byte + STREAM_MARGIN_BYTES:
                 _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
                 paused_for_buffer = False
-                print("\nannie: reprise", flush=True)
+                log_buffer_resume()
 
         time.sleep(0.25)
     return proc.wait()
@@ -877,9 +886,10 @@ def _launch_and_stream(
 
     active_sub = sub_file
     if active_sub is not None and player_name != "mpv":
-        print(
-            "annie: sous-titres externes supportés uniquement avec mpv",
-            file=sys.stderr,
+        stream_log_err(
+            "sous-titres",
+            "externes supportés uniquement avec mpv",
+            tone="warn",
         )
         active_sub = None
 
@@ -910,7 +920,7 @@ def _launch_and_stream(
             ipc_path.unlink(missing_ok=True)
 
     if code == 2 and retry:
-        print("annie: mpv n'a pas pu lire le fichier, nouvel essai…", flush=True)
+        stream_log("mpv", "n'a pas pu lire le fichier, nouvel essai…", tone="warn")
         ready = _wait_mkv_playable(
             handle, file_index, target, file_size, max_wait_sec=MPV_RETRY_WAIT_SEC
         )
@@ -1003,20 +1013,20 @@ def play(
             try:
                 sub_file = sub_future.result(timeout=20)
                 if sub_file is not None:
-                    print(f"annie: sous-titres → {sub_file.name}", flush=True)
+                    stream_log("sous-titres", sub_file.name, tone="accent")
                 else:
-                    print("annie: aucun sous-titre trouvé", file=sys.stderr)
+                    stream_log_err("sous-titres", "aucun trouvé", tone="warn")
             except Exception as exc:
                 from annie.subtitles import SubtitlesError
 
                 if isinstance(exc, SubtitlesError):
-                    print(f"annie: {exc}", file=sys.stderr)
+                    stream_log_err("sous-titres", str(exc))
                 else:
-                    print(f"annie: sous-titres indisponibles ({exc})", file=sys.stderr)
+                    stream_log_err("sous-titres", f"indisponibles ({exc})")
 
-        print(f"annie: playing → {target.name} ({player_name})", flush=True)
+        log_playback_start(target.name, player_name)
         if seed_while_watching:
-            print("annie: seed de l'épisode pendant la lecture", flush=True)
+            stream_log("seed", "actif pendant la lecture", tone="muted")
             _enable_watch_seed(session, handle, file_index)
 
         code = 1
@@ -1032,7 +1042,7 @@ def play(
                 sub_file=sub_file,
             )
             if code != 0:
-                print(f"annie: {player_name} code {code}", file=sys.stderr)
+                stream_log_err(player_name, f"code {code}")
         finally:
             if seed_while_watching:
                 _disable_watch_seed(session)
