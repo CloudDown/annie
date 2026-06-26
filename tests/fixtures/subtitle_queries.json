@@ -76,5 +76,16 @@
     "variants_contain": ["one piece"],
     "langs": ["fr", "en"],
     "min_hits": { "fr": 1, "en": 1 }
+  },
+  {
+    "id": "witch-hat-atelier-s01e08",
+    "nyaa_title": "[SubsPlease] Mahou Tsukai no Atelier - 08 (1080p) [ABCD1234].mkv",
+    "series_title": "witch hat atelier",
+    "mal_titles": ["Witch Hat Atelier", "Tongari Boushi no Atelier"],
+    "season": 1,
+    "episode": 8,
+    "variants_contain": ["Witch Hat Atelier", "witch hat atelier"],
+    "langs": ["fr", "en"],
+    "min_hits": { "en": 1, "fr": 0 }
   }
 ]

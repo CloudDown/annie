@@ -22,7 +22,11 @@ def _query_from_case(case: dict) -> SubtitleQuery:
         season=case.get("season"),
         episode=case.get("episode"),
     )
-    return build_query(item, series_title=case.get("series_title"))
+    return build_query(
+        item,
+        series_title=case.get("series_title"),
+        mal_titles=tuple(case.get("mal_titles", ())),
+    )
 
 
 class SubtitleFixtureVariantTests(unittest.TestCase):

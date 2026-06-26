@@ -1013,7 +1013,14 @@ def play(
                 if sub_file is not None:
                     stream_log("sous-titres", sub_file.name, tone="accent")
                 else:
-                    stream_log_err("sous-titres", "aucun trouvé", tone="warn")
+                    from annie.subtitles import SubtitlesError, no_subtitles_message
+
+                    detail = (
+                        no_subtitles_message(subtitle_query, subtitle_lang)
+                        if subtitle_query and subtitle_lang
+                        else "aucun trouvé"
+                    )
+                    stream_log_err("sous-titres", detail, tone="warn")
             except Exception as exc:
                 from annie.subtitles import SubtitlesError
 

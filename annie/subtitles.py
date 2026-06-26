@@ -28,6 +28,21 @@ TOKEN_TTL = 20 * 3600
 
 SUBTITLE_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
 
+GENERIC_SUBTITLE_TOKENS = frozenset(
+    {
+        "atelier",
+        "the",
+        "and",
+        "movie",
+        "season",
+        "episode",
+        "kara",
+        "hajimeru",
+        "isekai",
+        "seikatsu",
+    }
+)
+
 
 class SubtitlesError(RuntimeError):
     """Erreur configuration ou API sous-titres."""
@@ -75,15 +90,31 @@ def language_for(code: str) -> SubtitleLanguage | None:
     return _OS_BY_CODE.get(code.lower())
 
 
-def build_query(item: ResultItem, *, series_title: str | None = None) -> SubtitleQuery:
+def build_query(
+    item: ResultItem,
+    *,
+    series_title: str | None = None,
+    mal_titles: tuple[str, ...] = (),
+) -> SubtitleQuery:
     title = (
         series_title or item.parsed.display_name or item.parsed.series or ""
     ).strip()
     kind = "movie" if item.parsed.kind == MediaKind.MOVIE else "tv"
     extra_titles: list[str] = []
-    for candidate in (series_title, item.parsed.display_name, item.parsed.series):
-        if candidate and candidate.strip() and candidate.strip() != title:
-            extra_titles.append(candidate.strip())
+    seen: set[str] = {title.casefold()}
+    for candidate in (
+        *mal_titles,
+        series_title,
+        item.parsed.display_name,
+        item.parsed.series,
+    ):
+        if not candidate:
+            continue
+        cleaned = candidate.strip()
+        key = cleaned.casefold()
+        if cleaned and key not in seen:
+            seen.add(key)
+            extra_titles.append(cleaned)
     return SubtitleQuery(
         title=title,
         season=item.parsed.season,
@@ -228,6 +259,60 @@ def parse_api_results(payload: dict) -> list[SubtitleCandidate]:
     return candidates
 
 
+def _normalize_subtitle_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.sub(r"[^a-z0-9]+", " ", text.casefold()).split()
+        if len(token) >= 3
+    }
+
+
+def _query_title_variants(query: SubtitleQuery) -> tuple[str, ...]:
+    return subtitle_title_variants(query.title, extra=query.extra_titles)
+
+
+def _is_witch_hat_atelier_query(titles: tuple[str, ...]) -> bool:
+    joined = " ".join(titles).casefold()
+    return "witch" in joined and "atelier" in joined
+
+
+def filter_subtitle_candidates(
+    candidates: list[SubtitleCandidate],
+    query: SubtitleQuery,
+) -> list[SubtitleCandidate]:
+    if not candidates:
+        return []
+
+    titles = _query_title_variants(query)
+    distinctive = {
+        token
+        for title in titles
+        for token in _normalize_subtitle_tokens(title)
+        if token not in GENERIC_SUBTITLE_TOKENS
+    }
+    witch_hat = _is_witch_hat_atelier_query(titles)
+
+    filtered: list[SubtitleCandidate] = []
+    for candidate in candidates:
+        release_tokens = _normalize_subtitle_tokens(candidate.release)
+
+        if witch_hat:
+            if {"kanchigai", "meister"} & release_tokens:
+                continue
+            if "witch" in release_tokens or "tongari" in release_tokens:
+                filtered.append(candidate)
+                continue
+            if "atelier" in release_tokens and "witch" not in release_tokens:
+                continue
+
+        if distinctive and distinctive & release_tokens:
+            filtered.append(candidate)
+        elif not distinctive:
+            filtered.append(candidate)
+
+    return filtered
+
+
 def subtitle_title_variants(
     title: str, *, extra: tuple[str, ...] = ()
 ) -> tuple[str, ...]:
@@ -340,15 +425,35 @@ def search(
     api_key: str | None = None,
 ) -> list[SubtitleCandidate]:
     for _title, candidates in probe_search(query, lang, api_key=api_key):
-        if candidates:
-            return candidates
+        filtered = filter_subtitle_candidates(candidates, query)
+        if filtered:
+            return filtered
     return []
 
 
-def _pick_best(candidates: list[SubtitleCandidate]) -> SubtitleCandidate | None:
-    if not candidates:
+def _pick_best(
+    candidates: list[SubtitleCandidate],
+    *,
+    query: SubtitleQuery | None = None,
+) -> SubtitleCandidate | None:
+    pool = filter_subtitle_candidates(candidates, query) if query else candidates
+    if not pool:
         return None
-    return max(candidates, key=lambda item: (item.downloads, item.file_id))
+    return max(pool, key=lambda item: (item.downloads, item.file_id))
+
+
+def no_subtitles_message(query: SubtitleQuery, lang_code: str) -> str:
+    lang = language_for(lang_code)
+    label = lang.label if lang else lang_code
+    if lang_code != "en":
+        en = language_for("en")
+        if en is not None:
+            try:
+                if search(query, en):
+                    return f"aucun trouvé en {label} — essayez English"
+            except SubtitlesError:
+                pass
+    return f"aucun trouvé en {label}"
 
 
 def _cache_key(query: SubtitleQuery, lang_code: str) -> str:
@@ -462,7 +567,7 @@ def fetch_best(
         return cached
 
     candidates = search(query, lang, api_key=key)
-    best = _pick_best(candidates)
+    best = _pick_best(candidates, query=query)
     if best is None:
         return None
 

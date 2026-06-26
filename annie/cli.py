@@ -213,6 +213,15 @@ def gather_catalog(
             candidates = candidates_future.result()
             chosen = pick_candidate(candidates, query) if candidates else None
             if chosen is not None:
+                options["mal_titles"] = tuple(
+                    title
+                    for title in (
+                        chosen.title_english,
+                        chosen.title,
+                        chosen.title_japanese,
+                    )
+                    if title
+                )
                 for warm_q in dict.fromkeys(
                     [
                         chosen.title_english or "",
@@ -327,6 +336,7 @@ def play_item(
     player: str | None = None,
     subtitle_lang: str | None = None,
     series_query: str | None = None,
+    mal_titles: tuple[str, ...] = (),
     interactive_subs: bool = False,
 ) -> int:
     file_query = None
@@ -342,7 +352,11 @@ def play_item(
     if lang:
         from annie.subtitles import build_query
 
-        subtitle_query = build_query(item, series_title=series_query)
+        subtitle_query = build_query(
+            item,
+            series_title=series_query,
+            mal_titles=mal_titles,
+        )
 
     label = minimal_label(item.parsed)
     print_status_line(label, item.entry.seeders, item.parsed.release_group)
@@ -398,6 +412,7 @@ def try_direct_play(
                     keep=keep,
                     player=player,
                     series_query=raw_query,
+                    mal_titles=tuple(catalog_options.get("mal_titles", ())),
                     interactive_subs=True,
                 )
         except Exception:
@@ -514,7 +529,7 @@ def run_watch(
             raw_parts.append(f"s{season}")
         raw_query = " ".join(raw_parts)
         try:
-            catalog, _ = gather_catalog(
+            catalog, catalog_options = gather_catalog(
                 raw_query,
                 config,
                 category=category,
@@ -536,6 +551,7 @@ def run_watch(
                     player=player,
                     subtitle_lang=subtitle_lang,
                     series_query=raw_query,
+                    mal_titles=tuple(catalog_options.get("mal_titles", ())),
                 )
         except Exception:
             pass
@@ -683,6 +699,7 @@ def interactive_loop(config: AnnieConfig) -> int:
                 item,
                 config,
                 series_query=raw_query,
+                mal_titles=tuple(options.get("mal_titles", ())),
                 interactive_subs=True,
             )
         except Exception as exc:  # noqa: BLE001

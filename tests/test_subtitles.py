@@ -18,7 +18,9 @@ from annie.subtitles import (
     _subtitle_basename,
     build_query,
     download,
+    filter_subtitle_candidates,
     language_for,
+    no_subtitles_message,
     parse_api_results,
     search_params,
     subtitle_title_variants,
@@ -45,7 +47,68 @@ class BuildQueryTests(unittest.TestCase):
         self.assertEqual(query.season, 1)
         self.assertEqual(query.episode, 8)
         self.assertEqual(query.kind, "tv")
-        self.assertIn("Re Zero", query.extra_titles)
+
+    def test_includes_mal_titles(self) -> None:
+        item = result_item(
+            "[SubsPlease] Mahou Tsukai no Atelier - 08 (1080p).mkv",
+            season=1,
+            episode=8,
+        )
+        query = build_query(
+            item,
+            series_title="witch hat atelier",
+            mal_titles=("Witch Hat Atelier", "Tongari Boushi no Atelier"),
+        )
+        lowered = {value.casefold() for value in query.extra_titles}
+        self.assertEqual(query.title, "witch hat atelier")
+        self.assertIn("mahou tsukai no atelier", lowered)
+        self.assertIn("tongari boushi no atelier", lowered)
+
+
+class SubtitleCandidateFilterTests(unittest.TestCase):
+    def test_rejects_generic_atelier_false_positives(self) -> None:
+        item = result_item(
+            "[SubsPlease] Mahou Tsukai no Atelier - 08 (1080p).mkv",
+            season=1,
+            episode=8,
+        )
+        query = build_query(
+            item,
+            series_title="witch hat atelier",
+            mal_titles=("Witch Hat Atelier",),
+        )
+        candidates = [
+            SubtitleCandidate(1, "Atelier S01E08 1080p Netflix", 37),
+            SubtitleCandidate(
+                2,
+                "Witch.Hat.Atelier.S01E08.CR.WEB-DL",
+                98,
+            ),
+            SubtitleCandidate(3, "[Judas] Kanchigai no Atelier Meister - S01E08", 20),
+        ]
+        filtered = filter_subtitle_candidates(candidates, query)
+        self.assertEqual([candidate.file_id for candidate in filtered], [2])
+
+    def test_pick_best_respects_filter(self) -> None:
+        query = SubtitleQuery(title="witch hat atelier", season=1, episode=8)
+        candidates = [
+            SubtitleCandidate(1, "Atelier S01E08", 999),
+            SubtitleCandidate(2, "Witch.Hat.Atelier.S01E08", 10),
+        ]
+        best = _pick_best(candidates, query=query)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.file_id, 2)
+
+
+class NoSubtitlesMessageTests(unittest.TestCase):
+    def test_suggests_english_when_available(self) -> None:
+        query = SubtitleQuery(title="witch hat atelier", season=1, episode=8)
+        with patch(
+            "annie.subtitles.search",
+            side_effect=lambda q, lang, **kw: lang.code == "en",
+        ):
+            message = no_subtitles_message(query, "fr")
+        self.assertIn("English", message)
 
 
 class SubtitleTitleVariantTests(unittest.TestCase):
@@ -88,7 +151,9 @@ class SubtitleFilenameTests(unittest.TestCase):
             patch("annie.subtitles._write_cache"),
             patch(
                 "annie.subtitles.search",
-                return_value=[SubtitleCandidate(file_id=99, release="x", downloads=1)],
+                return_value=[
+                    SubtitleCandidate(file_id=99, release="Re.Zero S01E08", downloads=1)
+                ],
             ),
             patch(
                 "annie.subtitles._fetch_download_link",
