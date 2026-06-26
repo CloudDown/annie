@@ -126,34 +126,6 @@ def is_manga(title: str, release_group: str | None = None) -> bool:
         return True
     return False
 
-ARC_SEASON_ALIASES: dict[str, int] = {
-    "retsujitsu no ougonkyou": 2,
-    "the golden city of the scorching sun": 2,
-    "golden city of the scorching sun": 2,
-    # Re:Zero arcs → MAL season
-    "sanctuary": 2,
-    "the sanctuary and the witch of greed": 2,
-    "witch of greed": 2,
-    "theater of mischief": 2,
-    "theater of avarice": 2,
-    "pleiades watchtower": 3,
-    "pleiades": 3,
-    "interlude": 3,
-    "theater city of water": 3,
-    "city of water": 3,
-    "theater city of passion": 3,
-    "city of passion": 3,
-}
-
-
-def arc_to_season(arc: str | None) -> int | None:
-    if not arc:
-        return None
-    return ARC_SEASON_ALIASES.get(normalize(arc))
-
-import re
-
-
 RELEASE_GROUP_RE = re.compile(r"^\[([^\]]+)\]\s*")
 TECH_BRACKET_RE = re.compile(
     r"\[(?:1080p|720p|480p|2160p|4K|HEVC|H\.264|H\.265|x264|x265|AAC|AC3|"
@@ -166,12 +138,6 @@ MOVIE_PATTERNS = (
     re.compile(r"\bmovie(?:\s*\d+)?\b", re.I),
     re.compile(r"\bfilm\b", re.I),
     re.compile(r"\b(?:movie|film)\s*:", re.I),
-    re.compile(r"\bdawn\s+of\s+the\s+deep\s+soul\b", re.I),
-    re.compile(r"\bfukaki\s+tamashii\s+no\s+reimei\b", re.I),
-    re.compile(r"\btabidachi\s+no\s+yoake\b", re.I),
-    re.compile(r"\bhourou\s+suru\s+tasogare\b", re.I),
-    re.compile(r"\bjourney'?s\s+dawn\b", re.I),
-    re.compile(r"\bwandering\s+twilight\b", re.I),
 )
 MANGA_VOLUME_IN_TITLE_RE = re.compile(
     r"\bv(?:ol(?:ume)?\.?\s*)?\d{1,2}\s*[-–—]\s*v?\d{1,2}\b",
@@ -322,12 +288,6 @@ def finalize_parsed(
     episode: int | None,
     arc: str | None,
 ) -> ParsedTitle:
-    if arc and season is None:
-        mapped_season = arc_to_season(arc)
-        if mapped_season is not None:
-            season = mapped_season
-            arc = None
-
     display_name = extract_display_name(body)
     resolution = resolution_tag(title)
     return ParsedTitle(

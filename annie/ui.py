@@ -612,6 +612,47 @@ def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
     return None
 
 
+class _SkipSubs:
+    """Sentinelle fzf — lecture sans sous-titres externes."""
+
+
+SKIP_SUBS = _SkipSubs()
+
+
+def pick_subtitle_language() -> str | None:
+    """fzf : 5 langues les plus parlées + option Aucun. Retourne un code ISO ou None."""
+    from annie.subtitles import languages
+
+    indexed: dict[str, str | _SkipSubs] = {}
+    previews: dict[str, str] = {}
+    lines: list[str] = []
+
+    for index, lang in enumerate(languages()):
+        key = f"lang{index:02d}"
+        indexed[key] = lang.code
+        previews[key] = stylize(f"{lang.label}\nOpenSubtitles · {lang.os_id}", C.META)
+        lines.append(f"{key}{SEP}{stylize(lang.label, C.LIST, C.BOLD)}")
+
+    indexed["lang99"] = SKIP_SUBS
+    previews["lang99"] = stylize("Lecture sans sous-titres externes", C.META)
+    lines.append(f"lang99{SEP}{stylize('Aucun', C.MUTED)}")
+
+    picked = _fzf_choose(
+        indexed,
+        previews,
+        lines,
+        prompt="langue> ",
+        header=_fzf_header("Enter · Esc"),
+        expect="enter",
+    )
+    if picked is None:
+        return None
+    _action, value = picked
+    if value is SKIP_SUBS:
+        return None
+    return str(value)
+
+
 def pick_catalog(
     sections: list[MediaSection],
     *,

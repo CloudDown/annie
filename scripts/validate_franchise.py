@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import ROOT, print  # noqa: E402
 
 from annie.cli import gather_catalog
-from annie.episode_quality import assess_tv_catalog
+from annie.scoring import assess_tv_catalog
 from annie.mal import (
     TopAnimeEntry,
     collect_franchise,

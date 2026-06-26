@@ -40,7 +40,7 @@ FRANCHISE_EXPAND_RELATIONS = frozenset(
 )
 SPLIT_COUR_RE = re.compile(r"\b(?:part\s*2|2(?:nd)?\s*cour|second\s*cour|cour\s*2)\b", re.I)
 SPINOFF_MARKERS_RE = re.compile(
-    r"\b(nikki|diaries|picture drama|mini anime|chibi|an explosion on|after story)\b",
+    r"\b(nikki|diaries|picture drama|mini anime|chibi|break time|petit)\b",
     re.I,
 )
 

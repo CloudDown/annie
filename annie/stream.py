@@ -69,7 +69,13 @@ def resolve_player(requested: str | None = None) -> str:
     raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
 
 
-def player_command(player: str, path: Path, *, ipc_path: Path | None = None) -> list[str]:
+def player_command(
+    player: str,
+    path: Path,
+    *,
+    ipc_path: Path | None = None,
+    sub_file: Path | None = None,
+) -> list[str]:
     target = str(path.resolve())
     if player == "mpv":
         cmd = [
@@ -93,6 +99,8 @@ def player_command(player: str, path: Path, *, ipc_path: Path | None = None) -> 
         ]
         if ipc_path is not None:
             cmd.append(f"--input-ipc-server={ipc_path}")
+        if sub_file is not None:
+            cmd.append(f"--sub-file={sub_file.resolve()}")
         cmd.append(target)
         return cmd
     if player == "vlc":
@@ -825,6 +833,7 @@ def _launch_and_stream(
     session: lt.session | None = None,
     seed_while_watching: bool = False,
     retry: bool = True,
+    sub_file: Path | None = None,
 ) -> int:
     wait_startable(handle, file_index, target, file_size)
     if not target.exists():
@@ -841,6 +850,14 @@ def _launch_and_stream(
                 f"({ready // 1024 // 1024} MiB contigu)"
             )
 
+    active_sub = sub_file
+    if active_sub is not None and player_name != "mpv":
+        print(
+            "annie: sous-titres externes supportés uniquement avec mpv",
+            file=sys.stderr,
+        )
+        active_sub = None
+
     ipc_path: Path | None = None
     if player_name == "mpv":
         ipc_dir = CACHE_DIR / "ipc"
@@ -851,7 +868,7 @@ def _launch_and_stream(
 
     try:
         proc = _player_popen(
-            player_command(player_name, target, ipc_path=ipc_path)
+            player_command(player_name, target, ipc_path=ipc_path, sub_file=active_sub)
         )
         code = _play_while_downloading(
             proc,
@@ -883,7 +900,9 @@ def _launch_and_stream(
                 ipc_path.unlink()
         try:
             proc = _player_popen(
-                player_command(player_name, target, ipc_path=ipc_path)
+                player_command(
+                    player_name, target, ipc_path=ipc_path, sub_file=active_sub
+                )
             )
             code = _play_while_downloading(
                 proc,
@@ -912,14 +931,21 @@ def play(
     episode: int | None = None,
     season: int | None = None,
     seed_while_watching: bool = True,
+    subtitle_lang: str | None = None,
+    subtitle_query=None,
 ) -> int:
     session = make_session(seed_while_watching=seed_while_watching)
     handle: lt.torrent_handle
     target: Path
     player_name: str
 
-    with ThreadPoolExecutor(max_workers=1) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         player_future = pool.submit(resolve_player, player)
+        sub_future = None
+        if subtitle_lang and subtitle_query is not None:
+            from annie.subtitles import fetch_best
+
+            sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
 
         if source.startswith("magnet:?"):
             save_path = magnet_save_path(source)
@@ -941,6 +967,22 @@ def play(
         target.parent.mkdir(parents=True, exist_ok=True)
         configure_stream(handle, file_index, info.files().num_files(), target=target, file_size=file_size)
         player_name = player_future.result()
+        sub_file: Path | None = None
+        if sub_future is not None:
+            try:
+                sub_file = sub_future.result(timeout=20)
+                if sub_file is not None:
+                    print(f"annie: sous-titres → {sub_file.name}", flush=True)
+                else:
+                    print("annie: aucun sous-titre trouvé", file=sys.stderr)
+            except Exception as exc:
+                from annie.subtitles import SubtitlesError
+
+                if isinstance(exc, SubtitlesError):
+                    print(f"annie: {exc}", file=sys.stderr)
+                else:
+                    print(f"annie: sous-titres indisponibles ({exc})", file=sys.stderr)
+
         print(f"annie: playing → {target.name} ({player_name})", flush=True)
         if seed_while_watching:
             print("annie: seed de l'épisode pendant la lecture", flush=True)
@@ -956,6 +998,7 @@ def play(
                 player_name,
                 session=session,
                 seed_while_watching=seed_while_watching,
+                sub_file=sub_file,
             )
             if code != 0:
                 print(f"annie: {player_name} code {code}", file=sys.stderr)

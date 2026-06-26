@@ -18,8 +18,6 @@ from annie.catalog import (
 )
 from annie.config import CONFIG_DIR, CONFIG_FILE, AnnieConfig
 from annie.parsing import (
-    ARC_SEASON_ALIASES,
-    arc_to_season,
     is_manga,
     match_episode_filename,
     minimal_label,
@@ -38,7 +36,6 @@ from annie.types import (
 )
 
 __all__ = [
-    "ARC_SEASON_ALIASES",
     "AnnieConfig",
     "CONFIG_DIR",
     "CONFIG_FILE",
@@ -51,7 +48,6 @@ __all__ = [
     "ParsedTitle",
     "ResultItem",
     "WatchTarget",
-    "arc_to_season",
     "build_catalog",
     "build_catalog_from_releases",
     "fill_catalog_gaps",

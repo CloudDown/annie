@@ -15,11 +15,9 @@ class RankEntryTests(unittest.TestCase):
         title = "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p).mkv"
         low = nyaa_entry(title, seeders=10)
         high = nyaa_entry(title, seeders=200)
-        low_score = rank_entry(low, target)
-        high_score = rank_entry(high, target)
-        self.assertIsNotNone(low_score)
-        self.assertIsNotNone(high_score)
-        self.assertGreater(high_score[0], low_score[0])
+        picked = pick_best([low, high], target)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked[0].seeders, 200)
 
     def test_rejects_manga(self) -> None:
         target = WatchTarget(query="re zero", season=1, episode=1)

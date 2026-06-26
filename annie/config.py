@@ -23,6 +23,11 @@ class AnnieConfig:
     filter_code: str = "0"
     skip_recap_movies: bool = False
     preferred_groups: list[str] = field(default_factory=list)
+    subtitles_enabled: bool = True
+    default_sub_lang: str = ""
+    opensubtitles_api_key: str = ""
+    opensubtitles_username: str = ""
+    opensubtitles_password: str = ""
 
     @classmethod
     def load(cls) -> "AnnieConfig":
@@ -38,6 +43,11 @@ class AnnieConfig:
             filter_code=str(data.get("filter", data.get("filter_code", "0"))),
             skip_recap_movies=bool(data.get("skip_recap_movies", False)),
             preferred_groups=list(data.get("preferred_groups", [])),
+            subtitles_enabled=bool(data.get("subtitles_enabled", True)),
+            default_sub_lang=str(data.get("default_sub_lang", "")).strip(),
+            opensubtitles_api_key=str(data.get("opensubtitles_api_key", "")).strip(),
+            opensubtitles_username=str(data.get("opensubtitles_username", "")).strip(),
+            opensubtitles_password=str(data.get("opensubtitles_password", "")).strip(),
         )
         return replace(_config_cache)
 

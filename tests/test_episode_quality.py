@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from annie.catalog import build_catalog_from_releases
-from annie.episode_quality import (
+from annie.scoring import (
     MIN_SEEDERS_STRICT,
     assess_episode_item,
     assess_tv_catalog,

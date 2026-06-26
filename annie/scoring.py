@@ -1,10 +1,9 @@
-"""Scoring et matching des releases."""
+"""Scoring, matching et évaluation qualité des releases."""
 
 from __future__ import annotations
 
-import math
 import re
-from pathlib import Path
+from dataclasses import dataclass, field
 
 from annie.nyaa import NyaaEntry
 from annie.parsing import (
@@ -12,28 +11,80 @@ from annie.parsing import (
     parse_title,
     target_match_score,
 )
-from annie.types import MediaKind, ParsedTitle, ResultItem, WatchTarget
+from annie.types import MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
 
-_VARIANT_PENALTY_RE = (
-    (re.compile(r"director'?s?\s*cut", re.I), 4_000),
-    (re.compile(r"\bnew\s+edition\b", re.I), 2_500),
+MIN_SEEDERS_STRICT = 10
+MIN_SEEDERS_RELAXED = 3
+MIN_QUALITY_STRICT = 26  # ~720p
+MIN_QUALITY_RELAXED = 12  # ~480p
+
+_VARIANT_RULES: tuple[tuple[re.Pattern[str], str, int], ...] = (
+    (re.compile(r"director'?s?[\s._-]*cut", re.I), "directors_cut", 2),
+    (re.compile(r"\bnew\s+edition\b", re.I), "new_edition", 1),
+    (re.compile(r"\b(?:unofficial|cam|hdcam)\b", re.I), "suspect_source", 2),
 )
 
-def catalog_episode_rank(item: ResultItem) -> tuple[int, int, float]:
-    """Clé de tri pour upsert_episode : seeders d'abord, puis confiance/titre."""
-    penalty = 0.0
-    for pattern, value in _VARIANT_PENALTY_RE:
-        if pattern.search(item.entry.title):
-            penalty += value
-    title = item.score - penalty
-    trusted = 1 if item.entry.trusted else 0
-    return (item.entry.seeders, trusted, title)
+
+def variant_tier(title: str) -> int:
+    """0 = release standard, plus haut = variante moins désirable."""
+    tier = 0
+    for pattern, _, value in _VARIANT_RULES:
+        if pattern.search(title):
+            tier = max(tier, value)
+    return tier
+
+
+def variant_flags(title: str) -> list[str]:
+    return [name for pattern, name, _ in _VARIANT_RULES if pattern.search(title)]
+
+
+def catalog_episode_pick_rank(item: ResultItem) -> tuple:
+    """Tri catalogue / pick épisode : vivant → seeders → qualité → variante → confiance → match."""
+    seeders = item.entry.seeders
+    return (
+        seeders >= MIN_SEEDERS_RELAXED,
+        seeders,
+        item.parsed.quality,
+        -variant_tier(item.entry.title),
+        1 if item.entry.trusted else 0,
+        int(item.score),
+    )
+
+
+def catalog_episode_rank(item: ResultItem) -> tuple:
+    """Alias rétrocompat (tests)."""
+    return catalog_episode_pick_rank(item)
 
 
 def catalog_episode_score(item: ResultItem) -> float:
-    """Score scalaire legacy (tests / affichage)."""
-    seeds, trusted, title = catalog_episode_rank(item)
-    return title + seeds * 30 + trusted * 60
+    """Score scalaire pour affichage / tests."""
+    alive, seeds, quality, neg_variant, trusted, match = catalog_episode_pick_rank(item)
+    return float(match * 1000 + seeds * 30 + quality + neg_variant * 500 + trusted * 60 + int(alive) * 100)
+
+
+def filter_entry(
+    entry: NyaaEntry,
+    target: WatchTarget,
+    *,
+    match_queries: list[str] | None = None,
+) -> tuple[int, ParsedTitle] | None:
+    """Filtres durs + score de pertinence titre (sans seeders)."""
+    if is_manga(entry.title):
+        return None
+    parsed = parse_title(entry.title)
+    if parsed.kind == MediaKind.MANGA:
+        return None
+
+    match_score = target_match_score(parsed, target, match_queries=match_queries)
+    if match_score is None:
+        return None
+
+    if parsed.is_repack:
+        match_score -= 1
+    if parsed.kind == MediaKind.UNKNOWN:
+        match_score -= 2
+
+    return match_score, parsed
 
 
 def rank_entry(
@@ -42,37 +93,199 @@ def rank_entry(
     *,
     match_queries: list[str] | None = None,
 ) -> tuple[float, ParsedTitle] | None:
-    if is_manga(entry.title):
+    """Retourne (match_score, parsed) si le torrent passe les filtres."""
+    filtered = filter_entry(entry, target, match_queries=match_queries)
+    if filtered is None:
         return None
-    parsed = parse_title(entry.title)
-    if parsed.kind == MediaKind.MANGA:
-        return None
-    title_score = target_match_score(parsed, target, match_queries=match_queries)
-    if title_score is None:
-        return None
-
-    seed_score = math.log1p(entry.seeders) * 20
-    quality = parsed.quality
-    trusted_bonus = 8 if entry.trusted else 0
-    batch_penalty = -30 if target.episode is not None and parsed.kind == MediaKind.BATCH else 0
-    repack_penalty = -8 if parsed.is_repack else 0
-    unknown_penalty = -40 if parsed.kind == MediaKind.UNKNOWN else 0
-
-    total = title_score * 1000 + seed_score + quality + trusted_bonus + batch_penalty + repack_penalty + unknown_penalty
-    return total, parsed
+    match_score, parsed = filtered
+    return float(match_score), parsed
 
 
-def pick_best(entries: list[NyaaEntry], target: WatchTarget) -> tuple[NyaaEntry, ParsedTitle] | None:
-    ranked: list[tuple[float, NyaaEntry, ParsedTitle]] = []
+def _search_pick_rank(item: ResultItem) -> tuple:
+    """Recherche sans épisode précis : pertinence titre puis seeders."""
+    return (
+        int(item.score),
+        item.entry.seeders,
+        item.parsed.quality,
+        -variant_tier(item.entry.title),
+        1 if item.entry.trusted else 0,
+    )
+
+
+def pick_best(
+    entries: list[NyaaEntry],
+    target: WatchTarget,
+    *,
+    match_queries: list[str] | None = None,
+) -> tuple[NyaaEntry, ParsedTitle] | None:
+    queries = match_queries
+    candidates: list[ResultItem] = []
     for entry in entries:
-        result = rank_entry(entry, target)
-        if result is None:
+        filtered = filter_entry(entry, target, match_queries=queries)
+        if filtered is None:
             continue
-        score, parsed = result
-        ranked.append((score, entry, parsed))
-    if not ranked:
-        return None
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    _, best, parsed = ranked[0]
-    return best, parsed
+        match_score, parsed = filtered
+        candidates.append(
+            ResultItem(entry=entry, parsed=parsed, score=float(match_score))
+        )
 
+    if not candidates:
+        return None
+
+    if target.episode is not None:
+        candidates.sort(key=catalog_episode_pick_rank, reverse=True)
+    else:
+        candidates.sort(key=_search_pick_rank, reverse=True)
+
+    best = candidates[0]
+    return best.entry, best.parsed
+
+
+@dataclass(frozen=True)
+class EpisodeAssessment:
+    season: int | None
+    episode: int
+    seeders: int
+    quality: int
+    resolution: str | None
+    release_group: str | None
+    title: str
+    flags: tuple[str, ...] = ()
+
+    @property
+    def strict_ok(self) -> bool:
+        blocked = {"dead", "low_seeders", "low_quality", "directors_cut", "suspect_source"}
+        return not blocked.intersection(self.flags)
+
+    @property
+    def relaxed_ok(self) -> bool:
+        return "dead" not in self.flags
+
+
+@dataclass
+class SeasonQualityReport:
+    label: str
+    season: int | None
+    expected: int | None
+    found: int
+    episodes: list[EpisodeAssessment] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+
+    @property
+    def strict_ok(self) -> bool:
+        return not self.issues and all(ep.strict_ok for ep in self.episodes)
+
+    @property
+    def relaxed_ok(self) -> bool:
+        return all(ep.relaxed_ok for ep in self.episodes)
+
+
+@dataclass
+class CatalogQualityReport:
+    seasons: list[SeasonQualityReport]
+    issues: list[str] = field(default_factory=list)
+
+    @property
+    def strict_ok(self) -> bool:
+        return not self.issues and all(season.strict_ok for season in self.seasons)
+
+    @property
+    def relaxed_ok(self) -> bool:
+        return not any(
+            issue.startswith("saison") or issue.startswith("saisons")
+            for issue in self.issues
+        ) and all(season.relaxed_ok for season in self.seasons)
+
+
+def assess_episode_item(item: ResultItem, *, season: int | None = None) -> EpisodeAssessment:
+    episode = item.parsed.episode
+    if episode is None:
+        raise ValueError("episode required")
+
+    flags = variant_flags(item.entry.title)
+    seeders = item.entry.seeders
+    quality = item.parsed.quality
+
+    if seeders < MIN_SEEDERS_RELAXED:
+        flags.append("dead")
+    elif seeders < MIN_SEEDERS_STRICT:
+        flags.append("low_seeders")
+
+    if quality < MIN_QUALITY_RELAXED:
+        flags.append("low_quality")
+    elif quality < MIN_QUALITY_STRICT:
+        flags.append("sd_quality")
+
+    return EpisodeAssessment(
+        season=season if season is not None else item.parsed.season,
+        episode=episode,
+        seeders=seeders,
+        quality=quality,
+        resolution=item.parsed.resolution,
+        release_group=item.parsed.release_group,
+        title=item.entry.title,
+        flags=tuple(dict.fromkeys(flags)),
+    )
+
+
+def _format_episode_issue(assessment: EpisodeAssessment) -> str:
+    parts: list[str] = []
+    if "dead" in assessment.flags or "low_seeders" in assessment.flags:
+        parts.append(f"{assessment.seeders}S (min {MIN_SEEDERS_STRICT})")
+    if "low_quality" in assessment.flags or "sd_quality" in assessment.flags:
+        res = assessment.resolution or "?"
+        parts.append(f"qualité {res}/{assessment.quality}")
+    for flag in ("directors_cut", "new_edition", "suspect_source"):
+        if flag in assessment.flags:
+            parts.append(flag.replace("_", " "))
+    detail = ", ".join(parts) if parts else "ok"
+    season = assessment.season or 0
+    return f"S{season:02d}E{assessment.episode:02d}: {detail}"
+
+
+def assess_tv_catalog(
+    mal_tv: list[tuple[str, int | None]],
+    nyaa_tv: list[MediaSection],
+    *,
+    coverage_relaxed: float = 0.85,
+) -> CatalogQualityReport:
+    """Couverture MAL + seeders/qualité par épisode catalogue."""
+    issues: list[str] = []
+    mal_by_season = {index + 1: count for index, (_, count) in enumerate(mal_tv)}
+    season_reports: list[SeasonQualityReport] = []
+
+    if len(nyaa_tv) != len(mal_tv):
+        issues.append(f"saisons: MAL={len(mal_tv)} Nyaa={len(nyaa_tv)}")
+
+    for section in sorted(nyaa_tv, key=lambda s: s.season or 0):
+        season = section.season or 0
+        expected = mal_by_season.get(season) or section.expected_episodes
+        found = len(section.episodes)
+        report = SeasonQualityReport(
+            label=section.label,
+            season=section.season,
+            expected=expected,
+            found=found,
+        )
+
+        if expected and found < expected:
+            issues.append(f"{section.label}: {found}/{expected} épisodes")
+            if found < max(1, int(expected * coverage_relaxed)):
+                report.issues.append(f"{section.label}: couverture {found}/{expected}")
+
+        for episode in sorted(section.episodes):
+            item = section.episodes[episode]
+            assessment = assess_episode_item(item, season=section.season)
+            report.episodes.append(assessment)
+            if not assessment.strict_ok:
+                report.issues.append(_format_episode_issue(assessment))
+            elif not assessment.relaxed_ok:
+                report.issues.append(_format_episode_issue(assessment))
+
+        season_reports.append(report)
+
+    for season, expected in mal_by_season.items():
+        if not any(s.season == season for s in nyaa_tv):
+            issues.append(f"saison {season:02d} absente du catalogue Nyaa")
+
+    return CatalogQualityReport(seasons=season_reports, issues=issues)

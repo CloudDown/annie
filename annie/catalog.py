@@ -8,10 +8,8 @@ from dataclasses import replace
 
 from annie.nyaa import NYAA_PARALLEL, NyaaEntry
 from annie.parsing import (
-    ARC_SEASON_ALIASES,
     SPINOFF_PATTERNS,
     VIDEO_EXT_RE,
-    arc_to_season,
     is_manga,
     match_episode_filename,
     minimal_label,
@@ -20,7 +18,7 @@ from annie.parsing import (
     parse_title,
     strip_release_group,
 )
-from annie.scoring import catalog_episode_rank, rank_entry, target_match_score
+from annie.scoring import catalog_episode_pick_rank, rank_entry, target_match_score
 from annie.types import MalRelease, MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
 
 MAX_FRANCHISE_QUERIES = 20
@@ -31,10 +29,8 @@ GAP_MAX_MISSING = 6
 GAP_MAX_QUERIES = 10
 
 RECAP_MOVIE_PATTERNS = (
-    re.compile(r"\bjourney'?s\s+dawn\b", re.I),
-    re.compile(r"\bwandering\s+twilight\b", re.I),
-    re.compile(r"\btabidachi\s+no\s+yoake\b", re.I),
-    re.compile(r"\bhourou\s+suru\s+tasogare\b", re.I),
+    re.compile(r"\brecap\b", re.I),
+    re.compile(r"\bsummary\b", re.I),
 )
 
 
@@ -231,7 +227,7 @@ def upsert_episode(section: MediaSection, item: ResultItem) -> None:
         section.singles.append(item)
         return
     current = section.episodes.get(episode)
-    if current is None or catalog_episode_rank(item) > catalog_episode_rank(current):
+    if current is None or catalog_episode_pick_rank(item) > catalog_episode_pick_rank(current):
         section.episodes[episode] = item
 
 
@@ -260,11 +256,7 @@ MOVIE_PACK_RE = re.compile(
     r"\b(?:TV\s*\+\s*MOVIE|\+ MOVIE|\+ Movies|Season\s*\d+\s*\+\s*Season)\b",
     re.I,
 )
-MOVIE_ID_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\bmovie\s*1\b|\bjourney'?s\s+dawn\b|\btabidachi\s+no\s+yoake\b", re.I), "movie-1"),
-    (re.compile(r"\bmovie\s*2\b|\bwandering\s+twilight\b|\bhourou\s+suru\s+tasogare\b", re.I), "movie-2"),
-    (re.compile(r"\bmovie\s*3\b|\bdawn\s+of\s+the\s+deep\s+soul\b|\bfukaki\s+tamashii\b", re.I), "movie-3"),
-)
+MOVIE_NUM_RE = re.compile(r"\bmovie\s*(\d+)\b", re.I)
 
 
 def is_movie_noise(title: str) -> bool:
@@ -281,9 +273,9 @@ def is_movie_noise(title: str) -> bool:
 
 def movie_canonical_key(title: str, parsed: ParsedTitle) -> str:
     hay = normalize(f"{title} {parsed.display_name}")
-    for pattern, key in MOVIE_ID_PATTERNS:
-        if pattern.search(hay):
-            return key
+    match = MOVIE_NUM_RE.search(hay)
+    if match:
+        return f"movie-{match.group(1)}"
     cleaned = normalize(parsed.display_name)
     cleaned = re.sub(r"\bmovie\b", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -293,11 +285,8 @@ def movie_canonical_key(title: str, parsed: ParsedTitle) -> str:
 def infer_batch_season(body: str, season: int | None) -> int:
     if season is not None:
         return season
-    normalized_body = normalize(body)
-    for arc_name, mapped in ARC_SEASON_ALIASES.items():
-        if arc_name in normalized_body:
-            return mapped
-    return 1
+    inferred = parse_season(body)
+    return inferred if inferred is not None else 1
 
 
 def parse_batch_episode_range(title: str) -> tuple[int | None, list[int]]:
@@ -514,19 +503,6 @@ def _empty_section_for_release(release: MalRelease) -> MediaSection:
     )
 
 
-def _merge_arc_sections_into_section(section: MediaSection, parts: list[MediaSection]) -> None:
-    if section.season is None:
-        return
-    for part in parts:
-        if part.kind != MediaKind.EPISODE or not part.arc:
-            continue
-        mapped = arc_to_season(part.arc)
-        if mapped != section.season:
-            continue
-        for ep, item in part.episodes.items():
-            upsert_episode(section, item)
-
-
 def _pick_section_for_release(
     parts: list[MediaSection],
     release: MalRelease,
@@ -543,12 +519,7 @@ def _pick_section_for_release(
             if section.kind != MediaKind.EPISODE:
                 continue
             if section.season is not None and section.season != release.season:
-                if not (section.arc and arc_to_season(section.arc) == release.season):
-                    continue
-            if section.arc and section.season is None:
-                mapped = arc_to_season(section.arc)
-                if mapped is not None and mapped != release.season:
-                    continue
+                continue
             for _ep, item in section.episodes.items():
                 if _episode_belongs_to_release(
                     item, release, absolute_offset=absolute_offset
@@ -561,13 +532,6 @@ def _pick_section_for_release(
         for section in parts:
             if section.kind == MediaKind.EPISODE and section.season == release.season:
                 return section
-        for section in parts:
-            if section.kind == MediaKind.EPISODE and section.arc:
-                if arc_to_season(section.arc) == release.season:
-                    arc_merged = _empty_section_for_release(release)
-                    for ep, item in section.episodes.items():
-                        upsert_episode(arc_merged, item)
-                    return arc_merged
         return _empty_section_for_release(release)
 
     if release.kind == MediaKind.MOVIE:
@@ -953,7 +917,6 @@ def build_catalog_from_releases(
             continue
 
         section.expected_episodes = release.episode_count
-        _merge_arc_sections_into_section(section, parts)
         _merge_batches_into_section(
             section, parts, release, absolute_offset=absolute_offset
         )

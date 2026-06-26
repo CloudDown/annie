@@ -36,6 +36,7 @@ from annie.ui import (
     copy_magnet,
     fzf_available,
     pick_catalog,
+    pick_subtitle_language,
     read_query,
     run_search_spinner,
     print_banner,
@@ -297,16 +298,47 @@ def print_status_line(label: str, seeders: int, release_group: str | None) -> No
     )
 
 
+def _resolve_subtitle_lang(
+    config: AnnieConfig,
+    *,
+    cli_lang: str | None = None,
+    interactive: bool = False,
+) -> str | None:
+    if not config.subtitles_enabled:
+        return None
+    if cli_lang:
+        return cli_lang
+    if config.default_sub_lang:
+        return config.default_sub_lang
+    if interactive and fzf_available():
+        return pick_subtitle_language()
+    return None
+
+
 def play_item(
     item: ResultItem,
     config: AnnieConfig,
     *,
     keep: bool = False,
     player: str | None = None,
+    subtitle_lang: str | None = None,
+    series_query: str | None = None,
+    interactive_subs: bool = False,
 ) -> int:
     file_query = None
-    season = item.parsed.season if item.parsed.kind == MediaKind.BATCH else None
-    episode = item.parsed.episode if item.parsed.kind == MediaKind.BATCH else None
+    season = item.parsed.season
+    episode = item.parsed.episode
+
+    lang = _resolve_subtitle_lang(
+        config,
+        cli_lang=subtitle_lang,
+        interactive=interactive_subs,
+    )
+    subtitle_query = None
+    if lang:
+        from annie.subtitles import build_query
+
+        subtitle_query = build_query(item, series_title=series_query)
 
     label = minimal_label(item.parsed)
     print_status_line(label, item.entry.seeders, item.parsed.release_group)
@@ -321,6 +353,8 @@ def play_item(
         episode=episode,
         season=season,
         seed_while_watching=AnnieSettings.load().seed_while_watching,
+        subtitle_lang=lang,
+        subtitle_query=subtitle_query,
     )
 
 
@@ -354,7 +388,14 @@ def try_direct_play(
                 movie_number=movie_number,
             )
             if item is not None:
-                return play_item(item, config, keep=keep, player=player)
+                return play_item(
+                    item,
+                    config,
+                    keep=keep,
+                    player=player,
+                    series_query=raw_query,
+                    interactive_subs=True,
+                )
         except Exception:
             pass
 
@@ -365,7 +406,14 @@ def try_direct_play(
         return 1
     entry, parsed = picked
     item = ResultItem(entry=entry, parsed=parsed, score=0.0)
-    return play_item(item, config, keep=keep, player=player)
+    return play_item(
+        item,
+        config,
+        keep=keep,
+        player=player,
+        series_query=raw_query,
+        interactive_subs=True,
+    )
 
 
 def run_search(
@@ -433,6 +481,7 @@ def run_watch(
     category: str | None = None,
     filter_code: str | None = None,
     player: str | None = None,
+    subtitle_lang: str | None = None,
 ) -> int:
     options = {
         "season": season,
@@ -468,7 +517,14 @@ def run_watch(
                 kind=kind_from_options(options),
             )
             if item is not None:
-                return play_item(item, config, keep=keep, player=player)
+                return play_item(
+                    item,
+                    config,
+                    keep=keep,
+                    player=player,
+                    subtitle_lang=subtitle_lang,
+                    series_query=raw_query,
+                )
         except Exception:
             pass
 
@@ -485,12 +541,22 @@ def run_watch(
     entry, parsed = picked
     label = minimal_label(parsed)
     file_query = query_file
-    batch_season = season if parsed.kind == MediaKind.BATCH else None
-    batch_episode = episode if parsed.kind == MediaKind.BATCH else None
+    batch_season = season if parsed.kind == MediaKind.BATCH else parsed.season
+    batch_episode = episode if parsed.kind == MediaKind.BATCH else parsed.episode
     if batch_episode is not None:
         file_query = None
     print_status_line(label, entry.seeders, parsed.release_group)
     from annie.stream import play
+
+    lang = _resolve_subtitle_lang(config, cli_lang=subtitle_lang)
+    subtitle_query = None
+    if lang:
+        from annie.subtitles import build_query
+
+        subtitle_query = build_query(
+            ResultItem(entry=entry, parsed=parsed, score=0.0),
+            series_title=query,
+        )
 
     return play(
         entry.magnet,
@@ -501,6 +567,8 @@ def run_watch(
         episode=batch_episode,
         season=batch_season,
         seed_while_watching=AnnieSettings.load().seed_while_watching,
+        subtitle_lang=lang,
+        subtitle_query=subtitle_query,
     )
 
 
@@ -601,7 +669,12 @@ def interactive_loop(config: AnnieConfig) -> int:
             continue
 
         try:
-            code = play_item(item, config)
+            code = play_item(
+                item,
+                config,
+                series_query=raw_query,
+                interactive_subs=True,
+            )
         except Exception as exc:  # noqa: BLE001
             print_status(str(exc), kind="err")
             code = 1
@@ -660,6 +733,11 @@ def main() -> int:
     watch_cmd.add_argument("-q", "--query-file")
     watch_cmd.add_argument("--keep", action="store_true")
     _add_player_flag(watch_cmd)
+    watch_cmd.add_argument(
+        "--sub-lang",
+        metavar="CODE",
+        help="Langue sous-titres (en, zh, hi, es, fr)",
+    )
 
     sub.add_parser("ls", help="List torrent files").add_argument("source")
     play_cmd = sub.add_parser("play", help="Stream a magnet or torrent")
@@ -712,6 +790,7 @@ def main() -> int:
             category=args.category,
             filter_code=args.filter,
             player=None if args.player == "auto" else args.player,
+            subtitle_lang=args.sub_lang,
         )
     if args.command == "ls":
         from annie.stream import list_files
