@@ -192,7 +192,14 @@ def _write_previews(previews: dict[str, str]) -> None:
     tmp.replace(PREVIEW_FILE)
 
 
+def clear_terminal() -> None:
+    if sys.stdout.isatty():
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+
+
 def print_banner() -> None:
+    clear_terminal()
     print()
     for line in BANNER_ART:
         print(stylize(line, C.PALE_PINK))
@@ -306,15 +313,15 @@ def log_buffer_resume() -> None:
 
 
 _T = TypeVar("_T")
-_SEARCH_SPINNER = "/-\\|"
+_SEARCH_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
-    """Run *fn* while showing a /-\\| spinner on the current line."""
-    message = f"Searching · {query}"
+    """Run *fn* while showing a braille spinner on the current line."""
+    del query  # titre affiché ailleurs (fzf) — spinner volontairement minimal
 
     if not sys.stdout.isatty():
-        print(stylize(f"◆ {message}", C.GREEN), flush=True)
+        print(_s("Searching", C.MAGENTA), flush=True)
         return fn()
 
     result: list[_T] = []
@@ -334,7 +341,7 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
     frame = 0
     while not done.is_set():
         spin = _SEARCH_SPINNER[frame % len(_SEARCH_SPINNER)]
-        line = stylize(f"◆ {spin} {message}", C.GREEN)
+        line = f"{_s('Searching · ', C.MAGENTA)}{_s(spin, C.MAGENTA)}"
         print(f"\r{line}", end="", flush=True)
         frame += 1
         done.wait(0.09)

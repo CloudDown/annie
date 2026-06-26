@@ -601,7 +601,6 @@ def interactive_loop(config: AnnieConfig) -> int:
     while True:
         raw_query = read_query()
         if raw_query is None:
-            print_status("goodbye.", kind="ok")
             return 0
         if not raw_query:
             continue
@@ -611,7 +610,6 @@ def interactive_loop(config: AnnieConfig) -> int:
             print_help()
             continue
         if lowered in {"quit", "exit", "q"}:
-            print_status("goodbye.", kind="ok")
             return 0
 
         direct = try_direct_play(raw_query, config)
