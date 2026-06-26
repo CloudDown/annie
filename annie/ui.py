@@ -273,10 +273,7 @@ def stream_log_err(tag: str, detail: str = "", *, tone: str = "err") -> None:
 
 
 def format_stream_fatal(message: str) -> str:
-    return (
-        f"{_annie_prefix(stream=sys.stderr)}"
-        f"{_s(message, C.RED, stream=sys.stderr)}"
-    )
+    return f"{_annie_prefix(stream=sys.stderr)}{_s(message, C.RED, stream=sys.stderr)}"
 
 
 def format_buffer_ready(mib: int) -> str:
@@ -300,10 +297,7 @@ def format_buffer_local_file(mib: int) -> str:
 
 
 def log_buffer_pause() -> None:
-    line = (
-        f"{_annie_prefix()}{_s('⏸', C.YELLOW)}  "
-        f"{_s('buffer insuffisant', C.YELLOW)}"
-    )
+    line = f"{_annie_prefix()}{_s('⏸', C.YELLOW)}  {_s('buffer insuffisant', C.YELLOW)}"
     print(line, flush=True)
 
 

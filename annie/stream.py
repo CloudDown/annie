@@ -711,9 +711,7 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         if status.state == lt.torrent_status.seeding and _is_startable(
             target, ready, file_size, handle=handle, file_index=file_index
         ):
-            display.finish(
-                format_buffer_local_file(contiguous // 1024 // 1024)
-            )
+            display.finish(format_buffer_local_file(contiguous // 1024 // 1024))
             return contiguous, "seeding"
 
         peer_hint = (
