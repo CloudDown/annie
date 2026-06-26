@@ -85,9 +85,15 @@ class SubtitleCandidateFilterTests(unittest.TestCase):
                 98,
             ),
             SubtitleCandidate(3, "[Judas] Kanchigai no Atelier Meister - S01E08", 20),
+            SubtitleCandidate(4, "Witch S01E08 only", 500),
         ]
         filtered = filter_subtitle_candidates(candidates, query)
         self.assertEqual([candidate.file_id for candidate in filtered], [2])
+
+    def test_mahou_title_does_not_add_atelier_variant(self) -> None:
+        variants = subtitle_title_variants("Mahou Tsukai no Atelier")
+        self.assertNotIn("Atelier", variants)
+        self.assertNotIn("atelier", {value.casefold() for value in variants})
 
     def test_pick_best_respects_filter(self) -> None:
         query = SubtitleQuery(title="witch hat atelier", season=1, episode=8)

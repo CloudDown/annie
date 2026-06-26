@@ -25,6 +25,7 @@ CACHE_DIR = Path.home() / ".cache" / "annie" / "subs"
 TOKEN_CACHE = Path.home() / ".cache" / "annie" / "opensubtitles_token.json"
 CACHE_TTL = 7 * 24 * 3600
 TOKEN_TTL = 20 * 3600
+CACHE_KEY_VERSION = "v2"
 
 SUBTITLE_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
 
@@ -267,6 +268,11 @@ def _normalize_subtitle_tokens(text: str) -> set[str]:
     }
 
 
+def _is_distinctive_variant(title: str) -> bool:
+    tokens = _normalize_subtitle_tokens(title)
+    return bool(tokens - GENERIC_SUBTITLE_TOKENS)
+
+
 def _query_title_variants(query: SubtitleQuery) -> tuple[str, ...]:
     return subtitle_title_variants(query.title, extra=query.extra_titles)
 
@@ -299,11 +305,11 @@ def filter_subtitle_candidates(
         if witch_hat:
             if {"kanchigai", "meister"} & release_tokens:
                 continue
-            if "witch" in release_tokens or "tongari" in release_tokens:
+            if "tongari" in release_tokens or (
+                "witch" in release_tokens and "hat" in release_tokens
+            ):
                 filtered.append(candidate)
-                continue
-            if "atelier" in release_tokens and "witch" not in release_tokens:
-                continue
+            continue
 
         if distinctive and distinctive & release_tokens:
             filtered.append(candidate)
@@ -324,7 +330,7 @@ def subtitle_title_variants(
 
     def add(value: str) -> None:
         cleaned = value.strip()
-        if not cleaned:
+        if not cleaned or not _is_distinctive_variant(cleaned):
             return
         key = cleaned.casefold()
         if key in seen:
@@ -386,6 +392,8 @@ def probe_search(
     token = _auth_token(key)
     probed: list[tuple[str, list[SubtitleCandidate]]] = []
     for title in subtitle_title_variants(query.title, extra=query.extra_titles):
+        if not _is_distinctive_variant(title):
+            continue
         variant = SubtitleQuery(
             title=title,
             season=query.season,
@@ -457,7 +465,10 @@ def no_subtitles_message(query: SubtitleQuery, lang_code: str) -> str:
 
 
 def _cache_key(query: SubtitleQuery, lang_code: str) -> str:
-    payload = f"{query.title}|{query.kind}|{query.season}|{query.episode}|{lang_code}"
+    payload = (
+        f"{CACHE_KEY_VERSION}|{query.title}|{query.kind}|"
+        f"{query.season}|{query.episode}|{lang_code}"
+    )
     return hashlib.sha256(payload.encode()).hexdigest()[:20]
 
 
