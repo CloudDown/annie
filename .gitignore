@@ -19,11 +19,9 @@ dist/
 # Local agent context (not part of the app)
 AGENTS.md
 
-# Rapports de validation réseau (lourds)
-scripts/results/
-
-# Scripts de repro locale (non publiés)
-scripts/debug_aot_s2.py
+# Développement local (non versionné)
+scripts/
+tests/
 
 # Artefacts makepkg (AUR)
 packaging/aur/pkg/

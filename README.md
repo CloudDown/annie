@@ -76,23 +76,7 @@ makepkg -si
 
 </details>
 
-### Depuis Git (développement)
-
-```bash
-git clone https://github.com/CloudDown/annie.git
-cd annie
-make install
-```
-
-<details>
-<summary>Installation manuelle</summary>
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
-```
-
-</details>
+Pour contribuer ou développer depuis les sources, voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -200,61 +184,6 @@ flowchart LR
     E --> F[Langue sous-titres]
     F --> G[libtorrent]
     G --> H[mpv]
-```
-
----
-
-## Structure du projet
-
-```
-annie.py              Lanceur (active .venv si présent)
-annie/
-  cli.py              Commandes & boucle interactive
-  mal.py              Franchise MAL / Jikan
-  config.py           AnnieConfig (~/.config/annie/config.toml)
-  types.py            Types catalogue (MediaSection, MalRelease, …)
-  parsing.py          Parsing titres Nyaa
-  scoring.py          Scoring des releases
-  catalog.py          Construction catalogue aligné MAL
-  media.py            Façade de compatibilité (ré-exporte les modules ci-dessus)
-  settings.py         Options streaming (settings.toml)
-  nyaa.py             Client Nyaa & cache
-  stream.py           libtorrent + lecteurs
-  subtitles.py        OpenSubtitles.com (recherche + téléchargement)
-  ui.py               fzf & interface terminal
-  cache.py            Cache disque JSON
-  preview.py          Aperçus terminal
-tests/
-  helpers.py          Factories & chargement fixtures
-  fixtures/           Cas JSON reproductibles (Re:Zero, filenames, …)
-  test_parsing.py     Parsing, filtre saison, normalisation
-  test_catalog.py     Catalogue offline (régression Re:Zero)
-  test_scoring.py     Scoring / pick_best
-  test_stream.py      Matching fichiers batch
-  test_subtitles.py   Parsing API OpenSubtitles
-  test_fixtures.py    Pilotage par fixtures parse_titles.json
-scripts/
-  README.md           Guide des outils de debug
-  debug_parse.py      Parser un titre Nyaa
-  debug_match.py      Tester match épisode ↔ fichier
-  debug_catalog.py    Catalogue offline ou live
-  debug_franchise.py  Diagnostic détaillé (1 anime)
-  validate_franchise.py  Validation MAL vs Nyaa (100 anime)
-packaging/
-  aur/                PKGBUILD AUR (makepkg -si)
-```
-
----
-
-## Développement
-
-```bash
-make test           # suite unitaire offline
-make test-offline   # scripts debug + fixtures (sans réseau)
-make debug-rezero   # régression catalogue Re:Zero
-make validate       # validation réseau (10 anime)
-make run            # lance le CLI
-make clean          # supprime venv & artefacts
 ```
 
 ---

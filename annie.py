@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Annie launcher — uses .venv when present, then runs the CLI."""
+"""Annie launcher — uses .venv from `uv sync` when present, then runs the CLI."""
 
 from __future__ import annotations
 

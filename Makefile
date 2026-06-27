@@ -1,14 +1,11 @@
 .PHONY: install dev run test test-offline validate validate-subs debug-rezero clean help
 
-PYTHON ?= python3
-VENV := .venv
-PIP := $(VENV)/bin/pip
-PY := $(VENV)/bin/python
+UV ?= uv
 ANNIE := ./annie.py
 
 help:
 	@echo "Targets:"
-	@echo "  make install      create venv + editable install"
+	@echo "  make install      uv sync (venv + dépendances dont libtorrent)"
 	@echo "  make dev          alias for install"
 	@echo "  make run          launch interactive CLI"
 	@echo "  make test         suite unitaire (offline)"
@@ -18,12 +15,8 @@ help:
 	@echo "  make debug-rezero régression catalogue Re:Zero offline"
 	@echo "  make clean        remove venv and build artifacts"
 
-$(VENV)/bin/python:
-	$(PYTHON) -m venv $(VENV)
-	$(PIP) install -U pip
-
-install: $(VENV)/bin/python
-	$(PIP) install -e .
+install:
+	$(UV) sync
 
 dev: install
 
@@ -31,26 +24,26 @@ run: install
 	$(ANNIE)
 
 test: install
-	$(PY) -m unittest discover -s tests -v
+	$(UV) run python -m unittest discover -s tests -v
 
 test-offline: install
-	$(PY) scripts/debug_match.py --fixture
-	$(PY) scripts/debug_subtitles.py --fixture
-	$(PY) scripts/debug_catalog.py --offline
-	$(PY) scripts/debug_parse.py --fixture parse_titles
+	$(UV) run python scripts/debug_match.py --fixture
+	$(UV) run python scripts/debug_subtitles.py --fixture
+	$(UV) run python scripts/debug_catalog.py --offline
+	$(UV) run python scripts/debug_parse.py --fixture parse_titles
 
 validate: install
-	$(PY) scripts/validate_franchise.py --limit 10
+	$(UV) run python scripts/validate_franchise.py --limit 10
 
 validate-subs: install
-	$(PY) scripts/debug_subtitles.py --fixture --live
+	$(UV) run python scripts/debug_subtitles.py --fixture --live
 
 validate-top: install
-	$(PY) scripts/validate_franchise.py --top 1000 --workers 2 --output scripts/results/validate_top1000.json
+	$(UV) run python scripts/validate_franchise.py --top 1000 --workers 2 --output scripts/results/validate_top1000.json
 
 debug-rezero: install
-	$(PY) scripts/debug_catalog.py --offline
+	$(UV) run python scripts/debug_catalog.py --offline
 
 clean:
-	rm -rf $(VENV) build dist *.egg-info annie.egg-info
+	rm -rf .venv build dist *.egg-info annie.egg-info
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

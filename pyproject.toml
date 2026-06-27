@@ -15,7 +15,7 @@ classifiers = [
     "Topic :: Multimedia :: Video",
 ]
 dependencies = [
-    "libtorrent>=2.0.13",  # dev/venv ; paquet Arch : python-libtorrent
+    "libtorrent>=2.0.13",
 ]
 
 [project.optional-dependencies]
