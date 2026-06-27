@@ -669,45 +669,57 @@ def interactive_loop(config: AnnieConfig) -> int:
                     target_episode=inline_episode,
                 )
 
-        picked = pick_catalog(
-            catalog,
-            season=options.get("season"),
-            episode=options.get("episode"),
-            kind=kind_from_options(options),
-            on_section=lambda section: fill_section_gaps(
+        def on_section(section) -> None:
+            fill_section_gaps(
                 section,
                 search=search,
                 category=config.category,
                 filter_code=config.filter_code,
                 skip_recap_movies=config.skip_recap_movies,
                 target_episode=inline_episode,
-            ),
-        )
-        if picked is None:
-            continue
-
-        action, item = picked
-        if action == "ctrl-o":
-            if copy_magnet(item.entry.magnet):
-                print_status("magnet copied", kind="ok")
-            else:
-                print_status("clipboard unavailable", kind="warn")
-            continue
-
-        try:
-            code = play_item(
-                item,
-                config,
-                series_query=raw_query,
-                mal_titles=tuple(options.get("mal_titles", ())),
-                interactive_subs=True,
             )
-        except Exception as exc:  # noqa: BLE001
-            print_status(str(exc), kind="err")
-            code = 1
 
-        if code != 0:
-            print_status("playback interrupted", kind="warn")
+        binge_season = options.get("season")
+        next_episode = options.get("episode")
+
+        while True:
+            picked = pick_catalog(
+                catalog,
+                season=binge_season,
+                episode=next_episode,
+                kind=kind_from_options(options),
+                on_section=on_section,
+            )
+            next_episode = None
+
+            if picked is None:
+                break
+
+            action, item = picked
+            if action == "ctrl-o":
+                if copy_magnet(item.entry.magnet):
+                    print_status("magnet copied", kind="ok")
+                else:
+                    print_status("clipboard unavailable", kind="warn")
+                continue
+
+            try:
+                code = play_item(
+                    item,
+                    config,
+                    series_query=raw_query,
+                    mal_titles=tuple(options.get("mal_titles", ())),
+                    interactive_subs=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print_status(str(exc), kind="err")
+                code = 1
+
+            if item.parsed.season is not None:
+                binge_season = item.parsed.season
+
+            if code != 0:
+                print_status("playback interrupted", kind="warn")
 
 
 def _add_player_flag(parser: argparse.ArgumentParser) -> None:
