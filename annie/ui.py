@@ -295,7 +295,7 @@ def format_buffer_local_file(mib: int) -> str:
 
 
 def log_buffer_pause() -> None:
-    line = f"{_annie_prefix()}{_s('⏸', C.YELLOW)}  {_s('buffer insuffisant', C.YELLOW)}"
+    line = f"{_annie_prefix()}{_s('⏸', C.RED)}  {_s('buffer insuffisant', C.RED)}"
     print(line, flush=True)
 
 
