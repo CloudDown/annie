@@ -33,6 +33,7 @@ test-offline: install
 	$(UV) run python scripts/debug_subtitles.py --fixture
 	$(UV) run python scripts/debug_catalog.py --offline
 	$(UV) run python scripts/debug_parse.py --fixture parse_titles
+	$(UV) run python scripts/debug_coherence.py --fixture catalog_coherence_uniform
 
 validate: install
 	$(UV) run python scripts/validate_franchise.py --limit 10

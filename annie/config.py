@@ -117,6 +117,9 @@ class CatalogConfig:
     min_quality_strict: int = 26
     min_quality_relaxed: int = 12
     coverage_relaxed: float = 0.85
+    prefer_season_batch: bool = True
+    season_batch_min_coverage: float = 0.85
+    coherence_min_share: float = 0.60
 
 
 @dataclass
@@ -274,6 +277,15 @@ class AnnieConfig:
             ),
             coverage_relaxed=_float(
                 catalog_table.get("coverage_relaxed"), 0.85
+            ),
+            prefer_season_batch=_bool(
+                catalog_table.get("prefer_season_batch"), True
+            ),
+            season_batch_min_coverage=_float(
+                catalog_table.get("season_batch_min_coverage"), 0.85
+            ),
+            coherence_min_share=_float(
+                catalog_table.get("coherence_min_share"), 0.60
             ),
         )
 

@@ -11,6 +11,7 @@ from annie.parsing import (
     parse_title,
     target_match_score,
 )
+from annie.season_coherence import assess_season_coherence, format_coherence_issue
 from annie.types import MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
 
 MIN_SEEDERS_STRICT = 10
@@ -205,6 +206,7 @@ class SeasonQualityReport:
     found: int
     episodes: list[EpisodeAssessment] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+    coherence_outliers: list[str] = field(default_factory=list)
 
     @property
     def strict_ok(self) -> bool:
@@ -324,6 +326,13 @@ def assess_tv_catalog(
                 report.issues.append(_format_episode_issue(assessment))
             elif not assessment.relaxed_ok:
                 report.issues.append(_format_episode_issue(assessment))
+
+        coherence = assess_season_coherence(section)
+        if coherence.inconsistent:
+            for outlier in coherence.outliers:
+                issue = format_coherence_issue(outlier, season=section.season)
+                report.coherence_outliers.append(issue)
+                report.issues.append(issue)
 
         season_reports.append(report)
 

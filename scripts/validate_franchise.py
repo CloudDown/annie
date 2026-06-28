@@ -309,6 +309,9 @@ def _score_tv(
                 for f in ("directors_cut", "new_edition", "suspect_source")
             )
         ),
+        "coherence_outliers": sum(
+            len(s.coherence_outliers) for s in report.seasons
+        ),
     }
 
     return (

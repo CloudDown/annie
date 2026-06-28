@@ -1,0 +1,17 @@
+{
+  "query": "re zero",
+  "description": "Saison uniforme — un seul pack batch",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 25, "label": "Season 01"}
+  ],
+  "expectations": {
+    "1": {"must_have": [1, 8, 25]}
+  },
+  "entries": [
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu (01-25) (1080p) [Batch]",
+      "seeders": 102,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

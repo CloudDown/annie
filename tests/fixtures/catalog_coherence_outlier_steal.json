@@ -1,0 +1,31 @@
+{
+  "query": "re zero",
+  "description": "Single très seedé qui vole un épisode au batch",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 25, "label": "Season 01"}
+  ],
+  "expectations": {
+    "1": {"must_have": [8]}
+  },
+  "coherence_after": {
+    "ep8_magnet": "magnet:?xt=urn:btih:dddddddddddddddddddddddddddddddddddddddd",
+    "ep8_must_contain": "SubsPlease"
+  },
+  "entries": [
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu (01-24) (1080p) [Batch]",
+      "seeders": 90,
+      "magnet": "magnet:?xt=urn:btih:dddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "title": "[EvilRips] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [HOT].mkv",
+      "seeders": 500,
+      "magnet": "magnet:?xt=urn:btih:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 25 (1080p) [SINGLE].mkv",
+      "seeders": 60,
+      "magnet": "magnet:?xt=urn:btih:ffffffffffffffffffffffffffffffffffffffff"
+    }
+  ]
+}

@@ -40,6 +40,9 @@ min_seeders_relaxed = 3
 min_quality_strict = 26      # ~720p
 min_quality_relaxed = 12     # ~480p
 coverage_relaxed = 0.85
+prefer_season_batch = true
+season_batch_min_coverage = 0.85
+coherence_min_share = 0.60
 
 [subtitles]
 enabled = true

@@ -20,6 +20,7 @@ from annie.parsing import (
     strip_release_group,
 )
 from annie.scoring import catalog_episode_pick_rank, rank_entry, target_match_score
+from annie.season_coherence import assess_season_coherence
 from annie.types import (
     MalRelease,
     MediaKind,
@@ -739,6 +740,10 @@ def build_catalog(
 
     apply_batch_episodes(sections, batches)
 
+    for section in sections.values():
+        if section.kind == MediaKind.EPISODE and section.episodes:
+            apply_coherent_season_picks(section, expected=section.expected_episodes)
+
     result = [
         section for section in sections.values() if section.episodes or section.singles
     ]
@@ -828,6 +833,125 @@ def _pick_section_for_release(
                 return section
 
     return None
+
+
+def _coherence_cfg():
+    from annie.config import AnnieConfig
+
+    return AnnieConfig.load().catalog
+
+
+def _batch_candidates(section: MediaSection) -> list[ResultItem]:
+    from annie.parsing import parse_title
+
+    seen: set[str] = set()
+    candidates: list[ResultItem] = []
+    for item in section.singles:
+        if item.entry.magnet in seen:
+            continue
+        if (
+            item.parsed.kind == MediaKind.BATCH
+            or parse_title(item.entry.title).kind == MediaKind.BATCH
+        ):
+            seen.add(item.entry.magnet)
+            candidates.append(item)
+    for item in section.episodes.values():
+        if item.entry.magnet in seen:
+            continue
+        if parse_title(item.entry.title).kind == MediaKind.BATCH:
+            seen.add(item.entry.magnet)
+            candidates.append(item)
+    return candidates
+
+
+def _batch_coverage(
+    batch: ResultItem, expected: int | None
+) -> tuple[list[int], float]:
+    _, episodes = parse_batch_episode_range(batch.entry.title)
+    if not episodes:
+        return [], 0.0
+    if not expected:
+        return episodes, 1.0
+    covered = [episode for episode in episodes if 1 <= episode <= expected]
+    return covered, len(covered) / expected
+
+
+def _batch_pick_score(batch: ResultItem, expected: int | None) -> tuple[float, list[int]]:
+    covered, coverage = _batch_coverage(batch, expected)
+    if not covered:
+        return 0.0, []
+    score = coverage * batch.entry.seeders * max(1, batch.parsed.quality)
+    return score, covered
+
+
+def apply_coherent_season_picks(
+    section: MediaSection,
+    *,
+    expected: int | None = None,
+    prefer_batch: bool | None = None,
+    season_batch_min_coverage: float | None = None,
+    coherence_min_share: float | None = None,
+) -> None:
+    """Privilégie un pack saison cohérent avant les épisodes isolés."""
+    if section.kind != MediaKind.EPISODE or not section.episodes:
+        return
+
+    cfg = _coherence_cfg()
+    if prefer_batch is None:
+        prefer_batch = cfg.prefer_season_batch
+    if not prefer_batch:
+        return
+
+    expected = expected or section.expected_episodes
+    min_coverage = (
+        season_batch_min_coverage
+        if season_batch_min_coverage is not None
+        else cfg.season_batch_min_coverage
+    )
+    min_share = (
+        coherence_min_share
+        if coherence_min_share is not None
+        else cfg.coherence_min_share
+    )
+
+    candidates = _batch_candidates(section)
+    best_batch: ResultItem | None = None
+    best_score = 0.0
+    best_covered: list[int] = []
+
+    for batch in candidates:
+        score, covered = _batch_pick_score(batch, expected)
+        _, coverage = _batch_coverage(batch, expected)
+        if coverage >= min_coverage and score > best_score:
+            best_score = score
+            best_batch = batch
+            best_covered = covered
+
+    if best_batch is not None:
+        for episode in best_covered:
+            section.episodes[episode] = item_for_episode(best_batch, episode)
+
+    report = assess_season_coherence(section, coherence_min_share=min_share)
+    if not report.dominant_magnet or report.magnet_coverage < min_share:
+        return
+
+    dominant_by_episode: dict[int, ResultItem] = {}
+    for batch in candidates:
+        if batch.entry.magnet != report.dominant_magnet:
+            continue
+        covered, _ = _batch_coverage(batch, expected)
+        for episode in covered:
+            dominant_by_episode[episode] = item_for_episode(batch, episode)
+    for episode, item in section.episodes.items():
+        if item.entry.magnet == report.dominant_magnet:
+            dominant_by_episode.setdefault(episode, item)
+
+    for outlier in report.outliers:
+        if outlier.reason != "magnet":
+            continue
+        replacement = dominant_by_episode.get(outlier.episode)
+        if replacement is not None:
+            section.episodes[outlier.episode] = replacement
 
 
 def normalize_section_episodes(
@@ -1147,6 +1271,7 @@ def build_catalog_from_releases(
     skip_recap_movies: bool = False,
     pool: ThreadPoolExecutor | None = None,
     fill_gaps: bool = False,
+    coherent_picks: bool | None = None,
 ) -> list[MediaSection]:
     from annie.config import AnnieConfig
 
@@ -1261,6 +1386,11 @@ def build_catalog_from_releases(
         )
         normalize_section_episodes(
             section, release.episode_count, absolute_offset=absolute_offset
+        )
+        apply_coherent_season_picks(
+            section,
+            expected=release.episode_count,
+            prefer_batch=coherent_picks,
         )
         if fill_gaps:
             _fill_missing_episodes(
