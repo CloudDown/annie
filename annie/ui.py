@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
+from annie.paths import cache_dir
 from annie.media import MediaKind, MediaSection, ResultItem, minimal_label
 
 
@@ -165,7 +166,7 @@ HELP = f"""
   help · quit
 """
 
-CACHE_DIR = Path.home() / ".cache" / "annie"
+CACHE_DIR = cache_dir()
 PREVIEW_FILE = CACHE_DIR / "previews.json"
 SEP = "\x1f"
 _preview_digest: str | None = None
@@ -817,6 +818,20 @@ def pick_catalog(
 
 
 def copy_magnet(magnet: str) -> bool:
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["clip"],
+                input=magnet,
+                text=True,
+                check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW
+                if hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0,
+            )
+            return True
+        except OSError:
+            return False
     if shutil.which("wl-copy"):
         subprocess.run(["wl-copy", magnet], check=False)
         return True

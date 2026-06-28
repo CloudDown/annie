@@ -1,11 +1,13 @@
-"""Fichiers utilisateur ~/.config/annie/ (templates à l'installation)."""
+"""Fichiers utilisateur (config.toml, settings.toml)."""
 
 from __future__ import annotations
 
 from importlib.resources import files
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".config" / "annie"
+from annie.paths import config_dir
+
+CONFIG_DIR = config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 SETTINGS_FILE = CONFIG_DIR / "settings.toml"
 

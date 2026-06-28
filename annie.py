@@ -8,12 +8,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python3"
-if VENV_PYTHON.exists() and Path(sys.executable).resolve() != VENV_PYTHON.resolve():
-    os.execv(VENV_PYTHON, [str(VENV_PYTHON), str(__file__), *sys.argv[1:]])
-
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from annie.paths import venv_python  # noqa: E402
+
+_venv_py = venv_python(ROOT)
+if _venv_py is not None and Path(sys.executable).resolve() != _venv_py.resolve():
+    os.execv(str(_venv_py), [str(_venv_py), str(__file__), *sys.argv[1:]])
 
 from annie.cli import main  # noqa: E402
 

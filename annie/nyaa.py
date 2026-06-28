@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from annie.cache import read_json, write_json
+from annie.paths import cache_dir
 from annie.net import fetch_text
 
 NYAA_BASE = "https://nyaa.si"
@@ -20,7 +21,7 @@ USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
 NYAA_PARALLEL = 10
 NYAA_SEARCH_PAGES = 2
 NYAA_FAST_PAGES = NYAA_SEARCH_PAGES
-DISK_CACHE_DIR = Path.home() / ".cache" / "annie" / "nyaa"
+DISK_CACHE_DIR = cache_dir() / "nyaa"
 DISK_CACHE_TTL = 45 * 60
 
 _search_cache: dict[tuple[str, str, str, str], tuple[float, list["NyaaEntry"]]] = {}

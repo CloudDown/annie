@@ -16,13 +16,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from annie.cache import read_json, write_json
+from annie.paths import cache_dir
 from annie.net import fetch_bytes
 from annie.types import MediaKind, ResultItem
 
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
 API_BASE = "https://api.opensubtitles.com/api/v1"
-CACHE_DIR = Path.home() / ".cache" / "annie" / "subs"
-TOKEN_CACHE = Path.home() / ".cache" / "annie" / "opensubtitles_token.json"
+CACHE_DIR = cache_dir() / "subs"
+TOKEN_CACHE = cache_dir() / "opensubtitles_token.json"
 CACHE_TTL = 7 * 24 * 3600
 TOKEN_TTL = 20 * 3600
 CACHE_KEY_VERSION = "v2"

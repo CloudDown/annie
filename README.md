@@ -78,6 +78,47 @@ makepkg -si
 
 Pour contribuer ou développer depuis les sources, voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Debian / Ubuntu
+
+**Paquet `.deb` (depuis les sources du dépôt) :**
+
+```bash
+sudo apt install python3 python3-pip python3-libtorrent fzf mpv
+chmod +x packaging/debian/build-deb.sh
+./packaging/debian/build-deb.sh
+sudo dpkg -i dist/annie_*_all.deb
+```
+
+**Installation développeur (toute plateforme Unix) :**
+
+```bash
+# Prérequis : Python 3.11+, fzf, mpv (ou vlc/ffplay), libtorrent
+curl -LsSf https://astral.sh/uv/install.sh | sh   # optionnel mais recommandé
+make install
+./annie.py
+```
+
+Les fichiers de configuration sont créés dans `~/.config/annie/` (ou `%APPDATA%\annie\` sous Windows).
+
+### Windows
+
+**PowerShell (depuis les sources) :**
+
+```powershell
+# Prérequis : Python 3.11+ dans le PATH
+powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
+.\annie.py
+```
+
+Installe aussi **fzf** et **mpv** (recommandés) :
+
+```powershell
+winget install junegunn.fzf
+winget install mpv.mpv
+```
+
+Configuration : `%APPDATA%\annie\` · Cache : `%LOCALAPPDATA%\annie\Cache\`
+
 ---
 
 ## Utilisation
@@ -112,7 +153,12 @@ annie ls fichier.torrent             # liste les fichiers d’un torrent
 
 ## Configuration
 
-Annie lit deux fichiers dans `~/.config/annie/` :
+Annie lit deux fichiers dans le répertoire de configuration utilisateur :
+
+| Plateforme | Emplacement |
+|---|---|
+| Linux / Debian | `~/.config/annie/` |
+| Windows | `%APPDATA%\annie\` |
 
 | Fichier | Rôle |
 |---|---|

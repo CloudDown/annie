@@ -15,6 +15,7 @@ from pathlib import Path
 
 import libtorrent as lt
 
+from annie.paths import cache_dir, ipc_ready as mpv_ipc_is_ready, mpv_ipc_path
 from annie.parsing import _filename_for_episode_match, match_episode_filename
 from annie.ui import (
     BufferStatusDisplay,
@@ -34,7 +35,7 @@ from annie.ui import (
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}
 MKV_MAGIC = b"\x1a\x45\xdf\xa3"
 MKV_CLUSTER = b"\x1f\x43\xb6\x75"
-CACHE_DIR = Path.home() / ".cache" / "annie"
+CACHE_DIR = cache_dir()
 START_MIN_MKV_BYTES = 2 * 1024 * 1024
 MKV_START_CONTIGUOUS_BYTES = 16 * 1024 * 1024
 MKV_FRONTIER_PIECES = 64
@@ -807,25 +808,41 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
 
 
 def _mpv_ipc_request(ipc_path: Path, command: list) -> object | None:
+    payload_bytes = json.dumps({"command": command}).encode() + b"\n"
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.5)
-            sock.connect(str(ipc_path))
-            sock.sendall(json.dumps({"command": command}).encode() + b"\n")
-            chunks: list[bytes] = []
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                if b"\n" in chunk:
-                    break
-            if not chunks:
-                return None
-            line = b"".join(chunks).split(b"\n", 1)[0]
-            payload = json.loads(line.decode())
-            if payload.get("error") == "success":
-                return payload.get("data")
+        if sys.platform == "win32":
+            with open(ipc_path, "r+b", buffering=0) as pipe:
+                pipe.write(payload_bytes)
+                chunks: list[bytes] = []
+                while True:
+                    chunk = pipe.read(4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    if b"\n" in chunk:
+                        break
+                if not chunks:
+                    return None
+                line = b"".join(chunks).split(b"\n", 1)[0]
+        else:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.5)
+                sock.connect(str(ipc_path))
+                sock.sendall(payload_bytes)
+                chunks = []
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    if b"\n" in chunk:
+                        break
+                if not chunks:
+                    return None
+                line = b"".join(chunks).split(b"\n", 1)[0]
+        parsed = json.loads(line.decode())
+        if parsed.get("error") == "success":
+            return parsed.get("data")
     except (OSError, json.JSONDecodeError, ValueError):
         return None
     return None
@@ -845,10 +862,10 @@ def _estimate_play_byte(time_pos: object, duration: object, file_size: int) -> i
 def _wait_mpv_ipc(ipc_path: Path, *, timeout_sec: float = 5.0) -> bool:
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
-        if ipc_path.is_socket():
+        if mpv_ipc_is_ready(ipc_path):
             return True
         time.sleep(0.05)
-    return ipc_path.is_socket()
+    return mpv_ipc_is_ready(ipc_path)
 
 
 def _play_while_downloading(
@@ -863,7 +880,7 @@ def _play_while_downloading(
     seed_while_watching: bool = False,
 ) -> int:
     paused_for_buffer = False
-    ipc_ready = ipc_path is not None and _wait_mpv_ipc(ipc_path)
+    ipc_available = ipc_path is not None and _wait_mpv_ipc(ipc_path)
 
     while proc.poll() is None:
         _enforce_sequential_frontier(handle, file_index)
@@ -871,7 +888,7 @@ def _play_while_downloading(
             _enable_watch_seed(session, handle, file_index)
         contiguous = _contiguous_file_bytes(handle, file_index)
 
-        if ipc_ready and ipc_path is not None:
+        if ipc_available and ipc_path is not None:
             time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
             duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
             play_byte = _estimate_play_byte(time_pos, duration, file_size)
@@ -950,9 +967,7 @@ def _launch_and_stream(
     if player_name == "mpv":
         ipc_dir = CACHE_DIR / "ipc"
         ipc_dir.mkdir(parents=True, exist_ok=True)
-        ipc_path = ipc_dir / f"{os.getpid()}-{int(time.time() * 1000)}.sock"
-        if ipc_path.exists():
-            ipc_path.unlink()
+        ipc_path = mpv_ipc_path(ipc_dir)
 
     try:
         proc = _player_popen(
@@ -969,7 +984,7 @@ def _launch_and_stream(
             seed_while_watching=seed_while_watching,
         )
     finally:
-        if ipc_path is not None and ipc_path.exists():
+        if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
             ipc_path.unlink(missing_ok=True)
 
     if code == 2 and retry:
@@ -983,9 +998,7 @@ def _launch_and_stream(
         if player_name == "mpv":
             ipc_dir = CACHE_DIR / "ipc"
             ipc_dir.mkdir(parents=True, exist_ok=True)
-            ipc_path = ipc_dir / f"{os.getpid()}-{int(time.time() * 1000)}.sock"
-            if ipc_path.exists():
-                ipc_path.unlink()
+            ipc_path = mpv_ipc_path(ipc_dir)
         try:
             proc = _player_popen(
                 player_command(
@@ -1003,7 +1016,7 @@ def _launch_and_stream(
                 seed_while_watching=seed_while_watching,
             )
         finally:
-            if ipc_path is not None and ipc_path.exists():
+            if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
                 ipc_path.unlink(missing_ok=True)
 
     return code
