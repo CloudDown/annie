@@ -6,7 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 
-from annie.nyaa import NYAA_PARALLEL, NyaaEntry
+from annie.nyaa import NyaaEntry
 from annie.parsing import (
     SPINOFF_PATTERNS,
     VIDEO_EXT_RE,
@@ -35,6 +35,13 @@ PRIMARY_SEARCH_PAGES = 2
 GAP_SEARCH_PAGES = 1
 GAP_MAX_MISSING = 6
 GAP_MAX_QUERIES = 10
+
+
+def _catalog_cfg():
+    from annie.config import AnnieConfig
+
+    return AnnieConfig.load().catalog
+
 
 RECAP_MOVIE_PATTERNS = (
     re.compile(r"\brecap\b", re.I),
@@ -905,8 +912,11 @@ def _gap_search_queries(
     missing: list[int],
     *,
     absolute_offset: int = 0,
-    max_missing: int = GAP_MAX_MISSING,
+    max_missing: int | None = None,
 ) -> list[str]:
+    cfg = _catalog_cfg()
+    if max_missing is None:
+        max_missing = cfg.gap_max_missing
     queries: list[str] = []
     shorts: list[str] = []
     for base in release.nyaa_queries:
@@ -929,7 +939,7 @@ def _gap_search_queries(
                 abs_variant = f"{short} {absolute_ep:02d}"
                 if abs_variant not in queries:
                     queries.append(abs_variant)
-    return queries[:GAP_MAX_QUERIES]
+    return queries[: cfg.gap_max_queries]
 
 
 def _fill_missing_episodes(
@@ -942,9 +952,12 @@ def _fill_missing_episodes(
     skip_recap_movies: bool,
     pool: ThreadPoolExecutor | None,
     absolute_offset: int = 0,
-    max_missing: int = GAP_MAX_MISSING,
+    max_missing: int | None = None,
     max_tv_season: int | None = None,
 ) -> None:
+    cfg = _catalog_cfg()
+    if max_missing is None:
+        max_missing = cfg.gap_max_missing
     expected = release.episode_count
     if not expected or release.kind != MediaKind.EPISODE:
         return
@@ -967,7 +980,7 @@ def _fill_missing_episodes(
             search,
             category=category,
             filter_code=filter_code,
-            pages=GAP_SEARCH_PAGES,
+            pages=cfg.gap_search_pages,
         )
 
     if pool is None:
@@ -1120,7 +1133,7 @@ def fill_section_gaps(
         skip_recap_movies=skip_recap_movies,
         pool=pool,
         absolute_offset=offset,
-        max_missing=1 if target_episode is not None else GAP_MAX_MISSING,
+        max_missing=1 if target_episode is not None else None,
         max_tv_season=max_tv_season,
     )
 
@@ -1135,9 +1148,13 @@ def build_catalog_from_releases(
     pool: ThreadPoolExecutor | None = None,
     fill_gaps: bool = False,
 ) -> list[MediaSection]:
+    from annie.config import AnnieConfig
+
+    app_cfg = AnnieConfig.load()
+    cat_cfg = app_cfg.catalog
     sections: list[MediaSection] = []
     seen_magnets: set[str] = set()
-    workers = min(NYAA_PARALLEL, max(len(releases), 1))
+    workers = min(app_cfg.nyaa.parallel, max(len(releases), 1))
     absolute_offsets = franchise_absolute_offsets(releases)
     franchise_max_tv_season = max_tv_season(releases)
 
@@ -1153,7 +1170,7 @@ def build_catalog_from_releases(
         query_freq.keys(),
         key=lambda query: (-query_freq[query], len(query.split()), query.lower()),
     )
-    for query in ranked_queries[:MAX_FRANCHISE_QUERIES]:
+    for query in ranked_queries[: cat_cfg.franchise_max_queries]:
         unique_queries.append(query)
 
     query_entries: dict[str, list[NyaaEntry]] = {}
@@ -1166,7 +1183,9 @@ def build_catalog_from_releases(
                 search,
                 category=category,
                 filter_code=filter_code,
-                pages=PRIMARY_SEARCH_PAGES if index < 2 else FRANCHISE_SEARCH_PAGES,
+                pages=cat_cfg.primary_search_pages
+                if index < 2
+                else cat_cfg.franchise_search_pages,
             ): query
             for index, query in enumerate(unique_queries)
         }
@@ -1194,7 +1213,7 @@ def build_catalog_from_releases(
                     search,
                     category=category,
                     filter_code=filter_code,
-                    pages=FRANCHISE_SEARCH_PAGES,
+                    pages=cat_cfg.franchise_search_pages,
                 )
         for query in source_queries:
             for entry in query_entries.get(query, []):

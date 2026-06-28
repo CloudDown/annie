@@ -40,6 +40,16 @@ PREFERRED_GROUPS = {
 }
 
 
+def _merged_preferred_groups() -> dict[str, int]:
+    from annie.config import AnnieConfig
+
+    groups = dict(PREFERRED_GROUPS)
+    cfg = AnnieConfig.load().catalog
+    for name in cfg.preferred_groups:
+        groups[name.lower()] = cfg.preferred_group_bonus
+    return groups
+
+
 def resolution_tag(title: str) -> str | None:
     for pattern, _ in RESOLUTION_SCORES:
         match = pattern.search(title)
@@ -63,7 +73,7 @@ def quality_score(title: str, release_group: str | None) -> int:
             score += points
             break
     if release_group:
-        score += PREFERRED_GROUPS.get(release_group.lower(), 0)
+        score += _merged_preferred_groups().get(release_group.lower(), 0)
     if re.search(r"\brepack\b", title, re.I):
         score -= 5
     if re.search(r"\bdual[\s-]?audio\b", title, re.I):

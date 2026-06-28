@@ -15,8 +15,20 @@ from annie.types import MediaKind, MediaSection, ParsedTitle, ResultItem, WatchT
 
 MIN_SEEDERS_STRICT = 10
 MIN_SEEDERS_RELAXED = 3
-MIN_QUALITY_STRICT = 26  # ~720p
-MIN_QUALITY_RELAXED = 12  # ~480p
+MIN_QUALITY_STRICT = 26
+MIN_QUALITY_RELAXED = 12
+
+
+def _catalog_thresholds() -> tuple[int, int, int, int]:
+    from annie.config import AnnieConfig
+
+    cfg = AnnieConfig.load().catalog
+    return (
+        cfg.min_seeders_strict,
+        cfg.min_seeders_relaxed,
+        cfg.min_quality_strict,
+        cfg.min_quality_relaxed,
+    )
 
 _VARIANT_RULES: tuple[tuple[re.Pattern[str], str, int], ...] = (
     (re.compile(r"director'?s?[\s._-]*cut", re.I), "directors_cut", 2),
@@ -40,6 +52,7 @@ def variant_flags(title: str) -> list[str]:
 
 def catalog_episode_pick_rank(item: ResultItem) -> tuple:
     """Tri catalogue / pick épisode : vivant → seeders → qualité → variante → confiance → match."""
+    _, min_relaxed, _, _ = _catalog_thresholds()
     seeders = item.entry.seeders
     batch_pack = (
         1
@@ -47,7 +60,7 @@ def catalog_episode_pick_rank(item: ResultItem) -> tuple:
         else 0
     )
     return (
-        seeders >= MIN_SEEDERS_RELAXED,
+        seeders >= min_relaxed,
         batch_pack,
         seeders,
         item.parsed.quality,
@@ -229,15 +242,16 @@ def assess_episode_item(
     flags = variant_flags(item.entry.title)
     seeders = item.entry.seeders
     quality = item.parsed.quality
+    min_strict, min_relaxed, qual_strict, qual_relaxed = _catalog_thresholds()
 
-    if seeders < MIN_SEEDERS_RELAXED:
+    if seeders < min_relaxed:
         flags.append("dead")
-    elif seeders < MIN_SEEDERS_STRICT:
+    elif seeders < min_strict:
         flags.append("low_seeders")
 
-    if quality < MIN_QUALITY_RELAXED:
+    if quality < qual_relaxed:
         flags.append("low_quality")
-    elif quality < MIN_QUALITY_STRICT:
+    elif quality < qual_strict:
         flags.append("sd_quality")
 
     return EpisodeAssessment(
@@ -253,9 +267,10 @@ def assess_episode_item(
 
 
 def _format_episode_issue(assessment: EpisodeAssessment) -> str:
+    min_strict, _, _, _ = _catalog_thresholds()
     parts: list[str] = []
     if "dead" in assessment.flags or "low_seeders" in assessment.flags:
-        parts.append(f"{assessment.seeders}S (min {MIN_SEEDERS_STRICT})")
+        parts.append(f"{assessment.seeders}S (min {min_strict})")
     if "low_quality" in assessment.flags or "sd_quality" in assessment.flags:
         res = assessment.resolution or "?"
         parts.append(f"qualité {res}/{assessment.quality}")
@@ -271,9 +286,13 @@ def assess_tv_catalog(
     mal_tv: list[tuple[str, int | None]],
     nyaa_tv: list[MediaSection],
     *,
-    coverage_relaxed: float = 0.85,
+    coverage_relaxed: float | None = None,
 ) -> CatalogQualityReport:
     """Couverture MAL + seeders/qualité par épisode catalogue."""
+    if coverage_relaxed is None:
+        from annie.config import AnnieConfig
+
+        coverage_relaxed = AnnieConfig.load().catalog.coverage_relaxed
     issues: list[str] = []
     mal_by_season = {index + 1: count for index, (_, count) in enumerate(mal_tv)}
     season_reports: list[SeasonQualityReport] = []

@@ -1,15 +1,55 @@
 # Configuration Annie — ~/.config/annie/config.toml
-# Édite ce fichier avant le premier lancement (clé OpenSubtitles, lecteur, etc.)
+# Les clés plates (player, category, filter…) restent supportées pour compatibilité.
 
-player = "auto" # auto | mpv | vlc | ffplay
-category = "0_0" # filtre catégorie Nyaa
-filter = "0" # filtre Nyaa (0 = tous)
+[player]
+# auto | mpv | vlc | ffplay | chemin absolu vers un exécutable
+command = "auto"
+
+[nyaa]
+category = "0_0"           # filtre catégorie Nyaa (0_0 = anime)
+filter = "0"               # 0 = tous les torrents
+search_pages = 2           # pages HTML par recherche
+parallel = 10              # requêtes Nyaa parallèles (catalogue)
+rate = 6.0                 # requêtes/s max vers nyaa.si
+rate_burst = 8
+cache_ttl_minutes = 45
+sort = "seeders"           # seeders | size | date | downloads
+order = "desc"             # asc | desc
+timeout = 30.0             # timeout HTTP (secondes)
+retries = 4
+
+[mal]
+enabled = true             # false = Nyaa seul, sans catalogue MAL/Jikan
+parallel = 10
+cache_ttl_hours = 168      # cache Jikan (7 jours)
+
+[catalog]
 skip_recap_movies = false
-preferred_groups = [] # ex. ["Erai-raws"]
+fill_gaps_on_search = false  # compléter les épisodes manquants après recherche
+search_results_limit = 8     # défaut de `annie search -l`
+franchise_max_queries = 20
+primary_search_pages = 2
+franchise_search_pages = 2
+gap_search_pages = 1
+gap_max_missing = 6
+gap_max_queries = 10
+preferred_groups = []        # ex. ["Erai-raws", "SubsPlease"]
+preferred_group_bonus = 10   # points qualité ajoutés à ces groupes
+min_seeders_strict = 10
+min_seeders_relaxed = 3
+min_quality_strict = 26      # ~720p
+min_quality_relaxed = 12     # ~480p
+coverage_relaxed = 0.85
 
-# Sous-titres externes (OpenSubtitles.com)
-subtitles_enabled = true
-opensubtitles_api_key = "" # https://www.opensubtitles.com/en/consumers
-opensubtitles_username = ""
-opensubtitles_password = ""
-default_sub_lang = "" # ex. "fr" — saute le menu langue si défini
+[subtitles]
+enabled = true
+default_lang = ""            # ex. "fr" — saute le menu fzf si défini
+fetch_timeout = 20.0
+api_key = ""                 # https://www.opensubtitles.com/en/consumers
+username = ""
+password = ""
+
+[ui]
+seeders_highlight = 50       # seuil vert dans `annie search`
+show_banner = true
+mal_pool_workers = 16        # parallélisme MAL + préchauffage Nyaa

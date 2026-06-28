@@ -22,6 +22,16 @@ MAL_PARALLEL = 10
 DISK_CACHE_DIR = Path.home() / ".cache" / "annie" / "jikan"
 DISK_CACHE_TTL = 7 * 24 * 3600
 
+
+def _mal_cfg():
+    from annie.config import AnnieConfig
+
+    return AnnieConfig.load().mal
+
+
+def _mal_cache_ttl() -> int:
+    return _mal_cfg().cache_ttl
+
 SKIP_MAL_TYPES = frozenset({"Music", "PV", "CM", "Unknown"})
 WATCHABLE_TYPES = frozenset({"TV", "Movie", "OVA", "Special", "ONA", "TV Special"})
 MAIN_TV_RELATIONS = frozenset({"Root", "Sequel", "Prequel", "Parent story"})
@@ -190,7 +200,7 @@ def _cached_payload(path: str) -> dict | None:
     cached = _response_cache.get(path)
     if cached is not None:
         return cached
-    disk_cached = read_json(_disk_cache_path(path), ttl=DISK_CACHE_TTL)
+    disk_cached = read_json(_disk_cache_path(path), ttl=_mal_cache_ttl())
     if disk_cached is not None:
         _response_cache[path] = disk_cached
         return disk_cached
@@ -491,7 +501,7 @@ def collect_franchise(
             _run_batch(batch, executor)
 
     if pool is None:
-        with ThreadPoolExecutor(max_workers=MAL_PARALLEL) as local_pool:
+        with ThreadPoolExecutor(max_workers=_mal_cfg().parallel) as local_pool:
             _drain_queue(local_pool)
     else:
         _drain_queue(pool)

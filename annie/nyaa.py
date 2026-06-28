@@ -23,6 +23,9 @@ NYAA_FAST_PAGES = NYAA_SEARCH_PAGES
 DISK_CACHE_DIR = Path.home() / ".cache" / "annie" / "nyaa"
 DISK_CACHE_TTL = 45 * 60
 
+_search_cache: dict[tuple[str, str, str, str], tuple[float, list["NyaaEntry"]]] = {}
+_nyaa_limiter: _TokenBucket | None = None
+
 ROW_RE = re.compile(
     r'<tr class="(?:default|success|danger|warning)">(.*?)</tr>',
     re.S,
@@ -33,8 +36,6 @@ TITLE_RE = re.compile(
 MAGNET_RE = re.compile(r'href="(magnet:[^"]+)"')
 SIZE_RE = re.compile(r'<td class="text-center">([^<]+)</td>')
 NUMERIC_CELL_RE = re.compile(r'<td class="text-center">\s*(\d+)\s*</td>')
-
-_search_cache: dict[tuple[str, str, str, str], tuple[float, list["NyaaEntry"]]] = {}
 
 
 class _TokenBucket:
@@ -58,7 +59,22 @@ class _TokenBucket:
                 time.sleep((1.0 - self._tokens) / self._rate)
 
 
-_nyaa_limiter = _TokenBucket(rate=6.0, burst=8)
+def _nyaa_cfg():
+    from annie.config import AnnieConfig
+
+    return AnnieConfig.load().nyaa
+
+
+def _disk_cache_ttl() -> int:
+    return _nyaa_cfg().cache_ttl
+
+
+def _get_limiter() -> _TokenBucket:
+    global _nyaa_limiter
+    if _nyaa_limiter is None:
+        cfg = _nyaa_cfg()
+        _nyaa_limiter = _TokenBucket(rate=cfg.rate, burst=cfg.rate_burst)
+    return _nyaa_limiter
 
 
 @dataclass(frozen=True)
@@ -108,13 +124,14 @@ def _entries_from_json(payload: list[dict]) -> list[NyaaEntry]:
 
 
 def _cached_entries(cache_key: tuple[str, ...]) -> list[NyaaEntry] | None:
+    ttl = _disk_cache_ttl()
     cached = _search_cache.get(cache_key)
     if cached is not None:
         stored_at, entries = cached
-        if time.monotonic() - stored_at <= DISK_CACHE_TTL:
+        if time.monotonic() - stored_at <= ttl:
             return entries
         del _search_cache[cache_key]
-    disk_cached = read_json(_disk_cache_path(cache_key), ttl=DISK_CACHE_TTL)
+    disk_cached = read_json(_disk_cache_path(cache_key), ttl=ttl)
     if disk_cached is not None:
         entries = _entries_from_json(disk_cached)
         _search_cache[cache_key] = (time.monotonic(), entries)
@@ -177,11 +194,16 @@ def search(
     *,
     category: str = "0_0",
     filter_code: str = "0",
-    sort: str = "seeders",
-    order: str = "desc",
-    pages: int = NYAA_SEARCH_PAGES,
-    retries: int = 4,
+    sort: str | None = None,
+    order: str | None = None,
+    pages: int | None = None,
+    retries: int | None = None,
 ) -> list[NyaaEntry]:
+    cfg = _nyaa_cfg()
+    sort = sort if sort is not None else cfg.sort
+    order = order if order is not None else cfg.order
+    pages = pages if pages is not None else cfg.search_pages
+    retries = retries if retries is not None else cfg.retries
     pages = max(1, pages)
     cache_key = _cache_key(query, category, filter_code, pages)
     cached = _cached_entries(cache_key)
@@ -205,9 +227,9 @@ def search(
         url = f"{NYAA_BASE}/?{urllib.parse.urlencode(page_params)}"
 
         for attempt in range(retries):
-            _nyaa_limiter.acquire()
+            _get_limiter().acquire()
             try:
-                html_page = fetch_text(url, user_agent=USER_AGENT, timeout=30)
+                html_page = fetch_text(url, user_agent=USER_AGENT, timeout=cfg.timeout)
                 page_entries = _parse_page(html_page)
                 break
             except urllib.error.HTTPError as exc:
@@ -246,25 +268,28 @@ def prefetch(
     pool=None,
 ) -> None:
     """Précharge des requêtes Nyaa uniques (no-op si déjà en cache)."""
+    cfg = _nyaa_cfg()
+    pages = cfg.search_pages
+    parallel = cfg.parallel
     unique = [
         q
         for q in dict.fromkeys(queries)
         if q
-        and _cached_entries(_cache_key(q, category, filter_code, NYAA_SEARCH_PAGES))
+        and _cached_entries(_cache_key(q, category, filter_code, pages))
         is None
     ]
     if not unique:
         return
 
     if pool is None:
-        with ThreadPoolExecutor(max_workers=NYAA_PARALLEL) as local_pool:
+        with ThreadPoolExecutor(max_workers=parallel) as local_pool:
             futures = [
                 local_pool.submit(
                     search,
                     q,
                     category=category,
                     filter_code=filter_code,
-                    pages=NYAA_FAST_PAGES,
+                    pages=pages,
                 )
                 for q in unique
             ]
@@ -273,7 +298,7 @@ def prefetch(
 
     futures = [
         pool.submit(
-            search, q, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES
+            search, q, category=category, filter_code=filter_code, pages=pages
         )
         for q in unique
     ]

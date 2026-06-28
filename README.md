@@ -114,21 +114,33 @@ annie ls fichier.torrent             # liste les fichiers d’un torrent
 
 Après `make install` (ou au premier lancement), les fichiers sont créés dans `~/.config/annie/` si absents — **édite `config.toml` avant de lancer Annie** pour y mettre ta clé OpenSubtitles.
 
+Les **clés plates** (`player = "mpv"`, etc.) restent supportées ; les sections `[nyaa]`, `[catalog]`, `[streaming]` offrent plus d’options. Voir `annie/templates/config.toml` pour la liste complète.
+
 ### `config.toml`
 
 ```toml
-player = "mpv"                    # auto | mpv | vlc | ffplay
-category = "0_0"                  # filtre catégorie Nyaa
-filter = "0"                      # filtre Nyaa (0 = tous)
-skip_recap_movies = false
-preferred_groups = ["Erai-raws"]  # bonus de score pour ces groupes
+[player]
+command = "mpv"              # auto | mpv | vlc | ffplay
 
-# Sous-titres externes (OpenSubtitles.com)
-subtitles_enabled = true
-opensubtitles_api_key = ""        # obligatoire pour les sous-titres
-opensubtitles_username = ""       # optionnel : plus de téléchargements / jour
-opensubtitles_password = ""
-default_sub_lang = ""             # ex. "fr" — saute le fzf langue si défini
+[nyaa]
+category = "0_0"
+filter = "0"
+search_pages = 2
+
+[mal]
+enabled = true               # false = Nyaa seul
+
+[catalog]
+preferred_groups = ["Erai-raws"]
+preferred_group_bonus = 10
+min_seeders_strict = 10
+
+[subtitles]
+enabled = true
+default_lang = ""            # ex. "fr"
+api_key = ""
+username = ""
+password = ""
 ```
 
 Variables d’environnement : `ANNIE_PLAYER=mpv`, `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USERNAME`, `OPENSUBTITLES_PASSWORD`
@@ -167,8 +179,22 @@ Créé en même temps que `config.toml` (`make install` ou premier lancement) :
 
 ```toml
 [streaming]
-# Partager l'épisode pendant la lecture (upload illimité sur le fichier lu)
 seed_while_watching = true
+upload_limit_kib = 512         # 0 = illimité hors seed
+
+[buffer]
+max_wait_sec = 5.0
+mkv_start_mib = 16
+stream_margin_mib = 12
+
+[torrent]
+metadata_timeout = 60.0
+connections_limit = 300
+
+[player.mpv]
+cache_secs = 30
+hwdec = "auto-safe"
+extra_args = []                # ex. ["--fs"]
 ```
 
 Variable d’environnement : `ANNIE_SEED_WHILE_WATCHING=0` pour désactiver.

@@ -48,7 +48,32 @@ BUFFER_ABSOLUTE_SEC = 45.0
 MP4_TAIL_BYTES = 8 * 1024 * 1024
 MPV_RETRY_WAIT_SEC = 15.0
 MKV_HEAD_BYTES = 16 * 1024 * 1024
-DEFAULT_UPLOAD_LIMIT = 512 * 1024
+def _settings():
+    from annie.settings import AnnieSettings
+
+    return AnnieSettings.load()
+
+
+def _upload_limit_bytes() -> int:
+    limit_kib = _settings().streaming.upload_limit_kib
+    return 0 if limit_kib <= 0 else limit_kib * 1024
+
+
+def _buffer_cfg():
+    return _settings().buffer
+
+
+def _mkv_start_bytes() -> int:
+    return _buffer_cfg().mkv_start_mib * 1024 * 1024
+
+
+def _mkv_head_bytes() -> int:
+    return _buffer_cfg().mkv_head_mib * 1024 * 1024
+
+
+def _stream_margin_bytes() -> int:
+    return _buffer_cfg().stream_margin_mib * 1024 * 1024
+
 
 _player_cache: str | None = None
 _ffprobe_cache: bool | None = None
@@ -89,45 +114,63 @@ def player_command(
     ipc_path: Path | None = None,
     sub_file: Path | None = None,
 ) -> list[str]:
+    settings = _settings()
     target = str(path.resolve())
     if player == "mpv":
-        cmd = [
-            "mpv",
-            "--force-window=immediate",
-            "--keep-open=no",
-            "--no-terminal",
-            "--really-quiet",
-            "--msg-level=all=fatal",
-            "--cache=yes",
-            "--cache-secs=30",
-            "--cache-pause=yes",
-            "--cache-pause-initial=yes",
-            "--demuxer-readahead-secs=3",
-            "--demuxer-max-bytes=32M",
-            "--demuxer-lavf-analyzeduration=5",
-            "--demuxer-lavf-probesize=5242880",
-            "--vo=gpu",
-            "--gpu-api=opengl",
-            "--hwdec=auto-safe",
-        ]
+        mpv = settings.player.mpv
+        cmd = ["mpv"]
+        if mpv.force_window:
+            cmd.append("--force-window=immediate")
+        cmd.extend(
+            [
+                "--keep-open=no",
+                "--no-terminal",
+            ]
+        )
+        if mpv.really_quiet:
+            cmd.extend(
+                [
+                    "--really-quiet",
+                    "--msg-level=all=fatal",
+                ]
+            )
+        cmd.extend(
+            [
+                "--cache=yes",
+                f"--cache-secs={mpv.cache_secs}",
+                "--cache-pause=yes",
+                "--cache-pause-initial=yes",
+                "--demuxer-readahead-secs=3",
+                "--demuxer-max-bytes=32M",
+                "--demuxer-lavf-analyzeduration=5",
+                "--demuxer-lavf-probesize=5242880",
+                f"--vo={mpv.vo}",
+                f"--gpu-api={mpv.gpu_api}",
+                f"--hwdec={mpv.hwdec}",
+            ]
+        )
         if ipc_path is not None:
             cmd.append(f"--input-ipc-server={ipc_path}")
         if sub_file is not None:
             cmd.append(f"--sub-file={sub_file.resolve()}")
+        cmd.extend(mpv.extra_args)
         cmd.append(target)
         return cmd
     if player == "vlc":
-        return [
+        vlc = settings.player.vlc
+        cmd = [
             "vlc",
             "--intf",
             "dummy",
             "--quiet",
             "--play-and-exit",
             "--no-video-title-show",
-            "--file-caching=3000",
-            "--network-caching=3000",
-            target,
+            f"--file-caching={vlc.file_caching_ms}",
+            f"--network-caching={vlc.network_caching_ms}",
         ]
+        cmd.extend(vlc.extra_args)
+        cmd.append(target)
+        return cmd
     if player == "ffplay":
         return [
             "ffplay",
@@ -147,21 +190,27 @@ def _player_popen(cmd: list[str]) -> subprocess.Popen:
 
 
 def make_session(*, seed_while_watching: bool = False) -> lt.session:
+    settings = _settings()
+    torrent = settings.torrent
     session = lt.session()
-    upload_limit = 0 if seed_while_watching else DEFAULT_UPLOAD_LIMIT
+    upload_limit = 0 if seed_while_watching else _upload_limit_bytes()
     try:
         session.apply_settings(
             {
-                "active_downloads": 1,
+                "active_downloads": torrent.active_downloads,
                 "active_seeds": 1 if seed_while_watching else 0,
-                "active_limit": 4,
-                "connections_limit": 300,
-                "unchoke_slots_limit": 20 if seed_while_watching else 12,
+                "active_limit": torrent.active_limit,
+                "connections_limit": torrent.connections_limit,
+                "unchoke_slots_limit": (
+                    torrent.unchoke_slots_seeding
+                    if seed_while_watching
+                    else torrent.unchoke_slots
+                ),
                 "allow_multiple_connections_per_ip": True,
-                "enable_dht": True,
-                "enable_lsd": True,
-                "enable_upnp": True,
-                "enable_natpmp": True,
+                "enable_dht": torrent.enable_dht,
+                "enable_lsd": torrent.enable_lsd,
+                "enable_upnp": torrent.enable_upnp,
+                "enable_natpmp": torrent.enable_natpmp,
                 "download_rate_limit": 0,
                 "upload_rate_limit": upload_limit,
             }
@@ -174,6 +223,7 @@ def make_session(*, seed_while_watching: bool = False) -> lt.session:
 def _enable_watch_seed(
     session: lt.session, handle: lt.torrent_handle, file_index: int
 ) -> None:
+    torrent = _settings().torrent
     try:
         handle.set_upload_mode(False)
     except Exception:
@@ -182,7 +232,7 @@ def _enable_watch_seed(
         session.apply_settings(
             {
                 "upload_rate_limit": 0,
-                "unchoke_slots_limit": 20,
+                "unchoke_slots_limit": torrent.unchoke_slots_seeding,
             }
         )
     except Exception:
@@ -202,11 +252,12 @@ def _enable_watch_seed(
 
 
 def _disable_watch_seed(session: lt.session) -> None:
+    torrent = _settings().torrent
     try:
         session.apply_settings(
             {
-                "upload_rate_limit": DEFAULT_UPLOAD_LIMIT,
-                "unchoke_slots_limit": 12,
+                "upload_rate_limit": _upload_limit_bytes(),
+                "unchoke_slots_limit": torrent.unchoke_slots,
             }
         )
     except Exception:
@@ -281,7 +332,9 @@ def add_torrent(session: lt.session, source: str, save_path: Path) -> lt.torrent
     return session.add_torrent(params)
 
 
-def wait_metadata(handle: lt.torrent_handle, timeout: float = 60.0) -> lt.torrent_info:
+def wait_metadata(handle: lt.torrent_handle, timeout: float | None = None) -> lt.torrent_info:
+    if timeout is None:
+        timeout = _settings().torrent.metadata_timeout
     deadline = time.monotonic() + timeout
     delay = 0.03
     while not handle.status().has_metadata:
@@ -447,7 +500,7 @@ def configure_stream(
         handle.set_flags(lt.torrent_flags.sequential_download)
     except AttributeError:
         pass
-    _prioritize_file_head(handle, file_index, MKV_HEAD_BYTES)
+    _prioritize_file_head(handle, file_index, _mkv_head_bytes())
     if target is not None and target.suffix.lower() in {".mp4", ".m4v", ".mov"}:
         _prioritize_mp4_tail(handle, file_index, file_size)
 
@@ -611,7 +664,7 @@ def _mkv_has_clusters(path: Path, nbytes: int) -> bool:
 
 
 def _mkv_playable(path: Path, contiguous: int) -> bool:
-    if contiguous < MKV_START_CONTIGUOUS_BYTES:
+    if contiguous < _mkv_start_bytes():
         return False
     if not _has_mkv_header(path):
         return False
@@ -664,13 +717,14 @@ def _prioritize_mp4_tail(
 
 def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[int, str]:
     """Wait until the file is startable or timeout. Returns (ready_bytes, mode)."""
+    buf = _buffer_cfg()
     started_at = time.monotonic()
-    deadline = started_at + BUFFER_MAX_WAIT_SEC
-    no_peers_deadline = started_at + BUFFER_NO_PEERS_SEC
-    absolute_deadline = started_at + BUFFER_ABSOLUTE_SEC
+    deadline = started_at + buf.max_wait_sec
+    no_peers_deadline = started_at + buf.no_peers_sec
+    absolute_deadline = started_at + buf.absolute_sec
     last_ready = -1
     stall_ticks = 0
-    target_bytes = START_TARGET_BYTES
+    target_bytes = _mkv_start_bytes()
     display = BufferStatusDisplay()
 
     while True:
@@ -687,7 +741,7 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         soft_timeout = now >= (no_peers_deadline if not has_transfer else deadline)
         hard_timeout = now >= absolute_deadline
 
-        if startable and can_start and contiguous >= START_TARGET_BYTES:
+        if startable and can_start and contiguous >= target_bytes:
             display.finish(format_buffer_ready(contiguous // 1024 // 1024))
             return contiguous, "ready"
 
@@ -821,13 +875,13 @@ def _play_while_downloading(
             time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
             duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
             play_byte = _estimate_play_byte(time_pos, duration, file_size)
-            need_pause = contiguous < play_byte + STREAM_MARGIN_BYTES
+            need_pause = contiguous < play_byte + _stream_margin_bytes()
 
             if need_pause and not paused_for_buffer:
                 _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
                 paused_for_buffer = True
                 log_buffer_pause()
-            elif paused_for_buffer and contiguous >= play_byte + STREAM_MARGIN_BYTES:
+            elif paused_for_buffer and contiguous >= play_byte + _stream_margin_bytes():
                 _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
                 paused_for_buffer = False
                 log_buffer_resume()
@@ -867,6 +921,7 @@ def _launch_and_stream(
     retry: bool = True,
     sub_file: Path | None = None,
 ) -> int:
+    buf = _buffer_cfg()
     wait_startable(handle, file_index, target, file_size)
     if not target.exists():
         die(f"file missing: {target}")
@@ -874,7 +929,7 @@ def _launch_and_stream(
     ready = _contiguous_file_bytes(handle, file_index)
     if target.suffix.lower() == ".mkv":
         ready = _wait_mkv_playable(
-            handle, file_index, target, file_size, max_wait_sec=8.0
+            handle, file_index, target, file_size, max_wait_sec=buf.mkv_playable_wait_sec
         )
         if not _mkv_playable(target, ready):
             die(
@@ -920,7 +975,7 @@ def _launch_and_stream(
     if code == 2 and retry:
         stream_log("mpv", "n'a pas pu lire le fichier, nouvel essai…", tone="warn")
         ready = _wait_mkv_playable(
-            handle, file_index, target, file_size, max_wait_sec=MPV_RETRY_WAIT_SEC
+            handle, file_index, target, file_size, max_wait_sec=buf.mpv_retry_sec
         )
         if target.suffix.lower() == ".mkv" and not _mkv_playable(target, ready):
             return code
@@ -1008,8 +1063,11 @@ def play(
         player_name = player_future.result()
         sub_file: Path | None = None
         if sub_future is not None:
+            from annie.config import AnnieConfig
+
+            sub_timeout = AnnieConfig.load().subtitles.fetch_timeout
             try:
-                sub_file = sub_future.result(timeout=20)
+                sub_file = sub_future.result(timeout=sub_timeout)
                 if sub_file is not None:
                     stream_log("sous-titres", sub_file.name, tone="accent")
                 else:

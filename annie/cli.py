@@ -121,11 +121,12 @@ def kind_from_options(options: dict) -> MediaKind | None:
 MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
 
 
-def _print_entry(entry, parsed, *, highlight: bool = False) -> None:
+def _print_entry(entry, parsed, config: AnnieConfig, *, highlight: bool = False) -> None:
     prefix = stylize(">>", C.GREEN, C.BOLD) if highlight else "  "
     label = minimal_label(parsed)
+    threshold = config.ui.seeders_highlight
     seeds = stylize(
-        f"[{entry.seeders:>4}S]", C.GREEN if entry.seeders >= 50 else C.YELLOW
+        f"[{entry.seeders:>4}S]", C.GREEN if entry.seeders >= threshold else C.YELLOW
     )
     print(
         f"{prefix} {seeds} {stylize(entry.size, C.MUTED):>8}  "
@@ -188,9 +189,7 @@ def _warm_nyaa(query: str, *, category: str, filter_code: str) -> None:
     if not query:
         return
     try:
-        from annie.nyaa import NYAA_FAST_PAGES
-
-        search(query, category=category, filter_code=filter_code, pages=NYAA_FAST_PAGES)
+        search(query, category=category, filter_code=filter_code)
     except Exception:
         pass
 
@@ -201,94 +200,101 @@ def gather_catalog(
     query, options = parse_inline_target(raw_query)
     category = overrides.get("category") or config.category
     filter_code = overrides.get("filter_code") or config.filter_code
-    fill_gaps = overrides.get("fill_gaps", False)
+    fill_gaps = overrides.get("fill_gaps", config.catalog.fill_gaps_on_search)
     target_season = overrides.get("target_season", options.get("season"))
     target_kind = overrides.get("target_kind", kind_from_options(options))
 
-    try:
-        with ThreadPoolExecutor(max_workers=16) as pool:
-            candidates_future = pool.submit(search_anime, query)
-            pool.submit(_warm_nyaa, query, category=category, filter_code=filter_code)
-
-            candidates = candidates_future.result()
-            chosen = pick_candidate(candidates, query) if candidates else None
-            if chosen is not None:
-                options["mal_titles"] = tuple(
-                    title
-                    for title in (
-                        chosen.title_english,
-                        chosen.title,
-                        chosen.title_japanese,
-                    )
-                    if title
+    if config.mal.enabled:
+        try:
+            with ThreadPoolExecutor(max_workers=config.ui.mal_pool_workers) as pool:
+                candidates_future = pool.submit(search_anime, query)
+                pool.submit(
+                    _warm_nyaa, query, category=category, filter_code=filter_code
                 )
-                for warm_q in dict.fromkeys(
-                    [
-                        chosen.title_english or "",
-                        chosen.title,
-                        chosen.title_japanese or "",
-                    ]
-                ):
-                    if warm_q:
-                        pool.submit(
-                            _warm_nyaa,
-                            warm_q,
-                            category=category,
-                            filter_code=filter_code,
-                        )
 
-                def on_root(root_data: dict) -> None:
-                    for hint in relation_nyaa_hints(root_data):
-                        pool.submit(
-                            _warm_nyaa, hint, category=category, filter_code=filter_code
+                candidates = candidates_future.result()
+                chosen = pick_candidate(candidates, query) if candidates else None
+                if chosen is not None:
+                    options["mal_titles"] = tuple(
+                        title
+                        for title in (
+                            chosen.title_english,
+                            chosen.title,
+                            chosen.title_japanese,
                         )
-
-                franchise = pool.submit(
-                    collect_franchise,
-                    chosen.mal_id,
-                    on_root=on_root,
-                    pool=pool,
-                ).result()
-                releases = franchise_to_releases(
-                    franchise,
-                    skip_recap=config.skip_recap_movies,
-                    root_id=chosen.mal_id,
-                    user_query=query,
-                )
-                if releases:
-                    releases = scope_releases_for_target(
-                        releases,
-                        season=target_season,
-                        kind=target_kind,
+                        if title
                     )
-                    catalog = build_catalog_from_releases(
-                        releases,
-                        search=search,
-                        category=category,
-                        filter_code=filter_code,
-                        skip_recap_movies=config.skip_recap_movies,
-                        pool=pool,
-                        fill_gaps=False,
-                    )
-                    if catalog:
-                        if fill_gaps:
-                            fill_catalog_gaps(
-                                catalog,
-                                search=search,
+                    for warm_q in dict.fromkeys(
+                        [
+                            chosen.title_english or "",
+                            chosen.title,
+                            chosen.title_japanese or "",
+                        ]
+                    ):
+                        if warm_q:
+                            pool.submit(
+                                _warm_nyaa,
+                                warm_q,
                                 category=category,
                                 filter_code=filter_code,
-                                skip_recap_movies=config.skip_recap_movies,
-                                pool=pool,
                             )
-                        return catalog, options
-    except Exception as exc:
-        print(
-            stylize(
-                f"annie: catalogue MAL indisponible ({exc}), fallback Nyaa", C.MUTED
-            ),
-            file=sys.stderr,
-            flush=True,
-        )
+
+                    def on_root(root_data: dict) -> None:
+                        for hint in relation_nyaa_hints(root_data):
+                            pool.submit(
+                                _warm_nyaa,
+                                hint,
+                                category=category,
+                                filter_code=filter_code,
+                            )
+
+                    franchise = pool.submit(
+                        collect_franchise,
+                        chosen.mal_id,
+                        on_root=on_root,
+                        pool=pool,
+                    ).result()
+                    releases = franchise_to_releases(
+                        franchise,
+                        skip_recap=config.skip_recap_movies,
+                        root_id=chosen.mal_id,
+                        user_query=query,
+                    )
+                    if releases:
+                        releases = scope_releases_for_target(
+                            releases,
+                            season=target_season,
+                            kind=target_kind,
+                        )
+                        catalog = build_catalog_from_releases(
+                            releases,
+                            search=search,
+                            category=category,
+                            filter_code=filter_code,
+                            skip_recap_movies=config.skip_recap_movies,
+                            pool=pool,
+                            fill_gaps=False,
+                        )
+                        if catalog:
+                            if fill_gaps:
+                                fill_catalog_gaps(
+                                    catalog,
+                                    search=search,
+                                    category=category,
+                                    filter_code=filter_code,
+                                    skip_recap_movies=config.skip_recap_movies,
+                                    pool=pool,
+                                )
+                            return catalog, options
+        except Exception as exc:
+            print(
+                stylize(
+                    f"annie: catalogue MAL indisponible ({exc}), fallback Nyaa",
+                    C.MUTED,
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
 
     entries = search(query, category=category, filter_code=filter_code)
     if not entries:
@@ -444,7 +450,7 @@ def run_search(
     movie: bool = False,
     ova: bool = False,
     special: bool = False,
-    limit: int = 8,
+    limit: int | None = None,
     category: str | None = None,
     filter_code: str | None = None,
 ) -> int:
@@ -476,9 +482,10 @@ def run_search(
         entry, parsed = best
         score = rank_entry(entry, target)
         print(f"\n  best match ({score[0]:.0f} pts)")
-        _print_entry(entry, parsed, highlight=True)
+        _print_entry(entry, parsed, config, highlight=True)
         return 0
 
+    display_limit = limit if limit is not None else config.catalog.search_results_limit
     catalog = build_catalog(entries, query, skip_recap_movies=config.skip_recap_movies)
     if not catalog:
         print("  no results.")
@@ -487,8 +494,8 @@ def run_search(
     for section in catalog:
         hint = " · batch recommended" if section.batch_recommended else ""
         print(f"\n  == {section.label}{hint} ==")
-        for item in section.choices()[:limit]:
-            _print_entry(item.entry, item.parsed)
+        for item in section.choices()[:display_limit]:
+            _print_entry(item.entry, item.parsed, config)
     return 0
 
 
@@ -608,7 +615,8 @@ def interactive_loop(config: AnnieConfig) -> int:
         print_status("interactive mode requires a TTY", kind="err")
         return 1
 
-    print_banner()
+    if config.ui.show_banner:
+        print_banner()
 
     while True:
         raw_query = read_query()
@@ -764,7 +772,7 @@ def main() -> int:
     search_cmd.add_argument("query")
     _add_target_flags(search_cmd)
     _add_nyaa_flags(search_cmd)
-    search_cmd.add_argument("-l", "--limit", type=int, default=8)
+    search_cmd.add_argument("-l", "--limit", type=int, default=None)
 
     watch_cmd = sub.add_parser("watch", help="Search and stream")
     watch_cmd.add_argument("query")
@@ -794,7 +802,7 @@ def main() -> int:
         parser.print_help()
         return 0
 
-    if not args.no_banner:
+    if config.ui.show_banner and not args.no_banner:
         print_banner()
 
     if args.command == "search":
