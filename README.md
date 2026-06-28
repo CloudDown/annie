@@ -112,92 +112,220 @@ annie ls fichier.torrent             # liste les fichiers d’un torrent
 
 ## Configuration
 
-Après `make install` (ou au premier lancement), les fichiers sont créés dans `~/.config/annie/` si absents — **édite `config.toml` avant de lancer Annie** pour y mettre ta clé OpenSubtitles.
+Annie lit deux fichiers dans `~/.config/annie/` :
 
-Les **clés plates** (`player = "mpv"`, etc.) restent supportées ; les sections `[nyaa]`, `[catalog]`, `[streaming]` offrent plus d’options. Voir `annie/templates/config.toml` pour la liste complète.
+| Fichier | Rôle |
+|---|---|
+| **`config.toml`** | Comportement général : lecteur, Nyaa, catalogue MAL, sous-titres, interface |
+| **`settings.toml`** | Streaming : buffer torrent, seed, réglages mpv/vlc |
 
-### `config.toml`
+Ils sont **créés automatiquement** au premier lancement (ou via `make install` depuis les sources) à partir des modèles du dépôt. Annie **ne les écrase jamais** : tu peux les éditer librement.
+
+```
+~/.config/annie/
+├── config.toml      # recherche, catalogue, sous-titres
+└── settings.toml    # torrent, buffer, lecteur
+```
+
+Les modèles commentés avec toutes les clés sont dans `annie/templates/config.toml` et `annie/templates/settings.toml`.
+
+### Syntaxe TOML
+
+La forme recommandée utilise des **sections** (`[nyaa]`, `[catalog]`, …). Les **anciennes clés plates** restent supportées pour compatibilité :
 
 ```toml
+# Ancien style (toujours valide)
+player = "mpv"
+category = "0_0"
+preferred_groups = ["SubsPlease"]
+
+# Nouveau style (recommandé)
 [player]
-command = "mpv"              # auto | mpv | vlc | ffplay
+command = "mpv"
 
 [nyaa]
 category = "0_0"
-filter = "0"
-search_pages = 2
+```
 
-[mal]
-enabled = true               # false = Nyaa seul
+Tu peux mélanger les deux ; en cas de doublon, la section structurée prime.
 
-[catalog]
-preferred_groups = ["Erai-raws"]
-preferred_group_bonus = 10
-min_seeders_strict = 10
+### Variables d’environnement
+
+| Variable | Fichier | Effet |
+|---|---|---|
+| `ANNIE_PLAYER` | config | Remplace `[player].command` |
+| `OPENSUBTITLES_API_KEY` | config | Remplace `[subtitles].api_key` |
+| `OPENSUBTITLES_USERNAME` | config | Remplace `[subtitles].username` |
+| `OPENSUBTITLES_PASSWORD` | config | Remplace `[subtitles].password` |
+| `ANNIE_SEED_WHILE_WATCHING` | settings | `0` / `false` désactive le seed pendant la lecture |
+
+---
+
+### `config.toml` — recherche & catalogue
+
+#### `[player]` — lecteur vidéo
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `command` | `auto` | `auto`, `mpv`, `vlc`, `ffplay`, ou chemin vers un exécutable |
+
+`auto` détecte mpv, puis vlc, puis ffplay.
+
+#### `[nyaa]` — requêtes Nyaa.si
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `category` | `0_0` | Catégorie Nyaa (`0_0` = anime) |
+| `filter` | `0` | Filtre Nyaa (`0` = tous) |
+| `search_pages` | `2` | Pages HTML par recherche |
+| `parallel` | `10` | Requêtes parallèles lors du build catalogue |
+| `rate` / `rate_burst` | `6.0` / `8` | Limite de requêtes/s vers nyaa.si |
+| `cache_ttl_minutes` | `45` | Durée du cache disque Nyaa |
+| `sort` / `order` | `seeders` / `desc` | Tri des résultats (`seeders`, `size`, `date`, …) |
+| `timeout` / `retries` | `30` / `4` | Timeout HTTP et nombre de tentatives |
+
+#### `[mal]` — catalogue MyAnimeList (Jikan)
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `enabled` | `true` | `false` = Nyaa seul, sans franchise MAL |
+| `parallel` | `10` | Requêtes Jikan parallèles |
+| `cache_ttl_hours` | `168` | Cache franchise MAL (7 jours) |
+
+#### `[catalog]` — scoring & complétion
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `preferred_groups` | `[]` | Groupes favoris (ex. `["SubsPlease", "Erai-raws"]`) |
+| `preferred_group_bonus` | `10` | Bonus de score pour ces groupes |
+| `min_seeders_strict` / `min_seeders_relaxed` | `10` / `3` | Seuils seeders pour filtrer les releases |
+| `min_quality_strict` / `min_quality_relaxed` | `26` / `12` | Seuils qualité (~720p / ~480p) |
+| `skip_recap_movies` | `false` | Ignorer les films récap MAL |
+| `fill_gaps_on_search` | `false` | Compléter les épisodes manquants après une recherche |
+| `prefer_season_batch` | `true` | Privilégier un pack saison cohérent plutôt que des singles mélangés |
+| `season_batch_min_coverage` | `0.85` | Couverture minimale du pack pour l’adopter |
+| `coherence_min_share` | `0.60` | Part minimale d’un même magnet pour harmoniser la saison |
+
+#### `[subtitles]` — OpenSubtitles
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `enabled` | `true` | Active le menu langue et le téléchargement |
+| `default_lang` | `""` | Ex. `"fr"` — saute le menu fzf si défini |
+| `api_key` | `""` | Clé API OpenSubtitles (**requise** pour télécharger) |
+| `username` / `password` | `""` | Compte OpenSubtitles (quota plus élevé) |
+| `fetch_timeout` | `20.0` | Timeout recherche/téléchargement (secondes) |
+
+Après le choix d’un épisode, Annie propose un **menu fzf** : English, 中文, हिन्दी, Español, Français, ou **Aucun**. Les sous-titres sont chargés en parallèle du buffer et passés à **mpv** (`--sub-file`). VLC/ffplay ignorent les sous-titres externes.
+
+**Obtenir une clé API (gratuit) :**
+
+1. Compte sur [OpenSubtitles.com](https://www.opensubtitles.com) ([import .org](https://www.opensubtitles.com/en/import) possible).
+2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**.
+3. Dans `~/.config/annie/config.toml` :
+
+   ```toml
+   [subtitles]
+   enabled = true
+   api_key = "ta_cle_ici"
+   username = "ton_pseudo"    # recommandé
+   password = "ton_mot_de_passe"
+   default_lang = "fr"        # optionnel : saute le menu langue
+   ```
+
+**Sécurité** : ne commite jamais ce fichier — il reste local dans `~/.config/annie/`.
+
+#### `[ui]` — interface terminal
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `seeders_highlight` | `50` | Seuil seeders pour le vert dans `annie search` |
+| `show_banner` | `true` | Bannière ASCII au démarrage interactif |
+| `mal_pool_workers` | `16` | Parallélisme MAL + préchauffage Nyaa |
+
+#### Exemple minimal
+
+```toml
+[player]
+command = "mpv"
 
 [subtitles]
 enabled = true
-default_lang = ""            # ex. "fr"
-api_key = ""
-username = ""
-password = ""
+api_key = "ta_cle_opensubtitles"
+default_lang = "fr"
+
+[catalog]
+preferred_groups = ["SubsPlease"]
 ```
 
-Variables d’environnement : `ANNIE_PLAYER=mpv`, `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USERNAME`, `OPENSUBTITLES_PASSWORD`
+---
 
-### Sous-titres (OpenSubtitles)
+### `settings.toml` — streaming & torrent
 
-Après le choix d’un épisode, Annie propose un **second menu fzf** : English, 中文, हिन्दी, Español, Français, ou **Aucun**. Les sous-titres sont téléchargés en parallèle du buffer torrent et passés à **mpv** (`--sub-file`).
+Ces réglages n’affectent pas la recherche : uniquement le téléchargement, le buffer et le lancement du lecteur.
 
-#### Créer une clé API (gratuit)
+#### `[streaming]`
 
-1. Crée un compte sur [OpenSubtitles.com](https://www.opensubtitles.com) (tu peux [importer un ancien compte .org](https://www.opensubtitles.com/en/import) si tu en avais un).
-2. Connecte-toi, puis ouvre **[API consumers](https://www.opensubtitles.com/en/consumers)** (profil → développeurs / API).
-3. Clique sur **Create API key** (ou équivalent), donne un nom d’application (ex. `Annie`) et valide.
-4. Copie la clé affichée dans `~/.config/annie/config.toml` :
+| Clé | Défaut | Description |
+|---|---|---|
+| `seed_while_watching` | `true` | Partage l’épisode lu (upload prioritaire sur le fichier en cours) |
+| `upload_limit_kib` | `512` | Limite upload hors seed (KiB/s) ; `0` = illimité |
 
-   ```toml
-   opensubtitles_api_key = "ta_cle_ici"
-   ```
+#### `[buffer]` — démarrage & pause mpv
 
-5. *(Recommandé)* Ajoute ton identifiant OpenSubtitles pour augmenter le quota de téléchargements :
+| Clé | Défaut | Description |
+|---|---|---|
+| `max_wait_sec` | `5.0` | Attente du buffer « idéal » avant lecture |
+| `no_peers_sec` | `20.0` | Abandon si aucun peer |
+| `absolute_sec` | `45.0` | Timeout absolu avant démarrage forcé ou erreur |
+| `mkv_start_mib` | `16` | Mo contigus requis pour démarrer un MKV |
+| `mkv_head_mib` | `16` | Mo prioritaires en tête de fichier |
+| `stream_margin_mib` | `12` | Marge buffer : mpv se met en pause si le téléchargement prend du retard |
+| `mpv_retry_sec` | `15.0` | Réessai si mpv échoue au premier lancement |
+| `mkv_playable_wait_sec` | `8.0` | Attente supplémentaire pour un MKV lisible |
 
-   ```toml
-   opensubtitles_username = "ton_pseudo"
-   opensubtitles_password = "ton_mot_de_passe"
-   ```
+#### `[torrent]` — session libtorrent
 
-6. Relance Annie, choisis un épisode, puis une langue dans le menu fzf.
+| Clé | Défaut | Description |
+|---|---|---|
+| `metadata_timeout` | `60.0` | Timeout métadonnées magnet |
+| `connections_limit` | `300` | Connexions max |
+| `active_downloads` / `active_limit` | `1` / `4` | Slots actifs |
+| `enable_dht` / `enable_lsd` / `enable_upnp` / `enable_natpmp` | `true` | Découverte de peers et NAT |
 
-**Limites** (côté OpenSubtitles) : quelques téléchargements/jour sans compte lié ; davantage avec identifiant + clé API. La recherche de sous-titres ne consomme pas de quota de la même façon que le téléchargement.
+#### `[player.mpv]` et `[player.vlc]`
 
-**Sécurité** : ne commite jamais `config.toml` — il reste dans `~/.config/annie/` sur ta machine uniquement.
+Options passées au lecteur. Exemple mpv :
 
-### Streaming (`settings.toml`)
+| Clé | Défaut | Description |
+|---|---|---|
+| `cache_secs` | `30` | Cache lecture réseau mpv |
+| `hwdec` | `auto-safe` | Décodage matériel (`auto`, `auto-safe`, `no`) |
+| `extra_args` | `[]` | Arguments supplémentaires, ex. `["--fs", "--ontop"]` |
 
-Créé en même temps que `config.toml` (`make install` ou premier lancement) :
+VLC : `file_caching_ms`, `network_caching_ms`, `extra_args`.
+
+#### Exemple — connexion lente
+
+```toml
+[buffer]
+max_wait_sec = 8.0
+mkv_start_mib = 24
+stream_margin_mib = 16
+
+[streaming]
+seed_while_watching = true
+upload_limit_kib = 256
+```
+
+#### Exemple — désactiver le seed
 
 ```toml
 [streaming]
-seed_while_watching = true
-upload_limit_kib = 512         # 0 = illimité hors seed
-
-[buffer]
-max_wait_sec = 5.0
-mkv_start_mib = 16
-stream_margin_mib = 12
-
-[torrent]
-metadata_timeout = 60.0
-connections_limit = 300
-
-[player.mpv]
-cache_secs = 30
-hwdec = "auto-safe"
-extra_args = []                # ex. ["--fs"]
+seed_while_watching = false
 ```
 
-Variable d’environnement : `ANNIE_SEED_WHILE_WATCHING=0` pour désactiver.
+Ou en une ligne : `ANNIE_SEED_WHILE_WATCHING=0 ./annie.py`
 
 ---
 
