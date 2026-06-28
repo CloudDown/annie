@@ -91,6 +91,7 @@ MANGA_KEYWORDS = (
     re.compile(r"\bch\.?\s*\d+\b", re.I),
     re.compile(r"\bvolume\b", re.I),
     re.compile(r"\bvol\.?\s*\d+\b", re.I),
+    re.compile(r"\bhensh[uū]\b", re.I),
 )
 MANGA_VOLUME_RANGE_RE = re.compile(
     r"\bv(?:ol(?:ume)?\.?\s*)?(?P<a>\d{1,2})\s*[-–—]\s*v?(?P<b>\d{1,2})\b",
@@ -101,6 +102,7 @@ MANGA_DIGITAL_RE = re.compile(
     re.I,
 )
 MANGA_EXT_RE = re.compile(r"\.(?:cbz|cbr|pdf|zip)(?:\s|\]|$)", re.I)
+MANGA_CHAPTER_YEAR_RE = re.compile(r"\b\d{2,4}\s*\(20\d{2}\)")
 MANGA_SCAN_GROUPS = frozenset(
     {
         "danke-empire",
@@ -110,11 +112,18 @@ MANGA_SCAN_GROUPS = frozenset(
         "stick",
         "rascal",
         "philia",
+        "yen press",
     }
 )
 
 
 def is_manga(title: str, release_group: str | None = None) -> bool:
+    if MANGA_CHAPTER_YEAR_RE.search(title) and not VIDEO_EXT_RE.search(title):
+        return True
+    if re.search(r"\bv\d{2}\b", title, re.I) and re.search(
+        r"\b(?:yen press|digital|stick|1r0n)\b", title, re.I
+    ):
+        return True
     if MANGA_EXT_RE.search(title):
         return True
     if any(pattern.search(title) for pattern in MANGA_KEYWORDS):
@@ -126,6 +135,9 @@ def is_manga(title: str, release_group: str | None = None) -> bool:
     ):
         return True
     volume_match = MANGA_VOLUME_RANGE_RE.search(title)
+    if volume_match and not VIDEO_EXT_RE.search(title):
+        if not re.search(r"\bS\d{1,2}E\d{1,3}\b", title, re.I):
+            return True
     if volume_match and MANGA_DIGITAL_RE.search(title):
         return True
     if volume_match and not re.search(r"\bS\d{1,2}E\d{1,3}\b", title, re.I):
@@ -152,7 +164,26 @@ MOVIE_PATTERNS = (
     re.compile(r"\bmovie(?:\s*\d+)?\b", re.I),
     re.compile(r"\bfilm\b", re.I),
     re.compile(r"\b(?:movie|film)\s*:", re.I),
+    re.compile(r"\bchronicle\b", re.I),
+    re.compile(r"\bthe very final\b", re.I),
+    re.compile(r"\bEpisode\s+[IVX]+\b", re.I),
+    re.compile(r"\b(?:silent voice|kimi no na wa|your name\.?)\b", re.I),
+    re.compile(r"\botona e no kaidan\b", re.I),
+    re.compile(r"\bstairway to adult\b", re.I),
+    re.compile(r"\bsemi[- ]?final\b", re.I),
+    re.compile(r"\bfirst kiss that never ends\b", re.I),
+    re.compile(r"\bspirited away\b", re.I),
+    re.compile(r"\bsen to chihiro\b", re.I),
+    re.compile(r"\bhowl'?s moving castle\b", re.I),
+    re.compile(r"\bprincess mononoke\b", re.I),
+    re.compile(r"\bgrave of the fireflies\b", re.I),
+    re.compile(r"\bmy neighbor totoro\b", re.I),
+    re.compile(r"\bponyo\b", re.I),
+    re.compile(r"\bthe wind rises\b", re.I),
+    re.compile(r"\binfinity castle\b", re.I),
+    re.compile(r"\blegend of (?:hei|luo xiaohei)\b", re.I),
 )
+BRACKET_EP_RANGE_RE = re.compile(r"\[\d{1,3}\s*[-–—]\s*\d{1,3}\]")
 MANGA_VOLUME_IN_TITLE_RE = re.compile(
     r"\bv(?:ol(?:ume)?\.?\s*)?\d{1,2}\s*[-–—]\s*v?\d{1,2}\b",
     re.I,
@@ -160,28 +191,46 @@ MANGA_VOLUME_IN_TITLE_RE = re.compile(
 OVA_PATTERNS = (
     re.compile(r"\bova\b", re.I),
     re.compile(r"\boad\b", re.I),
+    re.compile(r"\boav\b", re.I),
 )
+OVA_EP_RE = re.compile(r"\b(?:OVA|OAV)\s*(?P<episode>\d{1,3})\b", re.I)
 SPECIAL_PATTERNS = (
     re.compile(r"\bspecial\b", re.I),
     re.compile(r"\btv\s+special\b", re.I),
     re.compile(r"\b(?:^|\s)sp(?:\s|$|\d)", re.I),
+    re.compile(r"\bpilot\b", re.I),
+    re.compile(r"\bfan\s+letter\b", re.I),
+    re.compile(r"\bsoudansho\b", re.I),
+    re.compile(r"\brecap\b", re.I),
 )
 SPINOFF_PATTERNS = (
     re.compile(r"\bpetit\b", re.I),
     re.compile(r"\bbreak\s+time\b", re.I),
     re.compile(r"\bmini\s+anime\b", re.I),
     re.compile(r"\bpicture\s+drama\b", re.I),
+    re.compile(r"\bbiyori\b", re.I),
 )
 BATCH_PATTERNS = (
     re.compile(r"\bbatch\b", re.I),
     re.compile(r"\bcomplete\b", re.I),
-    re.compile(r"\b\d{1,3}\s*-\s*\d{1,3}\b"),
+    re.compile(r"\bfull\s+season\b", re.I),
+    re.compile(r"\b(?:collection|integrale|intégrale|discography|adventure\s+series)\b", re.I),
+    re.compile(r"\[Ep\.\s*\d+\s+ao\s+\d+\]", re.I),
+    re.compile(r"\[\d{1,3}\s*[-–—~]\s*\d{1,3}\]", re.I),
+    re.compile(r"\((?:Japanese|English)[^)]*\bsub\)", re.I),
+    re.compile(r"\b\d{1,3}\s*[-–—~]\s*\d{1,3}\b"),
     re.compile(r"\b\d{1,3}\s*[~]\s*\d{1,3}\b"),
+    re.compile(r"\bS\d{1,2}E\d{1,3}\s*[-–—~]\s*S?\d{0,2}E?\d{1,3}\b", re.I),
     re.compile(r"\bS\d{1,2}E\d{1,3}\s*-\s*S?\d{1,2}E\d{1,3}\b", re.I),
 )
 VIDEO_EXT_RE = re.compile(r"\.(?:mkv|mp4|avi|webm|m4v|mov)\b", re.I)
+EP_NUM = r"\d{1,4}"
 HASH_BRACKET_RE = re.compile(r"\[[0-9A-Fa-f]{6,}\]")
 SEASON_EP_RE = re.compile(r"\bS(?P<season>\d{1,2})E(?P<episode>\d{1,3})\b", re.I)
+SE_BATCH_RANGE_RE = re.compile(
+    r"\bS(?P<s>\d{1,2})E(?P<a>\d{1,3})\s*[-–—~]\s*S?\d{0,2}E?(?P<b>\d{1,3})\b",
+    re.I,
+)
 ORDINAL_SEASON_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s+Season", re.I)
 ORDINAL_DASH_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s*[-–—]", re.I)
 SEASON_WORD_RE = re.compile(r"\bSeason\s*(?P<season>\d+)\b", re.I)
@@ -189,7 +238,54 @@ SEASON_SHORT_RE = re.compile(r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})(?!E\d)", re.
 R_CODE_RE = re.compile(r"\bR(?P<season>[12])\b", re.I)
 SEASON_PACK_RE = re.compile(
     r"\b(?:BD|BluRay|Blu-?Ray|Remux|Batch|Complete|Full\s+Series|"
-    r"Dual[\s-]?Audio|BDRip|WEBRip|WEB-?DL)\b",
+    r"Dual[\s-]?Audio|BDRip|WEBRip|WEB-?DL|WEB|DVDRip|DVD\d{3}p?|LaserDisc|DVD|BDMV)\b",
+    re.I,
+)
+NON_ANIME_EXTRA_RE = re.compile(
+    r"\b(?:soundtrack|ost\b|original soundtrack|artbook|picture collection|"
+    r"patches?\b|discography|music collection|opening|drama\s+cd|vocal\s+best|"
+    r"op\s+single|my darling'?s embrace|phenogram|octet|visual novel|"
+    r"patch pre-applied|lossless|qianzhuan|ending theme|creditless|"
+    r"theme by|single\)|\bmp3\b|OP\s*&\s*ED|\(op\.|toki wo kizamu|"
+    r"op cage|anime oped|(?:\d{1,2}(?:st|nd|rd|th)\s+)?single\b|theatrical trailer|joe hisaishi|"
+    r"hi-res|テーマ|for windows|\[pc\]|goldberg|portable\)|seven seas|"
+    r"festival|hololive|yoasobi|catalog set)\b",
+    re.I,
+)
+NON_ANIME_EXTRA_RE2 = re.compile(
+    r"\[\d+\s*CDs?\]|(?:^|\s)OP\s+[\[-]|(?:^|\[)OP\[|\]OP\[|\bED\s*\d|"
+    r"\bOP\s*\d\b|\.(?:flac|rar)\b|\b\d{3}kbps\b",
+    re.I,
+)
+AFTER_STORY_BATCH_RE = re.compile(
+    r"\b(?:after\s+story|clannad).*?\(\s*(?:1080|720|480|2160|4k|10-bit|full|\d{3,4}x\d{3,4})",
+    re.I,
+)
+LEGACY_YEAR_PACK_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+LEADING_EP_DOT_RE = re.compile(r"^(?P<episode>\d{1,3})\.", re.I)
+PAREN_EP_RE = re.compile(rf"(?<![a-z0-9])(?P<episode>{EP_NUM})\s*\(", re.I)
+TILDE_EP_RE = re.compile(r"~\s*(?P<episode>\d{1,3})\(", re.I)
+FRACTION_EP_DASH_RE = re.compile(
+    r"[-–—]\s*(?P<episode>\d{1,3})\.\d+\s*[\[(]", re.I
+)
+UNDERSCORE_EP_RE = re.compile(r"_(?P<episode>\d{1,3})(?:\s+\[|\s{2,}|\s*$)")
+TRAILING_EP_RE = re.compile(rf"\s(?P<episode>{EP_NUM})(?:v\d+)?\s*$")
+STORY_EP_RE = re.compile(rf"Story\s+(?P<episode>{EP_NUM})(?:v\d+)?(?:\s|\[|$)")
+GINTAMA_KAI_EP_RE = re.compile(r"\bKa[iï]\s+(?P<episode>\d{1,3})\s*[-–—]", re.I)
+ROMAN_SEASON_BATCH_RE = re.compile(
+    r"\bMob Psycho 100\s+(?P<roman>II|III|IV)\b.*\[1080", re.I
+)
+UNDERSCORE_ORDINAL_EP_RE = re.compile(
+    r"_(?P<season>\d)(?:st|nd|rd|th)_(?P<episode>\d{1,3})_", re.I
+)
+RESOLUTION_IN_PAREN_RE = re.compile(r"\(\d{3,4}x\d{3,4}")
+SIMPLE_UNDERSCORE_EP_RE = re.compile(r"_(?P<episode>\d{1,3})_\[")
+DOT_SEASON_RE = re.compile(r"\.S(?P<season>\d{1,2})\.", re.I)
+DOT_SE_EP_RE = re.compile(r"\.S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.I)
+STEINS_GATE_ZERO_DOT_RE = re.compile(r"Steins\.Gate\.0", re.I)
+YEAR_SPAN_RE = re.compile(r"\(20\d{2}-\d{4}\)")
+BARE_SERIES_PACK_RE = re.compile(
+    r"^(?:\[[^\]]+\]\s*)?(?:3-gatsu no Lion|Fullmetal Alchemist:?\s*Brotherhood)\s*$",
     re.I,
 )
 STANDALONE_FILM_RE = re.compile(
@@ -202,10 +298,30 @@ STANDALONE_FILM_RE = re.compile(
 PART_RE = re.compile(r"\bPart\s*(?P<season>\d+)\b", re.I)
 COUR_RE = re.compile(r"\bCour\s*(?P<season>\d+)\b", re.I)
 EP_DASH_RE = re.compile(
-    r"[-–—]\s*(?P<episode>\d{1,3})(?:v\d+)?(?:\s|\[|\(|$)",
+    rf"[-–—]\s*(?P<episode>{EP_NUM})(?:v\d+)?(?:\s|\[|\(|\.|$)",
     re.I,
 )
+JP_EP_RE = re.compile(r"第(?P<episode>\d{1,3})話?")
+BRACKET_EP_RE = re.compile(r"\]\s*\[(?P<episode>\d{1,3})\]\[")
+LEADING_BRACKET_EP_RE = re.compile(r"^\[(?P<episode>\d{1,3})\]")
+SPACE_EP_RAW_RE = re.compile(r"\s(?P<episode>\d{1,3})\s+RAW\b", re.I)
 EP_WORD_RE = re.compile(r"\b(?:Episode|EP)\s*(?P<episode>\d{1,3})\b", re.I)
+DOT_EP_RE = re.compile(
+    r"\.(?:e(?:p(?:isode)?)?)?0?(?P<episode>\d{1,3})(?:v\d+)?\."
+    r"(?:(?:v\d+|[a-z0-9]+)\.)*(?:1080|720|480|2160|4k|bluray|bdrip|web|x26|hevc|h\.26|av1|opus|mkv|mp4)",
+    re.I,
+)
+YEAR_PACK_RE = re.compile(r"\(20\d{2}\)")
+MULTISUB_PACK_RE = re.compile(r"\[multisubs?:", re.I)
+GATE_ZERO_RE = re.compile(r"\bGate\s*0\b", re.I)
+GATE_HD_RE = re.compile(r"\bSTEINS;GATE\s+HD\b", re.I)
+YEAR_EMBED_RE = re.compile(r"[\(_]20\d{2}[\)_]")
+SPACE_EP_QUALITY_RE = re.compile(
+    rf"\b(?P<episode>{EP_NUM})\s+(?:1080|720|480|2160|4k)p\b", re.I
+)
+FAN_LETTER_EP_RE = re.compile(
+    rf"\bFan\s+Letter[_\s-]*0?(?P<episode>{EP_NUM})\b", re.I
+)
 ARC_EP_RE = re.compile(
     r"^(?P<series>.+?)\s+[-–—]\s+(?P<arc>.+?)\s+[-–—]\s+(?P<episode>\d{1,3})(?:v\d+)?(?:\s|\[|\(|$)",
     re.I,
@@ -213,7 +329,7 @@ ARC_EP_RE = re.compile(
 
 
 def _primary_body_segment(body: str) -> str:
-    """Ignore les alias Nyaa après | en gardant le segment utile (saison / épisode)."""
+    """Ignore les alias Nyaa après | en gardant le segment utile (saison / épisode / film)."""
     parts = [part.strip() for part in body.split("|") if part.strip()]
     if len(parts) <= 1:
         return body
@@ -222,9 +338,24 @@ def _primary_body_segment(body: str) -> str:
             parse_season(part) is not None
             or SEASON_EP_RE.search(part)
             or EP_DASH_RE.search(part)
+            or matches_any(MOVIE_PATTERNS, part)
+            or matches_any(BATCH_PATTERNS, part)
+            or matches_any(OVA_PATTERNS, part)
+            or matches_any(SPECIAL_PATTERNS, part)
         ):
             return part
-    return parts[-1]
+    best = parts[0]
+    best_score = 0
+    for part in parts:
+        score = 0
+        if SEASON_PACK_RE.search(part):
+            score += 3
+        if resolution_tag(part):
+            score += 1
+        if score > best_score:
+            best_score = score
+            best = part
+    return best
 
 
 def strip_release_group(title: str) -> tuple[str | None, str]:
@@ -254,12 +385,25 @@ def parse_season(body: str) -> int | None:
     return None
 
 
+def is_non_anime_extra(title: str) -> bool:
+    """OST, scans, etc. — hors périmètre catalogue épisodes."""
+    return bool(NON_ANIME_EXTRA_RE.search(title) or NON_ANIME_EXTRA_RE2.search(title))
+
+
 def is_season_pack(body: str, season: int | None, episode: int | None) -> bool:
     """Pack saison BD/WEB sans numéro d'épisode explicite."""
-    if season is None or episode is not None:
+    if episode is not None:
         return False
     if SEASON_EP_RE.search(body) or EP_DASH_RE.search(body):
         return False
+    if DOT_EP_RE.search(body):
+        return False
+    if VIDEO_EXT_RE.search(body) and re.search(
+        r"[\._-]0?\d{1,3}(?:v\d+)?\.(?:mkv|mp4|avi|webm|m4v|mov)\b", body, re.I
+    ):
+        return False
+    if season is not None:
+        return True
     return bool(SEASON_PACK_RE.search(body))
 
 
@@ -278,10 +422,41 @@ def is_standalone_film(body: str, episode: int | None) -> bool:
     )
 
 
+def _paren_episode(body: str) -> re.Match[str] | None:
+    for match in PAREN_EP_RE.finditer(body):
+        episode = match.group("episode")
+        if re.search(
+            rf"\b(?:Season|Part|Cour)\s+{episode}\s*\(",
+            body,
+            re.I,
+        ):
+            continue
+        return match
+    return None
+
+
 def parse_episode(body: str) -> int | None:
     if MANGA_VOLUME_IN_TITLE_RE.search(body):
         return None
-    match = EP_DASH_RE.search(body) or EP_WORD_RE.search(body)
+    match = (
+        EP_DASH_RE.search(body)
+        or EP_WORD_RE.search(body)
+        or OVA_EP_RE.search(body)
+        or JP_EP_RE.search(body)
+        or BRACKET_EP_RE.search(body)
+        or LEADING_BRACKET_EP_RE.search(body)
+        or SPACE_EP_RAW_RE.search(body)
+        or TRAILING_EP_RE.search(body)
+        or STORY_EP_RE.search(body)
+        or GINTAMA_KAI_EP_RE.search(body)
+        or DOT_EP_RE.search(body)
+        or SPACE_EP_QUALITY_RE.search(body)
+        or FAN_LETTER_EP_RE.search(body)
+        or LEADING_EP_DOT_RE.search(body)
+        or TILDE_EP_RE.search(body)
+        or _paren_episode(body)
+        or UNDERSCORE_EP_RE.search(body)
+    )
     if match:
         return int(match.group("episode"))
     return None
@@ -334,10 +509,14 @@ def detect_kind(
         return MediaKind.MOVIE
     if matches_any(BATCH_PATTERNS, body) or is_season_pack(body, season, episode):
         return MediaKind.BATCH
-    if matches_any(OVA_PATTERNS, body):
-        return MediaKind.OVA
     if matches_any(SPECIAL_PATTERNS, body):
         return MediaKind.SPECIAL
+    if re.search(r"\bbrotherhood\b.*\bspecials?\b", body, re.I):
+        return MediaKind.SPECIAL
+    if matches_any(SPINOFF_PATTERNS, body):
+        return MediaKind.SPECIAL
+    if matches_any(OVA_PATTERNS, body):
+        return MediaKind.OVA
     if episode is not None or SEASON_EP_RE.search(body):
         return MediaKind.EPISODE
     if arc:
@@ -373,8 +552,19 @@ def finalize_parsed(
 
 
 def parse_title(title: str) -> ParsedTitle:
-    release_group, body = strip_release_group(title)
-    body = _primary_body_segment(body)
+    release_group, raw_body = strip_release_group(title)
+    segment = _primary_body_segment(raw_body)
+    body = segment.replace("_", " ")
+    if is_non_anime_extra(title):
+        return finalize_parsed(
+            title=title,
+            release_group=release_group,
+            body=body,
+            kind=MediaKind.UNKNOWN,
+            season=None,
+            episode=None,
+            arc=None,
+        )
     if is_manga(title, release_group):
         return finalize_parsed(
             title=title,
@@ -390,11 +580,50 @@ def parse_title(title: str) -> ParsedTitle:
     episode: int | None = None
     arc: str | None = None
 
-    if matches_any(MOVIE_PATTERNS, body) or is_standalone_film(body, None):
+    se_batch = SE_BATCH_RANGE_RE.search(body)
+    ord_ep = UNDERSCORE_ORDINAL_EP_RE.search(segment)
+    roman_batch = ROMAN_SEASON_BATCH_RE.search(body)
+    dot_se = DOT_SE_EP_RE.search(segment)
+    if se_batch:
+        kind = MediaKind.BATCH
+        season = int(se_batch.group("s"))
+    elif dot_se:
+        kind = MediaKind.EPISODE
+        season = int(dot_se.group("season"))
+        episode = int(dot_se.group("episode"))
+    elif roman_batch:
+        kind = MediaKind.BATCH
+        roman = roman_batch.group("roman")
+        season = {"II": 2, "III": 3, "IV": 4}.get(roman, 1)
+    elif ord_ep:
+        kind = MediaKind.EPISODE
+        season = int(ord_ep.group("season"))
+        episode = int(ord_ep.group("episode"))
+    elif FRACTION_EP_DASH_RE.search(body):
+        frac = FRACTION_EP_DASH_RE.search(body)
+        kind = MediaKind.SPECIAL
+        episode = int(frac.group("episode")) if frac else None
+    elif STEINS_GATE_ZERO_DOT_RE.search(body) and DOT_SEASON_RE.search(body):
+        kind = MediaKind.BATCH
+        season = int(DOT_SEASON_RE.search(body).group("season"))
+    elif YEAR_SPAN_RE.search(body):
+        kind = MediaKind.BATCH
+    elif re.search(r"\b3-gatsu no lion\b", body, re.I) and re.search(
+        r"\[(?:x265|1920)", body, re.I
+    ):
+        kind = MediaKind.BATCH
+    elif matches_any(MOVIE_PATTERNS, body) and not BRACKET_EP_RANGE_RE.search(body):
         kind = MediaKind.MOVIE
-    elif matches_any(BATCH_PATTERNS, body):
+    elif is_standalone_film(body, None):
+        kind = MediaKind.MOVIE
+    elif matches_any(BATCH_PATTERNS, body) or AFTER_STORY_BATCH_RE.search(body):
         kind = MediaKind.BATCH
         season = parse_season(body)
+    elif RESOLUTION_IN_PAREN_RE.search(body) and parse_episode(body) is None:
+        kind = MediaKind.BATCH
+        season = parse_season(body)
+    elif BARE_SERIES_PACK_RE.search(body.strip()):
+        kind = MediaKind.BATCH
     else:
         season_ep = SEASON_EP_RE.search(body)
         if season_ep:
@@ -408,10 +637,79 @@ def parse_title(title: str) -> ParsedTitle:
                 body_for_season = arc_series or body
             else:
                 body_for_season = body
-                episode = parse_episode(body)
+                episode = parse_episode(body) or (
+                    int(m.group("episode"))
+                    if (m := UNDERSCORE_EP_RE.search(segment))
+                    else None
+                ) or (
+                    int(m.group("episode"))
+                    if (m := SIMPLE_UNDERSCORE_EP_RE.search(segment))
+                    else None
+                )
             season = parse_season(body_for_season)
         kind = detect_kind(body, season, episode, arc)
+        if kind == MediaKind.UNKNOWN and is_standalone_film(body, episode):
+            kind = MediaKind.MOVIE
         if kind == MediaKind.UNKNOWN and is_season_pack(body, season, episode):
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and YEAR_PACK_RE.search(body)
+        ):
+            season = season or 1
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and MULTISUB_PACK_RE.search(body)
+            and resolution_tag(title)
+        ):
+            kind = MediaKind.BATCH
+        if kind == MediaKind.UNKNOWN and GATE_ZERO_RE.search(body):
+            kind = MediaKind.BATCH
+        if kind == MediaKind.UNKNOWN and GATE_HD_RE.search(body):
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and YEAR_EMBED_RE.search(body)
+            and resolution_tag(title)
+        ):
+            season = season or 1
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and LEGACY_YEAR_PACK_RE.search(body)
+            and resolution_tag(title)
+        ):
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and resolution_tag(title)
+            and re.search(
+                r"\b(?:brotherhood|3-gatsu no lion|march comes in like a lion|"
+                r"hajime no ippo|fighting spirit)\b",
+                body,
+                re.I,
+            )
+        ):
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and re.search(r"\bbrotherhood\b", body, re.I)
+            and re.search(r"\[(?:multi|br)\]", body, re.I)
+        ):
+            kind = MediaKind.BATCH
+        if (
+            kind == MediaKind.UNKNOWN
+            and episode is None
+            and re.search(r"\bginga eiyuu densetsu\b", body, re.I)
+            and re.search(r"\[(?:VOSTFR|BR)\]|(?:19|20)\d{2}\b", body, re.I)
+        ):
             kind = MediaKind.BATCH
         if (
             kind == MediaKind.EPISODE

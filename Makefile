@@ -13,6 +13,7 @@ help:
 	@echo "  make validate     validation réseau (10 anime)"
 	@echo "  make validate-subs validation sous-titres OpenSubtitles (réseau)"
 	@echo "  make survey-nyaa   collecte titres Nyaa + rapport patterns (réseau)"
+	@echo "  make parsing-loop  boucle parsing top MAL → 2000 (réseau)"
 	@echo "  make debug-rezero régression catalogue Re:Zero offline"
 	@echo "  make clean        remove venv and build artifacts"
 
@@ -43,6 +44,9 @@ validate-subs: install
 
 survey-nyaa: install
 	$(UV) run python scripts/survey_nyaa_titles.py --top 40 --pages 2 --workers 4
+
+parsing-loop: install
+	$(UV) run python scripts/parsing_improve_loop.py --loop --workers 4
 
 validate-top: install
 	$(UV) run python scripts/validate_franchise.py --top 1000 --workers 2 --output scripts/results/validate_top1000.json

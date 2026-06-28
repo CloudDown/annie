@@ -29,7 +29,7 @@ from annie.catalog import (
 from annie.mal import TopAnimeEntry, fetch_top_anime, nyaa_queries_for, search_anime
 from annie.media import AnnieConfig
 from annie.nyaa import NyaaEntry, search
-from annie.parsing import minimal_label, parse_title
+from annie.parsing import SEASON_PACK_RE, is_non_anime_extra, minimal_label, parse_title
 from annie.types import MediaKind
 
 RESULTS_DIR = ROOT / "scripts" / "results"
@@ -90,23 +90,52 @@ def _nyaa_query_for_top(entry: TopAnimeEntry) -> str:
     return entry.title_english or entry.title
 
 
+def _is_valid_season_or_franchise_batch(
+    title: str, parsed, batch_eps: list[int]
+) -> bool:
+    if batch_eps:
+        return True
+    if parsed.season is not None and parsed.episode is None:
+        return True
+    if is_franchise_multi_season_batch(title):
+        return True
+    if parsed.kind == MediaKind.BATCH and re.search(
+        r"\b(?:complete(?:\s+series)?|full\s+series|integrale)\b", title, re.I
+    ):
+        return True
+    if parsed.kind == MediaKind.BATCH and (
+        SEASON_PACK_RE.search(title)
+        or re.search(r"\bdual[\s-]?audio\b", title, re.I)
+    ):
+        return True
+    return False
+
+
 def _analyze_entry(entry: NyaaEntry, source_query: str) -> SurveyRow:
     parsed = parse_title(entry.title)
     batch_season, batch_eps = parse_batch_episode_range(entry.title)
     flags: list[str] = []
 
+    if is_non_anime_extra(entry.title):
+        flags.append("non_anime_extra")
+
     if parsed.kind == MediaKind.BATCH and not batch_eps:
-        flags.append("batch_kind_empty_range")
+        if not _is_valid_season_or_franchise_batch(entry.title, parsed, batch_eps):
+            flags.append("batch_kind_empty_range")
     if batch_eps and parsed.kind != MediaKind.BATCH:
-        flags.append("batch_range_non_batch_kind")
+        if parsed.kind not in (MediaKind.MANGA, MediaKind.EPISODE):
+            flags.append("batch_range_non_batch_kind")
     if is_franchise_multi_season_batch(entry.title):
         flags.append("franchise_multi_season")
     if batch_eps and len(batch_eps) <= 3 and is_franchise_multi_season_batch(entry.title):
         flags.append("suspect_short_range_on_multi_season")
     if parsed.season is None and parsed.episode is not None and parsed.kind == MediaKind.EPISODE:
         flags.append("episode_without_season")
-    if parsed.kind == MediaKind.UNKNOWN:
-        flags.append("unknown_kind")
+    if parsed.kind == MediaKind.UNKNOWN and not is_non_anime_extra(entry.title):
+        if "non_anime_extra" not in flags:
+            flags.append("unknown_kind")
+    if parsed.kind == MediaKind.MANGA:
+        flags = [f for f in flags if f != "unknown_kind"]
 
     signals = [name for name, pattern in TITLE_SIGNAL_PATTERNS if pattern.search(entry.title)]
 

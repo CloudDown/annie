@@ -73,6 +73,73 @@ class ParseTitleTests(unittest.TestCase):
         self.assertEqual(p.season, 4)
         self.assertEqual(p.episode, 8)
 
+    def test_season_pack_s02_web(self) -> None:
+        p = parse_title(
+            "[Ironclad] Sousou no Frieren - S02 [WEB.1080p.AV1] | Frieren: Beyond Journey's End"
+        )
+        self.assertEqual(p.kind, MediaKind.BATCH)
+        self.assertEqual(p.season, 2)
+
+    def test_season_pack_ordinal(self) -> None:
+        p = parse_title(
+            "[DB] Sousou no Frieren 2nd Season | Frieren: Beyond Journey's End Season 2 [1080p]"
+        )
+        self.assertEqual(p.kind, MediaKind.BATCH)
+        self.assertEqual(p.season, 2)
+
+    def test_season_pack_remux(self) -> None:
+        p = parse_title(
+            "[PMR] Frieren Beyond Journey's End (BD Remux 1080p AVC FLAC AAC) [Dual Audio]"
+        )
+        self.assertEqual(p.kind, MediaKind.BATCH)
+
+    def test_soundtrack_non_anime(self) -> None:
+        p = parse_title(
+            "[ZAIA] Frieren Beyond Journey's End Original Soundtrack (TVアニメ)"
+        )
+        self.assertEqual(p.kind, MediaKind.UNKNOWN)
+
+    def test_dot_notation_episode(self) -> None:
+        p = parse_title(
+            "Fullmetal.Alchemist.Brotherhood.53.v2.1080p.BluRay.Dual-Audio.FLAC2.0.Hi10P.x264-JySzE.mkv"
+        )
+        self.assertEqual(p.kind, MediaKind.EPISODE)
+        self.assertEqual(p.episode, 53)
+
+    def test_year_pack_batch(self) -> None:
+        p = parse_title("[Commie] JoJo's Bizarre Adventure (2012)")
+        self.assertEqual(p.kind, MediaKind.BATCH)
+        self.assertEqual(p.season, 1)
+
+    def test_manga_chapter_year(self) -> None:
+        p = parse_title("Chainsaw Man 232 (2026)")
+        self.assertEqual(p.kind, MediaKind.MANGA)
+
+    def test_se_batch_range(self) -> None:
+        p = parse_title("Pokemon Horizons The Series S01E112-E123 1080p")
+        self.assertEqual(p.kind, MediaKind.BATCH)
+        self.assertEqual(p.season, 1)
+
+    def test_one_piece_high_episode(self) -> None:
+        p = parse_title(
+            "[SubsPlease] One Piece - 1168 (1080p) [0A043BA1].mkv"
+        )
+        self.assertEqual(p.kind, MediaKind.EPISODE)
+        self.assertEqual(p.episode, 1168)
+
+    def test_clannad_after_story_episode(self) -> None:
+        p = parse_title(
+            "[XedO-SpeedSubs] Clannad After Story 03 (X264) [9484CEC5].mkv"
+        )
+        self.assertEqual(p.kind, MediaKind.EPISODE)
+        self.assertEqual(p.episode, 3)
+
+    def test_clannad_after_story_batch(self) -> None:
+        p = parse_title(
+            "[inFIN] Clannad: After Story (1080p 10-bit h.264 | 5.1ch AAC | Finnish sub)"
+        )
+        self.assertEqual(p.kind, MediaKind.BATCH)
+
 
 class BatchRangeTests(unittest.TestCase):
     def test_second_season_batch(self) -> None:
