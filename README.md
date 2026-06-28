@@ -112,7 +112,9 @@ annie ls fichier.torrent             # liste les fichiers d’un torrent
 
 ## Configuration
 
-Fichier optionnel : `~/.config/annie/config.toml`
+Après `make install` (ou au premier lancement), les fichiers sont créés dans `~/.config/annie/` si absents — **édite `config.toml` avant de lancer Annie** pour y mettre ta clé OpenSubtitles.
+
+### `config.toml`
 
 ```toml
 player = "mpv"                    # auto | mpv | vlc | ffplay
@@ -159,9 +161,9 @@ Après le choix d’un épisode, Annie propose un **second menu fzf** : English,
 
 **Sécurité** : ne commite jamais `config.toml` — il reste dans `~/.config/annie/` sur ta machine uniquement.
 
-### Streaming (`~/.config/annie/settings.toml`)
+### Streaming (`settings.toml`)
 
-Créé automatiquement au premier lancement si absent :
+Créé en même temps que `config.toml` (`make install` ou premier lancement) :
 
 ```toml
 [streaming]

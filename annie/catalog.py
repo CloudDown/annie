@@ -41,6 +41,14 @@ RECAP_MOVIE_PATTERNS = (
     re.compile(r"\bsummary\b", re.I),
 )
 _SEASON_TAG_RE = re.compile(r"\bS0?(\d{1,2})\b", re.I)
+_SEASON_SPAN_IN_TITLE_RE = re.compile(
+    r"\bseasons?\s*(?P<lo>\d{1,2})\s*[-–—~]\s*(?P<hi>\d{1,2})\b",
+    re.I,
+)
+_S_SPAN_IN_TITLE_RE = re.compile(
+    r"\bS0?(?P<lo>\d{1,2})\s*[-–—~]\s*S0?(?P<hi>\d{1,2})\b",
+    re.I,
+)
 _FINAL_SEASON_RE = re.compile(r"\b(?:final|last)\s+season\b", re.I)
 
 
@@ -164,7 +172,88 @@ def _explicit_seasons_in_title(title: str) -> set[int]:
         value = int(match.group(1))
         if value >= 1:
             seasons.add(value)
+    for pattern in (_SEASON_SPAN_IN_TITLE_RE, _S_SPAN_IN_TITLE_RE):
+        for match in pattern.finditer(title):
+            lo, hi = int(match.group("lo")), int(match.group("hi"))
+            if lo >= 1 and hi >= lo:
+                seasons.update(range(lo, hi + 1))
     return seasons
+
+
+def is_franchise_multi_season_batch(title: str) -> bool:
+    """Pack Nyaa couvrant plusieurs saisons (ex. Seasons 1-2 + Movies)."""
+    body = _batch_title_body(title)
+    return bool(
+        _SEASON_SPAN_IN_TITLE_RE.search(body) or _S_SPAN_IN_TITLE_RE.search(body)
+    )
+
+
+def _magnet_reusable_across_seasons(title: str) -> bool:
+    """Torrent franchise réutilisable pour plusieurs saisons MAL (pack complet)."""
+    if is_franchise_multi_season_batch(title):
+        return True
+    _, episodes = parse_batch_episode_range(title)
+    return len(episodes) > 13
+
+
+def _batch_range_is_season_span(body: str, match: re.Match[str]) -> bool:
+    """Évite de lire « Seasons 1-2 » comme épisodes 1-2 (pas « Season 1~13 »)."""
+    prefix = body[max(0, match.start() - 20) : match.start()]
+    if re.search(r"seasons\s*$", prefix, re.I):
+        return True
+    return bool(re.search(r"S0?\d+\s*[-–—~]\s*$", prefix, re.I))
+
+
+def _remap_item_for_release(
+    item: ResultItem,
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+) -> ResultItem | None:
+    if release.kind != MediaKind.EPISODE or release.season is None:
+        return item
+    parsed = item.parsed
+    if parsed.episode is None:
+        return None
+    expected = release.episode_count or 0
+    if not expected:
+        return item
+
+    episode = parsed.episode
+    if parsed.season is None:
+        if 1 <= episode <= expected:
+            return ResultItem(
+                entry=item.entry,
+                parsed=replace(parsed, season=release.season, episode=episode),
+                score=item.score,
+            )
+        if absolute_offset > 0:
+            relative = episode - absolute_offset
+            if 1 <= relative <= expected:
+                return ResultItem(
+                    entry=item.entry,
+                    parsed=replace(
+                        parsed, season=release.season, episode=relative
+                    ),
+                    score=item.score,
+                )
+        return None
+
+    if parsed.season == release.season and 1 <= episode <= expected:
+        return item
+
+    if absolute_offset > 0:
+        relative = episode - absolute_offset
+        if 1 <= relative <= expected:
+            return ResultItem(
+                entry=item.entry,
+                parsed=replace(
+                    parsed, season=release.season, episode=relative
+                ),
+                score=item.score,
+            )
+
+    return None
 
 
 def _primary_query_token_hits(parsed: ParsedTitle, primary_query: str) -> int:
@@ -262,17 +351,24 @@ def _episode_belongs_to_release(
         return True
     if is_spinoff(item.entry.title):
         return False
-    parsed = item.parsed
-    if _series_conflicts_with_release(
-        parsed, release, title=item.entry.title, max_tv_season=max_tv_season
-    ):
+
+    remapped = _remap_item_for_release(
+        item, release, absolute_offset=absolute_offset
+    )
+    if remapped is None:
         return False
+
+    parsed = remapped.parsed
+    title = item.entry.title
+    if _series_conflicts_with_release(
+        parsed, release, title=title, max_tv_season=max_tv_season
+    ):
+        if not is_franchise_multi_season_batch(title):
+            return False
     if (
         release.nyaa_queries
         and best_series_match_score(parsed, release.nyaa_queries) < 0
     ):
-        return False
-    if parsed.season is not None and parsed.season != release.season:
         return False
     if parsed.episode is None:
         return True
@@ -282,10 +378,9 @@ def _episode_belongs_to_release(
     if relative is None:
         return False
     uses_absolute = (
-        parsed.season is None
-        and absolute_offset > 0
-        and parsed.episode is not None
-        and parsed.episode > absolute_offset
+        absolute_offset > 0
+        and item.parsed.episode is not None
+        and item.parsed.episode > absolute_offset
     )
     if uses_absolute:
         primary = release.nyaa_queries[0] if release.nyaa_queries else ""
@@ -402,6 +497,8 @@ def parse_batch_episode_range(title: str) -> tuple[int | None, list[int]]:
             return season, list(range(start, end + 1))
 
     for match in BATCH_EP_RANGE_RE.finditer(body):
+        if _batch_range_is_season_span(body, match):
+            continue
         start, end = int(match.group("a")), int(match.group("b"))
         if end < start or end - start >= 60:
             continue
@@ -458,6 +555,45 @@ def apply_batch_episodes(
             upsert_episode(section, item_for_episode(item, episode))
 
 
+def _batch_episodes_for_release(
+    item: ResultItem,
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+) -> list[tuple[int, int]]:
+    """Paires (épisode relatif release, numéro brut batch) à importer."""
+    title = item.entry.title
+    _, episodes = parse_batch_episode_range(title)
+    expected = release.episode_count or 0
+    if not expected:
+        return []
+
+    pairs: list[tuple[int, int]] = []
+    seen: set[int] = set()
+
+    def add(relative: int, raw: int) -> None:
+        if 1 <= relative <= expected and relative not in seen:
+            seen.add(relative)
+            pairs.append((relative, raw))
+
+    if is_franchise_multi_season_batch(title) and (
+        not episodes or max(episodes) <= 2
+    ):
+        for relative in range(1, expected + 1):
+            add(relative, absolute_offset + relative)
+        return pairs
+
+    for raw in episodes:
+        if absolute_offset == 0 and 1 <= raw <= expected:
+            add(raw, raw)
+            continue
+        relative = raw - absolute_offset
+        if 1 <= relative <= expected:
+            add(relative, raw)
+
+    return pairs
+
+
 def _merge_batches_into_section(
     section: MediaSection,
     parts: list[MediaSection],
@@ -475,26 +611,24 @@ def _merge_batches_into_section(
             if item.entry.magnet in seen:
                 continue
             seen.add(item.entry.magnet)
-            batch_season, episodes = parse_batch_episode_range(item.entry.title)
-            if not episodes:
-                continue
-            effective_season = (
-                batch_season
-                if batch_season is not None
-                else infer_batch_season(item.entry.title, item.parsed.season)
-            )
-            if section.season is not None and effective_season != section.season:
-                continue
-            for episode in episodes:
-                candidate = item_for_episode(item, episode)
+
+            for relative, raw in _batch_episodes_for_release(
+                item, release, absolute_offset=absolute_offset
+            ):
+                candidate = item_for_episode(item, raw)
+                remapped = _remap_item_for_release(
+                    candidate, release, absolute_offset=absolute_offset
+                )
+                if remapped is None:
+                    continue
                 if not _episode_belongs_to_release(
-                    candidate,
+                    remapped,
                     release,
                     absolute_offset=absolute_offset,
                     max_tv_season=max_tv_season,
                 ):
                     continue
-                upsert_episode(section, candidate)
+                upsert_episode(section, remapped)
 
 
 def _strict_target(
@@ -513,21 +647,33 @@ def _strict_target(
 
 
 def _annotate_batch_hints(sections: list[MediaSection]) -> None:
-    episode_sections = [
-        section for section in sections if section.kind == MediaKind.EPISODE
-    ]
-    batch_sections = [
-        section for section in sections if section.kind == MediaKind.BATCH
-    ]
-    for section in episode_sections:
-        if not section.has_episodes:
+    from annie.parsing import parse_title
+
+    franchise_batch_magnets: set[str] = set()
+    for section in sections:
+        for item in list(section.episodes.values()) + section.singles:
+            if (
+                item.parsed.kind == MediaKind.BATCH
+                or parse_title(item.entry.title).kind == MediaKind.BATCH
+                or is_franchise_multi_season_batch(item.entry.title)
+            ):
+                franchise_batch_magnets.add(item.entry.magnet)
+
+    for section in sections:
+        if section.kind != MediaKind.EPISODE or not section.has_episodes:
             continue
         sparse = len(section.episodes) <= 3
-        has_batch = any(
-            batch.season == section.season or batch.season in {None, section.season}
-            for batch in batch_sections
+        magnets = {item.entry.magnet for item in section.episodes.values()}
+        has_batch = bool(magnets & franchise_batch_magnets) or any(
+            parse_title(item.entry.title).kind == MediaKind.BATCH
+            for item in section.episodes.values()
         )
-        section.batch_recommended = sparse and has_batch
+        shared_pack = any(
+            sum(1 for i in section.episodes.values() if i.entry.magnet == magnet)
+            >= 3
+            for magnet in magnets
+        )
+        section.batch_recommended = sparse and (has_batch or shared_pack)
 
 
 def build_catalog(
@@ -637,16 +783,19 @@ def _pick_section_for_release(
         for section in parts:
             if section.kind != MediaKind.EPISODE:
                 continue
-            if section.season is not None and section.season != release.season:
-                continue
             for _ep, item in section.episodes.items():
+                remapped = _remap_item_for_release(
+                    item, release, absolute_offset=absolute_offset
+                )
+                if remapped is None:
+                    continue
                 if _episode_belongs_to_release(
-                    item,
+                    remapped,
                     release,
                     absolute_offset=absolute_offset,
                     max_tv_season=max_tv_season,
                 ):
-                    upsert_episode(merged, item)
+                    upsert_episode(merged, remapped)
 
         if merged.episodes:
             return merged
@@ -1049,7 +1198,11 @@ def build_catalog_from_releases(
                 )
         for query in source_queries:
             for entry in query_entries.get(query, []):
-                if entry.magnet in seen_magnets or entry.magnet in local_magnets:
+                if entry.magnet in local_magnets:
+                    continue
+                if entry.magnet in seen_magnets and not _magnet_reusable_across_seasons(
+                    entry.title
+                ):
                     continue
                 local_magnets.add(entry.magnet)
                 merged.append(entry)
@@ -1121,6 +1274,8 @@ def build_catalog_from_releases(
         section.nyaa_queries = list(release.nyaa_queries)
 
         for item in section.choices():
+            if _magnet_reusable_across_seasons(item.entry.title):
+                continue
             seen_magnets.add(item.entry.magnet)
 
         keep = (

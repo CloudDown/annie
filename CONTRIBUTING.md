@@ -9,7 +9,7 @@ Prérequis : [uv](https://docs.astral.sh/uv/), Python **3.11+** (géré par uv),
 ```bash
 git clone https://github.com/CloudDown/annie.git
 cd annie
-make install   # uv sync — crée .venv et installe libtorrent depuis uv.lock
+make install   # uv sync + ~/.config/annie/config.toml et settings.toml (si absents)
 ```
 
 <details>

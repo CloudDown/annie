@@ -7,6 +7,7 @@ import unittest
 from annie.catalog import (
     build_catalog,
     build_catalog_from_releases,
+    is_franchise_multi_season_batch,
     is_spinoff,
     parse_batch_episode_range,
     resolve_catalog_target,
@@ -148,6 +149,62 @@ class BuildCatalogSmokeTests(unittest.TestCase):
             s for s in catalog if s.kind == MediaKind.EPISODE and s.season
         ]
         self.assertGreaterEqual(len(episode_sections), 2)
+
+
+class CodeGeassCatalogFixtureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.fixture = load_fixture("catalog_code_geass.json")
+        cls.entries = entries_from_fixture(cls.fixture)
+        cls.releases = [
+            mal_release(
+                mal_id=row["mal_id"],
+                season=row["season"],
+                episode_count=row["episode_count"],
+                label=row["label"],
+                queries=["code geass"],
+            )
+            for row in cls.fixture["releases"]
+        ]
+
+    def test_seasons_span_not_parsed_as_episode_range(self) -> None:
+        title = self.fixture["entries"][0]["title"]
+        self.assertTrue(is_franchise_multi_season_batch(title))
+        season, eps = parse_batch_episode_range(title)
+        self.assertNotEqual(eps, [1, 2])
+
+    def test_build_catalog_from_releases_s2_from_complete_pack(self) -> None:
+        def fake_search(query: str, **kwargs):
+            return self.entries
+
+        sections = build_catalog_from_releases(
+            self.releases,
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        by_season = {s.season: s for s in sections if s.kind == MediaKind.EPISODE}
+        self.assertIn(1, by_season)
+        self.assertIn(2, by_season)
+
+        for season_str, rules in self.fixture["expectations"].items():
+            season = int(season_str)
+            section = by_season[season]
+            self.assertGreaterEqual(
+                len(section.episodes), rules["min_episodes"], msg=f"S{season}"
+            )
+            for ep in rules["must_have"]:
+                self.assertIn(ep, section.episodes, msg=f"S{season:02d} E{ep}")
+            for ep in rules.get("must_not_have", []):
+                self.assertNotIn(
+                    ep, section.episodes, msg=f"S{season:02d} pollue E{ep}"
+                )
+
+        s2_ep1 = by_season[2].episodes[1]
+        self.assertIn("Judas", s2_ep1.entry.title)
+        self.assertEqual(
+            by_season[1].episodes[1].entry.magnet, s2_ep1.entry.magnet
+        )
 
 
 if __name__ == "__main__":

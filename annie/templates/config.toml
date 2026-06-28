@@ -1,0 +1,15 @@
+# Configuration Annie — ~/.config/annie/config.toml
+# Édite ce fichier avant le premier lancement (clé OpenSubtitles, lecteur, etc.)
+
+player = "auto" # auto | mpv | vlc | ffplay
+category = "0_0" # filtre catégorie Nyaa
+filter = "0" # filtre Nyaa (0 = tous)
+skip_recap_movies = false
+preferred_groups = [] # ex. ["Erai-raws"]
+
+# Sous-titres externes (OpenSubtitles.com)
+subtitles_enabled = true
+opensubtitles_api_key = "" # https://www.opensubtitles.com/en/consumers
+opensubtitles_username = ""
+opensubtitles_password = ""
+default_sub_lang = "" # ex. "fr" — saute le menu langue si défini

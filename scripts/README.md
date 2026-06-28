@@ -22,6 +22,7 @@ python scripts/debug_parse.py --fixture parse_titles
 | `debug_catalog.py` | Optionnel | Catalogue offline via `tests/fixtures/catalog_re_zero.json` |
 | `debug_franchise.py` | Oui | Rapport détaillé MAL ↔ catalogue pour **un** anime |
 | `validate_franchise.py` | Oui | Couverture MAL + **seeders/qualité** par épisode (100 anime par défaut) |
+| `survey_nyaa_titles.py` | Oui | Collecte masse titres Nyaa + rapport patterns parsing (JSON + MD) |
 
 ## Exemples
 
@@ -45,6 +46,10 @@ python scripts/debug_franchise.py "re zero" --json
 
 # Validation 10 anime
 python scripts/validate_franchise.py --limit 10
+
+# Survey patterns Nyaa (top MAL + rapport pour améliorer le parsing)
+uv run python scripts/survey_nyaa_titles.py --top 30 --pages 2
+uv run python scripts/survey_nyaa_titles.py --from-validate-queries --limit 15 --pages 1
 ```
 
 ## Fixtures (`tests/fixtures/`)

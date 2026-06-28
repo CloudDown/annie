@@ -1,0 +1,5 @@
+# Réglages Annie — ~/.config/annie/settings.toml
+
+[streaming]
+# Partager l'épisode en cours pendant la lecture (pièces déjà téléchargées).
+seed_while_watching = true

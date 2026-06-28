@@ -246,6 +246,25 @@ def _score_tv(
     for season in report.seasons:
         issues.extend(season.issues)
 
+    if len(mal_tv) >= 2:
+        nyaa_by_season = {s.season: s for s in nyaa_tv if s.season is not None}
+        for index, (label, expected) in enumerate(mal_tv):
+            if not expected or index == 0:
+                continue
+            season_num = index + 1
+            section = nyaa_by_season.get(season_num)
+            found = len(section.episodes) if section else 0
+            if found > 0:
+                continue
+            prev_expected = mal_tv[index - 1][1]
+            prev_section = nyaa_by_season.get(index)
+            prev_found = len(prev_section.episodes) if prev_section else 0
+            if prev_expected and prev_found >= max(1, int(prev_expected * COVERAGE_RELAXED)):
+                issues.append(
+                    f"{label}: 0/{expected} — saison manquante alors que S{index:02d} "
+                    "est couverte (pack multi-saisons non rattaché ?)"
+                )
+
     nyaa_detail = [(s.label, s.found, s.expected) for s in report.seasons]
     mal_by_season = {index + 1: count for index, (_, count) in enumerate(mal_tv)}
 

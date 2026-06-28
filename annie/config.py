@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 
 try:
     import tomllib
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore
 
-CONFIG_DIR = Path.home() / ".config" / "annie"
-CONFIG_FILE = CONFIG_DIR / "config.toml"
+from annie.user_config import CONFIG_DIR, CONFIG_FILE, ensure_user_config
+
 _config_cache: "AnnieConfig | None" = None
+
+
+def _load_config_data() -> dict:
+    ensure_user_config()
+    if not CONFIG_FILE.is_file():
+        return {}
+    return tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -34,9 +40,7 @@ class AnnieConfig:
         global _config_cache
         if _config_cache is not None:
             return replace(_config_cache)
-        data: dict = {}
-        if CONFIG_FILE.is_file():
-            data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        data = _load_config_data()
         _config_cache = cls(
             player=os.environ.get("ANNIE_PLAYER", data.get("player", "auto")),
             category=data.get("category", "0_0"),
