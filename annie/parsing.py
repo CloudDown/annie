@@ -176,6 +176,19 @@ ORDINAL_SEASON_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s+Season", re.I)
 ORDINAL_DASH_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s*[-–—]", re.I)
 SEASON_WORD_RE = re.compile(r"\bSeason\s*(?P<season>\d+)\b", re.I)
 SEASON_SHORT_RE = re.compile(r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})(?!E\d)", re.I)
+R_CODE_RE = re.compile(r"\bR(?P<season>[12])\b", re.I)
+SEASON_PACK_RE = re.compile(
+    r"\b(?:BD|BluRay|Blu-?Ray|Remux|Batch|Complete|Full\s+Series|"
+    r"Dual[\s-]?Audio|BDRip|WEBRip|WEB-?DL)\b",
+    re.I,
+)
+STANDALONE_FILM_RE = re.compile(
+    r"\b(?:"
+    r"the\s+exiled|fukkatsu|resurrection|stardust|milos|"
+    r"memories\s+of\s+hatred|episode\s+[ivx]+"
+    r")\b",
+    re.I,
+)
 PART_RE = re.compile(r"\bPart\s*(?P<season>\d+)\b", re.I)
 COUR_RE = re.compile(r"\bCour\s*(?P<season>\d+)\b", re.I)
 EP_DASH_RE = re.compile(
@@ -187,6 +200,21 @@ ARC_EP_RE = re.compile(
     r"^(?P<series>.+?)\s+[-–—]\s+(?P<arc>.+?)\s+[-–—]\s+(?P<episode>\d{1,3})(?:v\d+)?(?:\s|\[|\(|$)",
     re.I,
 )
+
+
+def _primary_body_segment(body: str) -> str:
+    """Ignore les alias Nyaa après | en gardant le segment utile (saison / épisode)."""
+    parts = [part.strip() for part in body.split("|") if part.strip()]
+    if len(parts) <= 1:
+        return body
+    for part in parts:
+        if (
+            parse_season(part) is not None
+            or SEASON_EP_RE.search(part)
+            or EP_DASH_RE.search(part)
+        ):
+            return part
+    return parts[-1]
 
 
 def strip_release_group(title: str) -> tuple[str | None, str]:
@@ -202,6 +230,7 @@ def matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
 
 def parse_season(body: str) -> int | None:
     for pattern in (
+        R_CODE_RE,
         ORDINAL_SEASON_RE,
         ORDINAL_DASH_RE,
         SEASON_WORD_RE,
@@ -213,6 +242,30 @@ def parse_season(body: str) -> int | None:
         if match:
             return int(match.group("season"))
     return None
+
+
+def is_season_pack(body: str, season: int | None, episode: int | None) -> bool:
+    """Pack saison BD/WEB sans numéro d'épisode explicite."""
+    if season is None or episode is not None:
+        return False
+    if SEASON_EP_RE.search(body) or EP_DASH_RE.search(body):
+        return False
+    return bool(SEASON_PACK_RE.search(body))
+
+
+def is_standalone_film(body: str, episode: int | None) -> bool:
+    """Films / OVA longs sans le mot « movie » (remux, Akito the Exiled, etc.)."""
+    if episode is not None:
+        return False
+    if not STANDALONE_FILM_RE.search(body):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:remux|bluray|bdrip|bd\b|movie|film|hybrid)\b",
+            body,
+            re.I,
+        )
+    )
 
 
 def parse_episode(body: str) -> int | None:
@@ -267,9 +320,9 @@ def series_key(body: str, display_name: str) -> str:
 def detect_kind(
     body: str, season: int | None, episode: int | None, arc: str | None
 ) -> MediaKind:
-    if matches_any(MOVIE_PATTERNS, body):
+    if matches_any(MOVIE_PATTERNS, body) or is_standalone_film(body, episode):
         return MediaKind.MOVIE
-    if matches_any(BATCH_PATTERNS, body):
+    if matches_any(BATCH_PATTERNS, body) or is_season_pack(body, season, episode):
         return MediaKind.BATCH
     if matches_any(OVA_PATTERNS, body):
         return MediaKind.OVA
@@ -311,6 +364,7 @@ def finalize_parsed(
 
 def parse_title(title: str) -> ParsedTitle:
     release_group, body = strip_release_group(title)
+    body = _primary_body_segment(body)
     if is_manga(title, release_group):
         return finalize_parsed(
             title=title,
@@ -326,7 +380,7 @@ def parse_title(title: str) -> ParsedTitle:
     episode: int | None = None
     arc: str | None = None
 
-    if matches_any(MOVIE_PATTERNS, body):
+    if matches_any(MOVIE_PATTERNS, body) or is_standalone_film(body, None):
         kind = MediaKind.MOVIE
     elif matches_any(BATCH_PATTERNS, body):
         kind = MediaKind.BATCH
@@ -347,6 +401,8 @@ def parse_title(title: str) -> ParsedTitle:
                 episode = parse_episode(body)
             season = parse_season(body_for_season)
         kind = detect_kind(body, season, episode, arc)
+        if kind == MediaKind.UNKNOWN and is_season_pack(body, season, episode):
+            kind = MediaKind.BATCH
         if (
             kind == MediaKind.EPISODE
             and season is None
