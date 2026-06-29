@@ -1,4 +1,4 @@
-"""Fichiers utilisateur (config.toml, settings.toml)."""
+"""Fichier de configuration utilisateur (config.toml)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from annie.paths import config_dir
 
 CONFIG_DIR = config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
+# Conservé pour la rétrocompatibilité (anciennes installations).
 SETTINGS_FILE = CONFIG_DIR / "settings.toml"
 
 _TEMPLATES = files("annie") / "templates"
@@ -25,10 +26,8 @@ def _install_template(name: str, dest: Path, *, mode: int | None = None) -> bool
 
 
 def ensure_user_config() -> list[Path]:
-    """Crée config.toml et settings.toml s'ils n'existent pas. Ne remplace jamais."""
+    """Crée config.toml s'il n'existe pas. Ne remplace jamais."""
     created: list[Path] = []
     if _install_template("config.toml", CONFIG_FILE, mode=0o600):
         created.append(CONFIG_FILE)
-    if _install_template("settings.toml", SETTINGS_FILE):
-        created.append(SETTINGS_FILE)
     return created

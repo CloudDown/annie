@@ -5,7 +5,7 @@ ANNIE := ./annie.py
 
 help:
 	@echo "Targets:"
-	@echo "  make install      uv sync + ~/.config/annie/*.toml (si absents)"
+	@echo "  make install      uv sync + ~/.config/annie/config.toml (si absent)"
 	@echo "  make dev          alias for install"
 	@echo "  make run          launch interactive CLI"
 	@echo "  make test         suite unitaire (offline)"

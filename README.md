@@ -153,31 +153,22 @@ annie ls fichier.torrent             # liste les fichiers d’un torrent
 
 ## Configuration
 
-Annie lit deux fichiers dans le répertoire de configuration utilisateur :
+Annie lit un seul fichier dans le répertoire de configuration utilisateur :
 
 | Plateforme | Emplacement |
 |---|---|
-| Linux / Debian | `~/.config/annie/` |
-| Windows | `%APPDATA%\annie\` |
+| Linux / Debian | `~/.config/annie/config.toml` |
+| Windows | `%APPDATA%\annie\config.toml` |
 
-| Fichier | Rôle |
-|---|---|
-| **`config.toml`** | Comportement général : lecteur, Nyaa, catalogue MAL, sous-titres, interface |
-| **`settings.toml`** | Streaming : buffer torrent, seed, réglages mpv/vlc |
+Il est **créé automatiquement** au premier lancement (ou via `make install` depuis les sources) à partir du modèle du dépôt. Annie **ne l’écrase jamais** : tu peux l’éditer librement.
 
-Ils sont **créés automatiquement** au premier lancement (ou via `make install` depuis les sources) à partir des modèles du dépôt. Annie **ne les écrase jamais** : tu peux les éditer librement.
+> **Note :** les anciennes installations avec un `settings.toml` séparé restent supportées — ses valeurs sont lues en complément, `config.toml` primant en cas de doublon.
 
-```
-~/.config/annie/
-├── config.toml      # recherche, catalogue, sous-titres
-└── settings.toml    # torrent, buffer, lecteur
-```
-
-Les modèles commentés avec toutes les clés sont dans `annie/templates/config.toml` et `annie/templates/settings.toml`.
+Le modèle commenté avec toutes les clés est dans `annie/templates/config.toml`.
 
 ### Syntaxe TOML
 
-La forme recommandée utilise des **sections** (`[nyaa]`, `[catalog]`, …). Les **anciennes clés plates** restent supportées pour compatibilité :
+La forme recommandée utilise des **sections** (`[nyaa]`, `[catalog]`, `[streaming]`, …). Les **anciennes clés plates** restent supportées pour compatibilité :
 
 ```toml
 # Ancien style (toujours valide)
@@ -197,17 +188,17 @@ Tu peux mélanger les deux ; en cas de doublon, la section structurée prime.
 
 ### Variables d’environnement
 
-| Variable | Fichier | Effet |
+| Variable | Section | Effet |
 |---|---|---|
-| `ANNIE_PLAYER` | config | Remplace `[player].command` |
-| `OPENSUBTITLES_API_KEY` | config | Remplace `[subtitles].api_key` |
-| `OPENSUBTITLES_USERNAME` | config | Remplace `[subtitles].username` |
-| `OPENSUBTITLES_PASSWORD` | config | Remplace `[subtitles].password` |
-| `ANNIE_SEED_WHILE_WATCHING` | settings | `0` / `false` désactive le seed pendant la lecture |
+| `ANNIE_PLAYER` | `[player]` | Remplace `command` |
+| `OPENSUBTITLES_API_KEY` | `[subtitles]` | Remplace `api_key` |
+| `OPENSUBTITLES_USERNAME` | `[subtitles]` | Remplace `username` |
+| `OPENSUBTITLES_PASSWORD` | `[subtitles]` | Remplace `password` |
+| `ANNIE_SEED_WHILE_WATCHING` | `[streaming]` | `0` / `false` désactive le seed pendant la lecture |
 
 ---
 
-### `config.toml` — recherche & catalogue
+### Référence `config.toml`
 
 #### `[player]` — lecteur vidéo
 
@@ -216,6 +207,18 @@ Tu peux mélanger les deux ; en cas de doublon, la section structurée prime.
 | `command` | `auto` | `auto`, `mpv`, `vlc`, `ffplay`, ou chemin vers un exécutable |
 
 `auto` détecte mpv, puis vlc, puis ffplay.
+
+#### `[player.mpv]` et `[player.vlc]`
+
+Options passées au lecteur. Exemple mpv :
+
+| Clé | Défaut | Description |
+|---|---|---|
+| `cache_secs` | `30` | Cache lecture réseau mpv |
+| `hwdec` | `auto-safe` | Décodage matériel (`auto`, `auto-safe`, `no`) |
+| `extra_args` | `[]` | Arguments supplémentaires, ex. `["--fs", "--ontop"]` |
+
+VLC : `file_caching_ms`, `network_caching_ms`, `extra_args`.
 
 #### `[nyaa]` — requêtes Nyaa.si
 
@@ -304,12 +307,6 @@ default_lang = "fr"
 preferred_groups = ["SubsPlease"]
 ```
 
----
-
-### `settings.toml` — streaming & torrent
-
-Ces réglages n’affectent pas la recherche : uniquement le téléchargement, le buffer et le lancement du lecteur.
-
 #### `[streaming]`
 
 | Clé | Défaut | Description |
@@ -338,18 +335,6 @@ Ces réglages n’affectent pas la recherche : uniquement le téléchargement, l
 | `connections_limit` | `300` | Connexions max |
 | `active_downloads` / `active_limit` | `1` / `4` | Slots actifs |
 | `enable_dht` / `enable_lsd` / `enable_upnp` / `enable_natpmp` | `true` | Découverte de peers et NAT |
-
-#### `[player.mpv]` et `[player.vlc]`
-
-Options passées au lecteur. Exemple mpv :
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `cache_secs` | `30` | Cache lecture réseau mpv |
-| `hwdec` | `auto-safe` | Décodage matériel (`auto`, `auto-safe`, `no`) |
-| `extra_args` | `[]` | Arguments supplémentaires, ex. `["--fs", "--ontop"]` |
-
-VLC : `file_caching_ms`, `network_caching_ms`, `extra_args`.
 
 #### Exemple — connexion lente
 

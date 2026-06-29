@@ -9,7 +9,7 @@ Prérequis : [uv](https://docs.astral.sh/uv/), Python **3.11+** (géré par uv),
 ```bash
 git clone https://github.com/CloudDown/annie.git
 cd annie
-make install   # uv sync + ~/.config/annie/config.toml et settings.toml (si absents)
+make install   # uv sync + ~/.config/annie/config.toml (si absent)
 ```
 
 <details>
@@ -49,7 +49,7 @@ annie/
   scoring.py          Scoring des releases
   catalog.py          Construction catalogue aligné MAL
   media.py            Façade de compatibilité (ré-exporte les modules ci-dessus)
-  settings.py         Options streaming (settings.toml)
+  settings.py         Options streaming (sections [streaming], [buffer], … dans config.toml)
   nyaa.py             Client Nyaa & cache
   stream.py           libtorrent + lecteurs
   subtitles.py        OpenSubtitles.com (recherche + téléchargement)

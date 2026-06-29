@@ -10,7 +10,7 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore
 
-from annie.user_config import SETTINGS_FILE, ensure_user_config
+from annie.user_config import CONFIG_FILE, SETTINGS_FILE, ensure_user_config
 
 _settings_cache: AnnieSettings | None = None
 
@@ -18,6 +18,28 @@ _settings_cache: AnnieSettings | None = None
 def _table(data: dict, key: str) -> dict:
     value = data.get(key, {})
     return value if isinstance(value, dict) else {}
+
+
+def _merge_dict(base: dict, override: dict) -> dict:
+    """Fusionne deux tables TOML ; override prime sur base."""
+    out = dict(base)
+    for key, value in override.items():
+        if key in out and isinstance(out[key], dict) and isinstance(value, dict):
+            out[key] = _merge_dict(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _load_settings_data() -> dict:
+    ensure_user_config()
+    data: dict = {}
+    if SETTINGS_FILE.is_file():
+        data = tomllib.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    if CONFIG_FILE.is_file():
+        config_data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        data = _merge_dict(data, config_data)
+    return data
 
 
 def _bool(value: object, default: bool) -> bool:
@@ -131,9 +153,7 @@ class AnnieSettings:
 
         ensure_user_config()
 
-        data: dict = {}
-        if SETTINGS_FILE.is_file():
-            data = tomllib.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        data = _load_settings_data()
 
         streaming_table = _table(data, "streaming")
         buffer_table = _table(data, "buffer")
