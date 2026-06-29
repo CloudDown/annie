@@ -18,11 +18,9 @@
 
 # Annie
 
-**Recherche Nyaa · catalogue MAL · streaming torrent**
+**Regarde des anime depuis le terminal — sans site web, sans clic.**
 
-CLI pour chercher des anime sur [Nyaa.si](https://nyaa.si), parcourir un catalogue structuré par saisons, choisir une release avec **fzf**, et lire en streaming via **libtorrent** + **mpv** / **vlc** / **ffplay**.
-
-<br>
+Annie cherche un épisode pour toi, le télécharge au fur et à mesure, et l’ouvre dans ton lecteur vidéo. Tu navigues avec des menus clavier simples.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![libtorrent](https://img.shields.io/badge/libtorrent-2.0+-green.svg)](https://libtorrent.org/)
@@ -31,268 +29,288 @@ CLI pour chercher des anime sur [Nyaa.si](https://nyaa.si), parcourir un catalog
 
 ---
 
-## Fonctionnalités
+## C’est quoi Annie ?
 
-| | |
-|---|---|
-| **Catalogue MAL** | Saisons, épisodes et franchises via l’API Jikan — plus de listes plates |
-| **Nyaa intelligent** | Parsing des titres, scoring des releases, batches rattachés à la bonne saison |
-| **Interface fzf** | Navigation par anime → saison → épisode → release → langue des sous-titres |
-| **Sous-titres** | Téléchargement via [OpenSubtitles.com](https://www.opensubtitles.com) (API) + lecture mpv |
-| **Streaming** | Buffer contigu, démarrage rapide (~quelques secondes), lecture pendant le téléchargement |
-| **Raccourcis** | `frieren s2e10`, `death note 1 5`, `--batch`, films, OVA, specials |
+Imagine un programme qui fait tout ça pour toi :
 
----
+1. Tu tapes le nom d’un anime (ex. `frieren`).
+2. Annie trouve les saisons et les épisodes (grâce à MyAnimeList).
+3. Elle cherche la meilleure version sur [Nyaa.si](https://nyaa.si) (qualité, seeders, groupe de release).
+4. Elle lance la lecture **pendant** le téléchargement — pas besoin d’attendre que tout soit fini.
+5. Optionnel : elle récupère des **sous-titres** (français, anglais, etc.) et les affiche dans mpv.
 
-## Prérequis
+Tout se passe dans le **terminal** (la fenêtre noire où on tape des commandes). Les menus de choix utilisent **fzf** : flèches ↑↓, Entrée pour valider, Échap pour revenir.
 
-| Outil | Rôle |
-|---|---|
-| Python **3.11+** | Runtime |
-| [fzf](https://github.com/junegunn/fzf) | Mode interactif |
-| **mpv**, **vlc** ou **ffplay** | Lecteur vidéo |
-| libtorrent | Installé automatiquement avec le package |
+> **À savoir** : Annie est un outil personnel. Respecte les lois sur le droit d’auteur de ton pays.
 
 ---
 
-## Installation
+## Démarrage rapide
 
-### Arch Linux (AUR)
+### Ce dont tu as besoin
+
+| Programme | À quoi ça sert | Obligatoire ? |
+|-----------|------------------|---------------|
+| **Annie** | Le programme principal | Oui |
+| **fzf** | Les menus de sélection | Oui (mode interactif) |
+| **mpv** | Lecteur vidéo (recommandé) | Oui* |
+| vlc ou ffplay | Autres lecteurs possibles | Alternative à mpv |
+
+\* Sans lecteur vidéo installé, Annie ne peut pas lire.
+
+### Installation — Arch Linux (le plus simple)
 
 ```bash
 yay -S annie
 # ou : paru -S annie
 ```
 
-Prérequis : `fzf`, lecteur vidéo (`mpv` recommandé). `python-libtorrent` est installé comme dépendance du paquet.
-
-<details>
-<summary>Build AUR depuis les sources du dépôt</summary>
+Installe aussi mpv si ce n’est pas déjà fait :
 
 ```bash
-cd packaging/aur
-makepkg -si
+sudo pacman -S mpv fzf
 ```
 
-</details>
-
-Pour contribuer ou développer depuis les sources, voir [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Debian / Ubuntu
-
-**Paquet `.deb` (depuis les sources du dépôt) :**
+### Installation — depuis les sources (Linux / macOS)
 
 ```bash
-sudo apt install python3 python3-pip python3-libtorrent fzf mpv
-chmod +x packaging/debian/build-deb.sh
-./packaging/debian/build-deb.sh
-sudo dpkg -i dist/annie_*_all.deb
-```
-
-**Installation développeur (toute plateforme Unix) :**
-
-```bash
-# Prérequis : Python 3.11+, fzf, mpv (ou vlc/ffplay), libtorrent
-curl -LsSf https://astral.sh/uv/install.sh | sh   # optionnel mais recommandé
+git clone https://github.com/CloudDown/annie.git
+cd annie
 make install
 ./annie.py
 ```
 
-Les fichiers de configuration sont créés dans `~/.config/annie/` (ou `%APPDATA%\annie\` sous Windows).
+`make install` crée un environnement Python et un fichier de config dans `~/.config/annie/`.
 
-### Windows
-
-**PowerShell (depuis les sources) :**
+### Installation — Windows
 
 ```powershell
-# Prérequis : Python 3.11+ dans le PATH
+git clone https://github.com/CloudDown/annie.git
+cd annie
 powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
 .\annie.py
 ```
 
-Installe aussi **fzf** et **mpv** (recommandés) :
+Puis installe les outils recommandés :
 
 ```powershell
 winget install junegunn.fzf
 winget install mpv.mpv
 ```
 
-Configuration : `%APPDATA%\annie\` · Cache : `%LOCALAPPDATA%\annie\Cache\`
-
 ---
 
-## Utilisation
+## Utiliser Annie (pas à pas)
 
-### Mode interactif
+### 1. Lancer le programme
+
+Ouvre un terminal, puis :
 
 ```bash
+annie
+# ou, depuis les sources :
 ./annie.py
 ```
 
-Tape un titre, navigue dans le catalogue, choisis une release — la lecture démarre.
+Tu vois le logo ASCII, puis une invite où tu peux taper.
 
-**Raccourcis dans le prompt :**
+### 2. Chercher un anime
 
-| Syntaxe | Action |
-|---|---|
-| `frieren` | Ouvre le catalogue de l’anime |
-| `frieren s2e6` | Saison 2, épisode 6 (puis choix de la langue des sous-titres) |
-| `frieren 2 6` | Idem (forme courte) |
-| `frieren --batch` | Privilégie les packs saison |
+Tape le titre (en anglais ou romaji, c’est en général plus fiable) :
 
-### Ligne de commande
+```
+frieren
+```
+
+Appuie sur **Entrée**. Un court chargement `Searching · ⠹` apparaît pendant la recherche.
+
+### 3. Choisir la saison
+
+Un **menu** s’ouvre (fzf). Utilise :
+
+| Touche | Action |
+|--------|--------|
+| ↑ / ↓ | Se déplacer |
+| **Entrée** | Choisir |
+| **Échap** | Annuler / revenir |
+
+Sélectionne par ex. `Season 2`.
+
+### 4. Choisir l’épisode
+
+Même principe : choisis l’épisode voulu.
+
+### 5. Choisir la langue des sous-titres
+
+Si les sous-titres sont activés, un menu propose :
+
+- English, 中文, हिन्दी, Español, **Français**
+- ou **Aucun** (sans sous-titres externes)
+
+### 6. Regarder
+
+mpv s’ouvre et la lecture démarre. Pendant le téléchargement tu peux voir :
+
+```
+◆ Frieren S02E06 …
+sous-titres  episode-fr.srt
+lecture      [SubsPlease] … mkv  mpv
+prêt         22 MiB contigu
+```
+
+Si la connexion ralentit : `⏸ buffer insuffisant` (pause automatique), puis `▶ reprise` quand c’est bon.
+
+Pour quitter mpv : ferme la fenêtre ou appuie sur **q** dans mpv.
+
+### 7. Enchaîner ou quitter
+
+Après l’épisode, tu reviens au prompt Annie. Tape un autre titre, ou :
+
+| Commande | Effet |
+|----------|--------|
+| `help` | Aide dans le terminal |
+| `quit` ou `q` | Quitter Annie (sans message) |
+
+---
+
+## Raccourcis : aller plus vite
+
+Tu peux sauter des menus en tapant tout d’un coup :
+
+| Tu tapes | Ce qui se passe |
+|----------|-----------------|
+| `frieren` | Ouvre le catalogue (saisons) |
+| `frieren s2` | Va directement à la saison 2 |
+| `frieren s2e6` | Saison 2, épisode 6 (+ choix sous-titres) |
+| `frieren 2 6` | Même chose (forme courte) |
+| `frieren movie 3` | Le 3ᵉ film de la franchise |
+| `frieren --batch` | Privilégie les packs saison entière |
+
+Dans les menus fzf :
+
+| Touche | Action |
+|--------|--------|
+| **Entrée** | Lire l’épisode |
+| **Ctrl-O** | Copier le lien magnet dans le presse-papiers |
+| **Ctrl-N** / **Ctrl-P** | Épisode suivant / précédent |
+| **Échap** | Retour |
+
+---
+
+## Sous-titres (configuration une fois)
+
+Les sous-titres viennent de [OpenSubtitles.com](https://www.opensubtitles.com). Il faut une **clé API gratuite** :
+
+1. Crée un compte sur [opensubtitles.com](https://www.opensubtitles.com).
+2. Va dans [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**.
+3. Ouvre le fichier de config :
+
+   **Linux** : `~/.config/annie/config.toml`  
+   **Windows** : `%APPDATA%\annie\config.toml`
+
+4. Ajoute ou modifie :
+
+```toml
+[subtitles]
+enabled = true
+api_key = "ta_cle_ici"
+username = "ton_pseudo"
+password = "ton_mot_de_passe"
+default_lang = "fr"    # optionnel : saute le menu langue
+```
+
+> Ne partage jamais ce fichier : il contient ton mot de passe OpenSubtitles.
+
+Les sous-titres externes fonctionnent avec **mpv** uniquement.
+
+---
+
+## Problèmes fréquents
+
+<details>
+<summary><strong>« fzf not found »</strong></summary>
+
+Installe fzf :
 
 ```bash
-annie search "frieren" -l 5          # résultats Nyaa classés
-annie watch "frieren" -s 2 -e 6 --sub-lang fr   # stream avec sous-titres français
-annie play "magnet:?xt=…" -q "01"    # magnet / .torrent direct
-annie ls fichier.torrent             # liste les fichiers d’un torrent
+# Arch
+sudo pacman -S fzf
+
+# Debian/Ubuntu
+sudo apt install fzf
+
+# Windows
+winget install junegunn.fzf
+```
+
+</details>
+
+<details>
+<summary><strong>« interactive mode requires a TTY »</strong></summary>
+
+Lance Annie dans un vrai terminal (pas depuis un bouton IDE sans console). Sur Windows : PowerShell ou Windows Terminal.
+
+</details>
+
+<details>
+<summary><strong>Pas de sous-titres / erreur OpenSubtitles</strong></summary>
+
+- Vérifie `api_key`, `username` et `password` dans `config.toml`.
+- Utilise **mpv** comme lecteur (`[player] command = "mpv"`).
+- Teste ta clé sur le site OpenSubtitles.
+
+</details>
+
+<details>
+<summary><strong>La lecture saccade ou se met en pause</strong></summary>
+
+Connexion lente ou peu de seeders. Annie met mpv en pause automatiquement (`buffer insuffisant`) et reprend quand assez de données sont téléchargées. Tu peux augmenter les délais dans `[buffer]` (voir configuration avancée).
+
+</details>
+
+<details>
+<summary><strong>Le logo ASCII ne s’affiche pas</strong></summary>
+
+Dans `config.toml`, vérifie :
+
+```toml
+[ui]
+show_banner = true
+```
+
+</details>
+
+<details>
+<summary><strong>Aucun résultat pour mon anime</strong></summary>
+
+- Essaie le titre en **anglais** ou **romaji** (`Made in Abyss` plutôt qu’un titre traduit).
+- Vérifie ta connexion internet.
+- Si MAL est en panne, Annie bascule sur Nyaa seul (message discret).
+
+</details>
+
+---
+
+## Commandes avancées (ligne de commande)
+
+Pour les utilisateurs à l’aise avec le terminal, sans passer par les menus :
+
+```bash
+annie search "frieren" -l 5              # liste des torrents trouvés
+annie watch "frieren" -s 2 -e 6          # lire S02E06 directement
+annie watch "frieren" -s 2 -e 6 --sub-lang fr
+annie play "magnet:?xt=…" -q "01"        # lire un magnet ou .torrent
+annie ls fichier.torrent                 # voir les fichiers d’un torrent
+annie watch "…" --no-banner              # sans logo au démarrage
 ```
 
 ---
 
 ## Configuration
 
-Annie lit un seul fichier dans le répertoire de configuration utilisateur :
+Au **premier lancement**, Annie crée `~/.config/annie/config.toml` (ou `%APPDATA%\annie\` sous Windows). Tu peux l’éditer avec n’importe quel éditeur de texte — Annie ne l’écrase pas.
 
-| Plateforme | Emplacement |
-|---|---|
-| Linux / Debian | `~/.config/annie/config.toml` |
-| Windows | `%APPDATA%\annie\config.toml` |
-
-Il est **créé automatiquement** au premier lancement (ou via `make install` depuis les sources) à partir du modèle du dépôt. Annie **ne l’écrase jamais** : tu peux l’éditer librement.
-
-> **Note :** les anciennes installations avec un `settings.toml` séparé restent supportées — ses valeurs sont lues en complément, `config.toml` primant en cas de doublon.
-
-Le modèle commenté avec toutes les clés est dans `annie/templates/config.toml`.
-
-### Syntaxe TOML
-
-La forme recommandée utilise des **sections** (`[nyaa]`, `[catalog]`, `[streaming]`, …). Les **anciennes clés plates** restent supportées pour compatibilité :
-
-```toml
-# Ancien style (toujours valide)
-player = "mpv"
-category = "0_0"
-preferred_groups = ["SubsPlease"]
-
-# Nouveau style (recommandé)
-[player]
-command = "mpv"
-
-[nyaa]
-category = "0_0"
-```
-
-Tu peux mélanger les deux ; en cas de doublon, la section structurée prime.
-
-### Variables d’environnement
-
-| Variable | Section | Effet |
-|---|---|---|
-| `ANNIE_PLAYER` | `[player]` | Remplace `command` |
-| `OPENSUBTITLES_API_KEY` | `[subtitles]` | Remplace `api_key` |
-| `OPENSUBTITLES_USERNAME` | `[subtitles]` | Remplace `username` |
-| `OPENSUBTITLES_PASSWORD` | `[subtitles]` | Remplace `password` |
-| `ANNIE_SEED_WHILE_WATCHING` | `[streaming]` | `0` / `false` désactive le seed pendant la lecture |
-
----
-
-### Référence `config.toml`
-
-#### `[player]` — lecteur vidéo
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `command` | `auto` | `auto`, `mpv`, `vlc`, `ffplay`, ou chemin vers un exécutable |
-
-`auto` détecte mpv, puis vlc, puis ffplay.
-
-#### `[player.mpv]` et `[player.vlc]`
-
-Options passées au lecteur. Exemple mpv :
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `cache_secs` | `30` | Cache lecture réseau mpv |
-| `hwdec` | `auto-safe` | Décodage matériel (`auto`, `auto-safe`, `no`) |
-| `extra_args` | `[]` | Arguments supplémentaires, ex. `["--fs", "--ontop"]` |
-
-VLC : `file_caching_ms`, `network_caching_ms`, `extra_args`.
-
-#### `[nyaa]` — requêtes Nyaa.si
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `category` | `0_0` | Catégorie Nyaa (`0_0` = anime) |
-| `filter` | `0` | Filtre Nyaa (`0` = tous) |
-| `search_pages` | `2` | Pages HTML par recherche |
-| `parallel` | `10` | Requêtes parallèles lors du build catalogue |
-| `rate` / `rate_burst` | `6.0` / `8` | Limite de requêtes/s vers nyaa.si |
-| `cache_ttl_minutes` | `45` | Durée du cache disque Nyaa |
-| `sort` / `order` | `seeders` / `desc` | Tri des résultats (`seeders`, `size`, `date`, …) |
-| `timeout` / `retries` | `30` / `4` | Timeout HTTP et nombre de tentatives |
-
-#### `[mal]` — catalogue MyAnimeList (Jikan)
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `enabled` | `true` | `false` = Nyaa seul, sans franchise MAL |
-| `parallel` | `10` | Requêtes Jikan parallèles |
-| `cache_ttl_hours` | `168` | Cache franchise MAL (7 jours) |
-
-#### `[catalog]` — scoring & complétion
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `preferred_groups` | `[]` | Groupes favoris (ex. `["SubsPlease", "Erai-raws"]`) |
-| `preferred_group_bonus` | `10` | Bonus de score pour ces groupes |
-| `min_seeders_strict` / `min_seeders_relaxed` | `10` / `3` | Seuils seeders pour filtrer les releases |
-| `min_quality_strict` / `min_quality_relaxed` | `26` / `12` | Seuils qualité (~720p / ~480p) |
-| `skip_recap_movies` | `false` | Ignorer les films récap MAL |
-| `fill_gaps_on_search` | `false` | Compléter les épisodes manquants après une recherche |
-| `prefer_season_batch` | `true` | Privilégier un pack saison cohérent plutôt que des singles mélangés |
-| `season_batch_min_coverage` | `0.85` | Couverture minimale du pack pour l’adopter |
-| `coherence_min_share` | `0.60` | Part minimale d’un même magnet pour harmoniser la saison |
-
-#### `[subtitles]` — OpenSubtitles
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `enabled` | `true` | Active le menu langue et le téléchargement |
-| `default_lang` | `""` | Ex. `"fr"` — saute le menu fzf si défini |
-| `api_key` | `""` | Clé API OpenSubtitles (**requise** pour télécharger) |
-| `username` / `password` | `""` | Compte OpenSubtitles (quota plus élevé) |
-| `fetch_timeout` | `20.0` | Timeout recherche/téléchargement (secondes) |
-
-Après le choix d’un épisode, Annie propose un **menu fzf** : English, 中文, हिन्दी, Español, Français, ou **Aucun**. Les sous-titres sont chargés en parallèle du buffer et passés à **mpv** (`--sub-file`). VLC/ffplay ignorent les sous-titres externes.
-
-**Obtenir une clé API (gratuit) :**
-
-1. Compte sur [OpenSubtitles.com](https://www.opensubtitles.com) ([import .org](https://www.opensubtitles.com/en/import) possible).
-2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**.
-3. Dans `~/.config/annie/config.toml` :
-
-   ```toml
-   [subtitles]
-   enabled = true
-   api_key = "ta_cle_ici"
-   username = "ton_pseudo"    # recommandé
-   password = "ton_mot_de_passe"
-   default_lang = "fr"        # optionnel : saute le menu langue
-   ```
-
-**Sécurité** : ne commite jamais ce fichier — il reste local dans `~/.config/annie/`.
-
-#### `[ui]` — interface terminal
-
-| Clé | Défaut | Description |
-|---|---|---|
-| `seeders_highlight` | `50` | Seuil seeders pour le vert dans `annie search` |
-| `show_banner` | `true` | Bannière ASCII au démarrage interactif |
-| `mal_pool_workers` | `16` | Parallélisme MAL + préchauffage Nyaa |
-
-#### Exemple minimal
+### Exemple minimal
 
 ```toml
 [player]
@@ -304,79 +322,132 @@ api_key = "ta_cle_opensubtitles"
 default_lang = "fr"
 
 [catalog]
-preferred_groups = ["SubsPlease"]
+preferred_groups = ["SubsPlease", "Erai-raws"]
 ```
 
-#### `[streaming]`
+### Réglages utiles au quotidien
+
+| Section | Clé | Effet |
+|---------|-----|--------|
+| `[player]` | `command` | `auto`, `mpv`, `vlc`, `ffplay` |
+| `[subtitles]` | `default_lang` | `"fr"` = sous-titres français par défaut |
+| `[subtitles]` | `enabled` | `false` = pas de menu sous-titres |
+| `[ui]` | `show_banner` | `false` = pas de logo au démarrage |
+| `[streaming]` | `seed_while_watching` | partager l’épisode pendant la lecture |
+| `[catalog]` | `preferred_groups` | groupes de release favoris |
+
+Variables d’environnement (remplacent la config) :
+
+| Variable | Effet |
+|----------|--------|
+| `ANNIE_PLAYER=mpv` | Force le lecteur |
+| `OPENSUBTITLES_API_KEY=…` | Clé API sous-titres |
+| `ANNIE_SEED_WHILE_WATCHING=0` | Désactive le seed pendant la lecture |
+
+<details>
+<summary><strong>Référence complète <code>config.toml</code></strong></summary>
+
+Le modèle commenté avec toutes les clés est dans [`annie/templates/config.toml`](annie/templates/config.toml).
+
+#### `[player]` — lecteur vidéo
 
 | Clé | Défaut | Description |
-|---|---|---|
-| `seed_while_watching` | `true` | Partage l’épisode lu (upload prioritaire sur le fichier en cours) |
-| `upload_limit_kib` | `512` | Limite upload hors seed (KiB/s) ; `0` = illimité |
+|-----|--------|-------------|
+| `command` | `auto` | `auto`, `mpv`, `vlc`, `ffplay`, ou chemin vers un exécutable |
 
-#### `[buffer]` — démarrage & pause mpv
+#### `[player.mpv]` / `[player.vlc]`
 
-| Clé | Défaut | Description |
-|---|---|---|
-| `max_wait_sec` | `5.0` | Attente du buffer « idéal » avant lecture |
-| `no_peers_sec` | `20.0` | Abandon si aucun peer |
-| `absolute_sec` | `45.0` | Timeout absolu avant démarrage forcé ou erreur |
-| `mkv_start_mib` | `16` | Mo contigus requis pour démarrer un MKV |
-| `mkv_head_mib` | `16` | Mo prioritaires en tête de fichier |
-| `stream_margin_mib` | `12` | Marge buffer : mpv se met en pause si le téléchargement prend du retard |
-| `mpv_retry_sec` | `15.0` | Réessai si mpv échoue au premier lancement |
-| `mkv_playable_wait_sec` | `8.0` | Attente supplémentaire pour un MKV lisible |
+Options passées au lecteur (`cache_secs`, `hwdec`, `extra_args`, …).
 
-#### `[torrent]` — session libtorrent
+#### `[nyaa]` — recherches Nyaa.si
 
 | Clé | Défaut | Description |
-|---|---|---|
-| `metadata_timeout` | `60.0` | Timeout métadonnées magnet |
-| `connections_limit` | `300` | Connexions max |
-| `active_downloads` / `active_limit` | `1` / `4` | Slots actifs |
-| `enable_dht` / `enable_lsd` / `enable_upnp` / `enable_natpmp` | `true` | Découverte de peers et NAT |
+|-----|--------|-------------|
+| `category` | `0_0` | Catégorie anime |
+| `search_pages` | `2` | Pages par recherche |
+| `parallel` | `10` | Requêtes parallèles |
+| `sort` / `order` | `seeders` / `desc` | Tri des résultats |
 
-#### Exemple — connexion lente
+#### `[mal]` — catalogue MyAnimeList
+
+| Clé | Défaut | Description |
+|-----|--------|-------------|
+| `enabled` | `true` | `false` = Nyaa seul |
+
+#### `[catalog]` — scoring
+
+| Clé | Défaut | Description |
+|-----|--------|-------------|
+| `preferred_groups` | `[]` | Groupes favoris |
+| `min_seeders_strict` | `10` | Seuil seeders |
+| `fill_gaps_on_search` | `false` | Compléter les épisodes manquants |
+
+#### `[subtitles]` — OpenSubtitles
+
+| Clé | Défaut | Description |
+|-----|--------|-------------|
+| `enabled` | `true` | Menu et téléchargement |
+| `default_lang` | `""` | Ex. `"fr"` |
+| `api_key` | `""` | Clé API (requise) |
+| `fetch_timeout` | `20.0` | Timeout en secondes |
+
+#### `[ui]`
+
+| Clé | Défaut | Description |
+|-----|--------|-------------|
+| `show_banner` | `true` | Logo ASCII |
+| `seeders_highlight` | `50` | Seuil couleur verte (search) |
+
+#### `[streaming]` / `[buffer]` / `[torrent]`
+
+Réglages fins du téléchargement, des pauses mpv, et de la session torrent. Voir le template pour les valeurs par défaut.
+
+**Connexion lente — exemple :**
 
 ```toml
 [buffer]
 max_wait_sec = 8.0
 mkv_start_mib = 24
 stream_margin_mib = 16
-
-[streaming]
-seed_while_watching = true
-upload_limit_kib = 256
 ```
 
-#### Exemple — désactiver le seed
+Les **anciennes clés plates** (`player = "mpv"`, etc.) restent supportées ; les sections `[player]` priment en cas de doublon.
 
-```toml
-[streaming]
-seed_while_watching = false
-```
-
-Ou en une ligne : `ANNIE_SEED_WHILE_WATCHING=0 ./annie.py`
+</details>
 
 ---
 
-## Flux
+## Comment ça marche (vue d’ensemble)
 
 ```mermaid
 flowchart LR
-    A[Requête] --> B[MAL / Jikan]
-    B --> C[Franchise & saisons]
-    C --> D[Nyaa]
-    D --> E[Catalogue fzf]
-    E --> F[Langue sous-titres]
-    F --> G[libtorrent]
+    A[Tu tapes un titre] --> B[MyAnimeList]
+    B --> C[Saisons et épisodes]
+    C --> D[Nyaa.si]
+    D --> E[Menu fzf]
+    E --> F[Sous-titres]
+    F --> G[Téléchargement]
     G --> H[mpv]
+```
+
+---
+
+## Développeurs
+
+- Guide technique : [AGENTS.md](AGENTS.md)
+- Contribuer, tests, packaging : [CONTRIBUTING.md](CONTRIBUTING.md)
+
+```bash
+make test          # tests unitaires (hors réseau)
+make validate      # validation catalogue (réseau)
 ```
 
 ---
 
 <div align="center">
 
-<sub>Usage personnel · respecte les lois sur le copyright de ton pays</sub>
+**Annie** — usage personnel
+
+<sub>Respecte les lois sur le droit d’auteur de ton pays.</sub>
 
 </div>
