@@ -396,6 +396,7 @@ Options passées au lecteur (`cache_secs`, `hwdec`, `extra_args`, …).
 | Clé | Défaut | Description |
 |-----|--------|-------------|
 | `show_banner` | `true` | Logo ASCII |
+| `show_download_progress` | `true` | Barres de téléchargement dans le terminal pendant la lecture mpv |
 | `seeders_highlight` | `50` | Seuil couleur verte (search) |
 
 #### `[streaming]` / `[buffer]` / `[torrent]`

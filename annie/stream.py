@@ -25,8 +25,6 @@ from annie.ui import (
     format_buffer_quick_start,
     format_buffer_ready,
     format_stream_fatal,
-    log_buffer_pause,
-    log_buffer_resume,
     log_playback_start,
     stream_log,
     stream_log_err,
@@ -878,15 +876,20 @@ def _play_while_downloading(
     ipc_path: Path | None = None,
     session: lt.session | None = None,
     seed_while_watching: bool = False,
+    show_download_progress: bool = True,
 ) -> int:
     paused_for_buffer = False
     ipc_available = ipc_path is not None and _wait_mpv_ipc(ipc_path)
+    display = BufferStatusDisplay() if show_download_progress else None
+    target_bytes = _mkv_start_bytes()
 
     while proc.poll() is None:
         _enforce_sequential_frontier(handle, file_index)
         if seed_while_watching and session is not None:
             _enable_watch_seed(session, handle, file_index)
         contiguous = _contiguous_file_bytes(handle, file_index)
+        ready = _file_ready(handle, file_index)
+        status = handle.status()
 
         if ipc_available and ipc_path is not None:
             time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
@@ -897,13 +900,34 @@ def _play_while_downloading(
             if need_pause and not paused_for_buffer:
                 _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
                 paused_for_buffer = True
-                log_buffer_pause()
             elif paused_for_buffer and contiguous >= play_byte + _stream_margin_bytes():
                 _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
                 paused_for_buffer = False
-                log_buffer_resume()
+
+        if display is not None:
+            has_transfer = status.num_peers > 0 or status.download_rate > 0
+            peer_hint = (
+                "en attente de peers…"
+                if not has_transfer
+                else f"{status.num_peers} peers"
+            )
+            extra_hint = " · ⏸ buffer insuffisant" if paused_for_buffer else ""
+            display.update(
+                format_buffer_lines(
+                    contiguous=contiguous,
+                    ready=ready,
+                    file_size=file_size,
+                    target_bytes=target_bytes,
+                    peer_hint=peer_hint,
+                    download_kib=status.download_rate / 1024,
+                    extra_hint=extra_hint,
+                )
+            )
 
         time.sleep(0.25)
+
+    if display is not None:
+        display.finish("")
     return proc.wait()
 
 
@@ -969,6 +993,10 @@ def _launch_and_stream(
         ipc_dir.mkdir(parents=True, exist_ok=True)
         ipc_path = mpv_ipc_path(ipc_dir)
 
+    from annie.config import AnnieConfig
+
+    show_progress = AnnieConfig.load().ui.show_download_progress
+
     try:
         proc = _player_popen(
             player_command(player_name, target, ipc_path=ipc_path, sub_file=active_sub)
@@ -982,6 +1010,7 @@ def _launch_and_stream(
             ipc_path=ipc_path,
             session=session,
             seed_while_watching=seed_while_watching,
+            show_download_progress=show_progress,
         )
     finally:
         if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
@@ -1014,6 +1043,7 @@ def _launch_and_stream(
                 ipc_path=ipc_path,
                 session=session,
                 seed_while_watching=seed_while_watching,
+                show_download_progress=show_progress,
             )
         finally:
             if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():

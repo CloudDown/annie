@@ -70,6 +70,7 @@ password = ""
 seeders_highlight = 50       # seuil vert dans `annie search`
 show_banner = true
 mal_pool_workers = 16        # parallélisme MAL + préchauffage Nyaa
+show_download_progress = true  # barres terminal pendant la lecture mpv
 
 [streaming]
 # Partager l'épisode en cours pendant la lecture (upload illimité sur le fichier lu).

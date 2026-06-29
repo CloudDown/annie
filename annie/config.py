@@ -137,6 +137,7 @@ class UiConfig:
     seeders_highlight: int = 50
     show_banner: bool = True
     mal_pool_workers: int = 16
+    show_download_progress: bool = True
 
 
 @dataclass
@@ -321,6 +322,9 @@ class AnnieConfig:
             seeders_highlight=_int(ui_table.get("seeders_highlight"), 50),
             show_banner=_bool(ui_table.get("show_banner"), True),
             mal_pool_workers=_int(ui_table.get("mal_pool_workers"), 16),
+            show_download_progress=_bool(
+                ui_table.get("show_download_progress"), True
+            ),
         )
 
         _config_cache = cls(
