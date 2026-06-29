@@ -350,6 +350,14 @@ def fzf_available() -> bool:
     return shutil.which("fzf") is not None
 
 
+def fzf_install_hint() -> str:
+    if sys.platform == "win32":
+        return "winget install junegunn.fzf  (ou choco install fzf)"
+    if sys.platform == "darwin":
+        return "brew install fzf"
+    return "pacman -S fzf  (Debian/Ubuntu: sudo apt install fzf)"
+
+
 def _terminal_size() -> tuple[int, int]:
     try:
         size = shutil.get_terminal_size()

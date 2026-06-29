@@ -99,9 +99,14 @@ hwdec = "no"
 extra_args = ["--fs"]
 """
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "settings.toml"
-            path.write_text(toml, encoding="utf-8")
-            with mock.patch("annie.settings.SETTINGS_FILE", path):
+            settings_path = Path(tmp) / "settings.toml"
+            settings_path.write_text(toml, encoding="utf-8")
+            config_path = Path(tmp) / "config.toml"
+            with (
+                mock.patch("annie.settings.SETTINGS_FILE", settings_path),
+                mock.patch("annie.settings.CONFIG_FILE", config_path),
+                mock.patch("annie.settings.ensure_user_config"),
+            ):
                 reload_settings()
                 settings = AnnieSettings.load()
         self.assertFalse(settings.seed_while_watching)

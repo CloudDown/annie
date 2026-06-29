@@ -38,6 +38,7 @@ from annie.ui import (
     C,
     copy_magnet,
     fzf_available,
+    fzf_install_hint,
     pick_catalog,
     pick_episode,
     pick_subtitle_language,
@@ -628,7 +629,7 @@ def run_watch(
 
 def interactive_loop(config: AnnieConfig) -> int:
     if not fzf_available():
-        print_status("fzf not found — install with: pacman -S fzf", kind="err")
+        print_status(f"fzf not found — install with: {fzf_install_hint()}", kind="err")
         return 1
     if not sys.stdout.isatty():
         print_status("interactive mode requires a TTY", kind="err")
