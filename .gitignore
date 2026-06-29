@@ -27,3 +27,7 @@ tests/
 packaging/aur/pkg/
 packaging/aur/src/
 *.pkg.tar.zst
+
+# Config utilisateur locale (pas le template annie/templates/)
+/config.toml
+/settings.toml

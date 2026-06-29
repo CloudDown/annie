@@ -44,4 +44,4 @@ makepkg --printsrcinfo > .SRCINFO
 ## Notes
 
 - `pip install` **n’installe pas** `libtorrent` dans le paquet : c’est `python-libtorrent` système.
-- Les tests unitaires (`check()`) restent dans le tarball source ; les rapports réseau (`scripts/results/`) ne sont pas empaquetés.
+- Les tests unitaires (`check()`) restent dans le tarball source.

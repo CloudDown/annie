@@ -434,12 +434,10 @@ flowchart LR
 
 ## Développeurs
 
-- Guide technique : [AGENTS.md](AGENTS.md)
 - Contribuer, tests, packaging : [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ```bash
 make test          # tests unitaires (hors réseau)
-make validate      # validation catalogue (réseau)
 ```
 
 ---

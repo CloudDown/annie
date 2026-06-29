@@ -38,7 +38,7 @@ Priority: optional
 Architecture: all
 Depends: python3 (>= 3.11), python3-libtorrent, fzf
 Recommends: mpv | vlc
-Maintainer: rain <clouddown1234@gmail.com>
+Maintainer: CloudDown <noreply@github.com>
 Description: Anime torrent CLI — Nyaa, MAL catalog, fzf, libtorrent streaming
  CLI pour chercher des anime sur Nyaa.si, parcourir un catalogue MAL,
  choisir une release avec fzf, et lire en streaming via libtorrent.

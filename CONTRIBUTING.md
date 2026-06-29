@@ -28,10 +28,8 @@ uv sync
 
 ```bash
 make test           # suite unitaire offline
-make test-offline   # scripts debug + fixtures (sans réseau)
+make test-offline   # régressions fixtures (sans réseau)
 make debug-rezero   # régression catalogue Re:Zero
-make validate       # validation réseau (10 anime)
-make validate-subs  # validation sous-titres OpenSubtitles (réseau)
 make run            # lance le CLI
 make clean          # supprime venv & artefacts
 ```
@@ -65,13 +63,6 @@ tests/
   test_stream.py      Matching fichiers batch
   test_subtitles.py   Parsing API OpenSubtitles
   test_fixtures.py    Pilotage par fixtures parse_titles.json
-scripts/
-  README.md           Guide des outils de debug
-  debug_parse.py      Parser un titre Nyaa
-  debug_match.py      Tester match épisode ↔ fichier
-  debug_catalog.py    Catalogue offline ou live
-  debug_franchise.py  Diagnostic détaillé (1 anime)
-  validate_franchise.py  Validation MAL vs Nyaa (100 anime)
 packaging/
   aur/                PKGBUILD AUR (makepkg -si)
 ```
@@ -87,10 +78,6 @@ uv run python -m unittest discover -s tests -v
 ```
 
 Les cas reproductibles vivent dans `tests/fixtures/` (`parse_titles.json`, `catalog_re_zero.json`, `subtitle_queries.json`, etc.). Ajouter un cas dans la fixture puis lancer `make test`.
-
-## Scripts de debug
-
-Voir [scripts/README.md](scripts/README.md) pour le détail des outils (`debug_parse.py`, `debug_match.py`, `debug_subtitles.py`, `validate_franchise.py`, …).
 
 ## CI
 

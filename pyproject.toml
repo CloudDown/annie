@@ -5,7 +5,7 @@ description = "Anime torrent CLI — search Nyaa, sort releases, stream with mpv
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "rain" }]
+authors = [{ name = "CloudDown" }]
 keywords = ["anime", "nyaa", "torrent", "cli", "mpv"]
 classifiers = [
     "Environment :: Console",
