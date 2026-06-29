@@ -155,7 +155,7 @@ HELP = f"""
 {stylize("Navigation", C.PALE_PINK, C.BOLD)}
   {stylize("①", C.PALE_PINK)} season / movie / ova
   {stylize("②", C.PALE_PINK)} episode (best torrent)
-  {stylize("Enter", C.GREEN)} stream · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("Esc", C.YELLOW)} back
+  {stylize("Enter/→", C.GREEN)} select · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back · {stylize("Esc", C.YELLOW)} cancel
 
 {stylize("Shortcuts", C.PALE_PINK, C.BOLD)}
   frieren s2e10        stream directly
@@ -535,6 +535,13 @@ def _run_fzf(
     return proc.returncode, proc.stdout
 
 
+def _extend_expect(expect: str) -> str:
+    keys = [key.strip() for key in expect.split(",") if key.strip()]
+    if "right" not in keys:
+        keys.append("right")
+    return ",".join(keys)
+
+
 def _fzf_choose(
     indexed: dict[str, Any],
     previews: dict[str, str],
@@ -554,7 +561,7 @@ def _fzf_choose(
         prompt=prompt,
         header=header,
         preview=True,
-        expect=expect,
+        expect=_extend_expect(expect),
         query=query,
     )
     if code != 0 or not output.strip():
@@ -567,6 +574,8 @@ def _fzf_choose(
     if value is None:
         return None
     action = "enter" if len(parts) == 1 else parts[0]
+    if action == "right":
+        action = "enter"
     return action, value
 
 
@@ -628,7 +637,7 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
         previews,
         lines,
         prompt="group> ",
-        header=_fzf_header("Enter · Esc"),
+        header=_fzf_header("→ Enter · Esc"),
     )
     if picked is None:
         return None
@@ -646,7 +655,7 @@ def _pick_section_flat(sections: list[MediaSection]) -> MediaSection | None:
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = _fzf_header("Enter · Esc")
+    header = _fzf_header("→ Enter · Esc")
     picked = _fzf_choose(indexed, previews, lines, prompt="section> ", header=header)
     if picked is None:
         return None
@@ -654,21 +663,23 @@ def _pick_section_flat(sections: list[MediaSection]) -> MediaSection | None:
     return section
 
 
-def pick_section(sections: list[MediaSection]) -> MediaSection | None:
+def pick_section(
+    sections: list[MediaSection], *, force_interactive: bool = False
+) -> MediaSection | None:
     if not sections:
         return None
-    if len(sections) == 1:
+    if len(sections) == 1 and not force_interactive:
         return sections[0]
 
     groups = _group_sections(sections)
     active = [key for key in ("season", "movie", "other") if groups[key]]
-    if len(active) > 1:
+    if len(active) > 1 and not force_interactive:
         group_key = pick_group(groups)
         if group_key is None:
             return None
         sections = groups[group_key]
 
-    if len(sections) == 1:
+    if len(sections) == 1 and not force_interactive:
         return sections[0]
     return _pick_section_flat(sections)
 
@@ -696,7 +707,7 @@ def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
         lines.append(f"{key}{SEP}{format_torrent_line(item)}")
 
     prompt = f"{_clip(section.label, 18)}> "
-    header = _fzf_header("Enter · Ctrl-N/P · Ctrl-O · Esc")
+    header = _fzf_header("→ Enter · Ctrl-N/P · Ctrl-O · ← · Esc")
     index = 0
     jumped = False
     while 0 <= index < len(items):
@@ -707,12 +718,14 @@ def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
             lines,
             prompt=prompt,
             header=header,
-            expect="ctrl-n,ctrl-p,ctrl-o,enter",
+            expect="ctrl-n,ctrl-p,ctrl-o,enter,left",
             query=_episode_query(items[index]) if jumped else "",
         )
         if picked is None:
             return None
         action, item = picked
+        if action == "left":
+            return "left", None
         if action == "ctrl-n":
             index = min(index + 1, len(items) - 1)
             jumped = True
@@ -755,7 +768,7 @@ def pick_subtitle_language() -> str | None:
         previews,
         lines,
         prompt="langue> ",
-        header=_fzf_header("Enter · Esc"),
+        header=_fzf_header("→ Enter · Esc"),
         expect="enter",
     )
     if picked is None:
@@ -787,6 +800,7 @@ def pick_catalog(
             if item is not None:
                 return "enter", item
 
+    pool = sections
     if season is not None or kind is not None:
         matched = [
             section
@@ -794,27 +808,41 @@ def pick_catalog(
             if (kind is None or section.kind == kind)
             and (season is None or section.season == season)
         ]
-        if len(matched) == 1:
-            section = matched[0]
-        elif matched:
-            section = pick_section(matched)
+        if matched:
+            pool = matched
+
+    force_section_pick = False
+    while True:
+        if (
+            not force_section_pick
+            and len(pool) == 1
+            and (season is not None or kind is not None)
+        ):
+            section = pool[0]
         else:
-            section = pick_section(sections)
-    else:
-        section = pick_section(sections)
+            force_section_pick = False
+            section = pick_section(pool, force_interactive=force_section_pick)
+        if section is None:
+            return None
 
-    if section is None:
-        return None
+        if episode is not None and section.has_episodes:
+            item = section.episodes.get(episode)
+            if item is not None:
+                return "enter", item
 
-    if episode is not None and section.has_episodes:
-        item = section.episodes.get(episode)
-        if item is not None:
-            return "enter", item
+        if on_section is not None:
+            on_section(section)
 
-    if on_section is not None:
-        on_section(section)
-
-    return pick_episode(section)
+        picked = pick_episode(section)
+        if picked is None:
+            return None
+        action, item = picked
+        if action == "left":
+            force_section_pick = True
+            continue
+        if item is None:
+            return None
+        return action, item
 
 
 def copy_magnet(magnet: str) -> bool:
