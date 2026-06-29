@@ -11,6 +11,7 @@ from annie.settings import AnnieSettings
 from annie.media import (
     AnnieConfig,
     MediaKind,
+    MediaSection,
     ResultItem,
     WatchTarget,
     build_catalog,
@@ -32,10 +33,13 @@ from annie.mal import (
 )
 from annie.nyaa import search
 from annie.ui import (
+    BackToEpisode,
+    BACK_TO_EPISODE,
     C,
     copy_magnet,
     fzf_available,
     pick_catalog,
+    pick_episode,
     pick_subtitle_language,
     read_query,
     run_search_spinner,
@@ -317,12 +321,22 @@ def print_status_line(label: str, seeders: int, release_group: str | None) -> No
     print(stylize(f"◆ {label}", C.YELLOW, C.BOLD), flush=True)
 
 
+def _find_section_for_item(
+    catalog: list[MediaSection], item: ResultItem
+) -> MediaSection | None:
+    for section in catalog:
+        for candidate in section.choices():
+            if candidate.entry.magnet == item.entry.magnet:
+                return section
+    return None
+
+
 def _resolve_subtitle_lang(
     config: AnnieConfig,
     *,
     cli_lang: str | None = None,
     interactive: bool = False,
-) -> str | None:
+) -> str | None | BackToEpisode:
     if not config.subtitles_enabled:
         return None
     if cli_lang:
@@ -330,7 +344,10 @@ def _resolve_subtitle_lang(
     if config.default_sub_lang:
         return config.default_sub_lang
     if interactive and fzf_available():
-        return pick_subtitle_language()
+        result = pick_subtitle_language()
+        if result is BACK_TO_EPISODE:
+            return BACK_TO_EPISODE
+        return result
     return None
 
 
@@ -354,6 +371,8 @@ def play_item(
         cli_lang=subtitle_lang,
         interactive=interactive_subs,
     )
+    if lang is BACK_TO_EPISODE:
+        return -1
     subtitle_query = None
     if lang:
         from annie.subtitles import build_query
@@ -711,17 +730,38 @@ def interactive_loop(config: AnnieConfig) -> int:
                     print_status("clipboard unavailable", kind="warn")
                 continue
 
-            try:
-                code = play_item(
-                    item,
-                    config,
-                    series_query=raw_query,
-                    mal_titles=tuple(options.get("mal_titles", ())),
-                    interactive_subs=True,
-                )
-            except Exception as exc:  # noqa: BLE001
-                print_status(str(exc), kind="err")
-                code = 1
+            code = 0
+            while True:
+                try:
+                    code = play_item(
+                        item,
+                        config,
+                        series_query=raw_query,
+                        mal_titles=tuple(options.get("mal_titles", ())),
+                        interactive_subs=True,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    print_status(str(exc), kind="err")
+                    code = 1
+                    break
+                if code != -1:
+                    break
+
+                section = _find_section_for_item(catalog, item)
+                if section is None:
+                    code = 0
+                    break
+                ep_picked = pick_episode(section)
+                if ep_picked is None:
+                    code = 0
+                    break
+                ep_action, item = ep_picked
+                if ep_action == "ctrl-o":
+                    if copy_magnet(item.entry.magnet):
+                        print_status("magnet copied", kind="ok")
+                    else:
+                        print_status("clipboard unavailable", kind="warn")
+                    continue
 
             if item.parsed.season is not None:
                 binge_season = item.parsed.season

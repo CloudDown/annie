@@ -742,11 +742,17 @@ class _SkipSubs:
     """Sentinelle fzf — lecture sans sous-titres externes."""
 
 
+class _BackToEpisode:
+    """Sentinelle — retour à la sélection d'épisode depuis le menu langue."""
+
+
 SKIP_SUBS = _SkipSubs()
+BACK_TO_EPISODE = _BackToEpisode()
+BackToEpisode = _BackToEpisode
 
 
-def pick_subtitle_language() -> str | None:
-    """fzf : 5 langues les plus parlées + option Aucun. Retourne un code ISO ou None."""
+def pick_subtitle_language() -> str | None | _BackToEpisode:
+    """fzf : langues + Aucun. Retourne code ISO, None (sans subs), ou BACK_TO_EPISODE."""
     from annie.subtitles import languages
 
     indexed: dict[str, str | _SkipSubs] = {}
@@ -768,12 +774,14 @@ def pick_subtitle_language() -> str | None:
         previews,
         lines,
         prompt="langue> ",
-        header=_fzf_header("→ Enter · Esc"),
-        expect="enter",
+        header=_fzf_header("→ Enter · ← · Esc"),
+        expect="left,enter",
     )
     if picked is None:
         return None
-    _action, value = picked
+    action, value = picked
+    if action == "left":
+        return BACK_TO_EPISODE
     if value is SKIP_SUBS:
         return None
     return str(value)
