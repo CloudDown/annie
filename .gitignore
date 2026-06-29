@@ -28,6 +28,10 @@ packaging/aur/pkg/
 packaging/aur/src/
 *.pkg.tar.zst
 
+# Développement local (expérimentations, non versionné)
+dev/
+dev/results/
+
 # Config utilisateur locale (pas le template annie/templates/)
 /config.toml
 /settings.toml
