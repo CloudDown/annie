@@ -357,23 +357,112 @@ function Install-AnnieCommand {
     }
 }
 
+function Add-UserPathEntry {
+    param([string]$Directory)
+    if (-not $Directory -or -not (Test-Path -LiteralPath $Directory)) {
+        return
+    }
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $userPath) { $userPath = "" }
+    if ($userPath.Split(";") -contains $Directory) {
+        return
+    }
+    [Environment]::SetEnvironmentVariable("Path", "$Directory;$userPath", "User")
+    if ($env:Path.Split(";") -notcontains $Directory) {
+        $env:Path = "$Directory;$env:Path"
+    }
+    Write-Host "==> Ajoute au PATH utilisateur : $Directory"
+}
+
+function Find-ProgramExe {
+    param([string]$Name)
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) {
+        return $cmd.Source
+    }
+    $exeName = if ($Name.ToLower().EndsWith(".exe")) { $Name } else { "$Name.exe" }
+    $dirs = @()
+    switch ($Name.ToLower()) {
+        "mpv" {
+            $dirs = @(
+                "$env:ProgramFiles\mpv",
+                "$env:ProgramFiles\MPV Player",
+                "C:\mpv",
+                "$env:LOCALAPPDATA\Programs\mpv"
+            )
+        }
+        "vlc" {
+            $dirs = @(
+                "$env:ProgramFiles\VideoLAN\VLC",
+                "${env:ProgramFiles(x86)}\VideoLAN\VLC"
+            )
+        }
+        "ffplay" {
+            $dirs = @(
+                "$env:ProgramFiles\ffmpeg\bin",
+                "C:\ffmpeg\bin"
+            )
+        }
+    }
+    foreach ($dir in $dirs) {
+        $candidate = Join-Path $dir $exeName
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (Test-Path -LiteralPath $wingetRoot) {
+        $found = Get-ChildItem -Path $wingetRoot -Filter $exeName -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) {
+            return $found.FullName
+        }
+    }
+    if ($env:ProgramFiles) {
+        $found = Get-ChildItem -Path $env:ProgramFiles -Filter $exeName -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) {
+            return $found.FullName
+        }
+    }
+    return $null
+}
+
+function Ensure-ProgramOnPath {
+    param(
+        [string]$Name,
+        [string[]]$WingetIds
+    )
+    Refresh-SessionPath
+    $exe = Find-ProgramExe -Name $Name
+    if ($exe) {
+        Write-Host "==> $Name deja installe : $exe"
+        Add-UserPathEntry -Directory (Split-Path $exe -Parent)
+        return
+    }
+    foreach ($id in $WingetIds) {
+        if (Install-WingetPackage -Id $id -Label $Name) {
+            Refresh-SessionPath
+            $exe = Find-ProgramExe -Name $Name
+            if ($exe) {
+                Write-Host "==> $Name installe : $exe"
+                Add-UserPathEntry -Directory (Split-Path $exe -Parent)
+                return
+            }
+        }
+    }
+    Write-Warning "$Name toujours absent."
+    Write-Warning "  Essayez (PowerShell admin) : winget install -e --id shinchiro.mpv"
+    Write-Warning "  Ou telechargez mpv : https://mpv.io/installation/"
+    Write-Warning "  Puis ajoutez le dossier de mpv.exe au PATH utilisateur."
+}
+
 function Ensure-OptionalTool {
     param(
         [string]$Name,
         [string]$WingetId
     )
-    Refresh-SessionPath
-    if (Get-Command $Name -ErrorAction SilentlyContinue) {
-        Write-Host "==> $Name deja installe"
-        return
-    }
-    Install-WingetPackage -Id $WingetId -Label $Name | Out-Null
-    Refresh-SessionPath
-    if (Get-Command $Name -ErrorAction SilentlyContinue) {
-        Write-Host "==> $Name installe"
-    } else {
-        Write-Warning "$Name toujours absent - installez manuellement : winget install $WingetId"
-    }
+    Ensure-ProgramOnPath -Name $Name -WingetIds @($WingetId)
 }
 
 function Install-OptionalTools {
@@ -383,7 +472,11 @@ function Install-OptionalTools {
     }
     Write-Host "==> Outils interactifs (fzf, mpv)"
     Ensure-OptionalTool -Name "fzf" -WingetId "junegunn.fzf"
-    Ensure-OptionalTool -Name "mpv" -WingetId "mpv.mpv"
+    Ensure-ProgramOnPath -Name "mpv" -WingetIds @(
+        "shinchiro.mpv",
+        "mpv.mpv",
+        "mpv-player.mpv-CI.MSVC"
+    )
 }
 
 function Test-AnnieLaunch {

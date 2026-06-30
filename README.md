@@ -103,6 +103,21 @@ Si Windows affiche *« Python was not found… Microsoft Store »*, désactivez 
 
 **Important** : n’exécutez pas `python -m venv .` à la racine du dépôt. Utilisez **`annie`** ou **`annie.cmd`** (pas `annie.exe` pip).
 
+Si Annie affiche *« no player found »*, mpv n’est pas dans le PATH. Relancez `.\install-windows.bat`, ou installez mpv manuellement :
+
+```powershell
+winget install -e --id shinchiro.mpv
+# puis fermez et rouvrez le terminal
+mpv --version
+```
+
+Vous pouvez aussi indiquer le chemin complet dans `%APPDATA%\annie\config.toml` :
+
+```toml
+[player]
+command = "C:\\Program Files\\mpv\\mpv.exe"
+```
+
 Options : `-SkipOptional` pour ne pas installer fzf/mpv automatiquement.
 
 ---

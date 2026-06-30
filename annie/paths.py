@@ -3,8 +3,67 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
+
+_WINDOWS_PROGRAM_DIRS: dict[str, tuple[str, ...]] = {
+    "mpv": (
+        r"C:\Program Files\mpv",
+        r"C:\Program Files\MPV Player",
+        r"C:\mpv",
+    ),
+    "vlc": (
+        r"C:\Program Files\VideoLAN\VLC",
+        r"C:\Program Files (x86)\VideoLAN\VLC",
+    ),
+    "ffplay": (
+        r"C:\Program Files\ffmpeg\bin",
+        r"C:\ffmpeg\bin",
+    ),
+}
+
+
+def find_program(name: str) -> str | None:
+    """Résout un exécutable (mpv, vlc, ffplay) ou un chemin absolu."""
+    raw = name.strip().strip('"')
+    if not raw:
+        return None
+
+    candidate = Path(raw)
+    if candidate.is_file():
+        return str(candidate.resolve())
+
+    found = shutil.which(raw)
+    if found:
+        return found
+
+    if sys.platform != "win32":
+        return None
+
+    stem = Path(raw).stem.lower()
+    exe_name = raw if raw.lower().endswith(".exe") else f"{stem}.exe"
+    program_dirs = _WINDOWS_PROGRAM_DIRS.get(stem, ())
+    for directory in program_dirs:
+        path = Path(directory) / exe_name
+        if path.is_file():
+            return str(path.resolve())
+
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        winget = Path(local) / "Microsoft" / "WinGet" / "Packages"
+        if winget.is_dir():
+            for match in winget.rglob(exe_name):
+                if match.is_file():
+                    return str(match.resolve())
+
+    program_files = os.environ.get("ProgramFiles")
+    if program_files:
+        for match in Path(program_files).rglob(exe_name):
+            if match.is_file() and match.name.lower() == exe_name.lower():
+                return str(match.resolve())
+
+    return None
 
 
 def _windows_roaming() -> Path:

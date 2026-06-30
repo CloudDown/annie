@@ -15,7 +15,7 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from annie.paths import cache_dir, ipc_ready as mpv_ipc_is_ready, mpv_ipc_path
+from annie.paths import cache_dir, find_program, ipc_ready as mpv_ipc_is_ready, mpv_ipc_path
 from annie.parsing import _filename_for_episode_match, match_episode_filename
 from annie.ui import (
     BufferStatusDisplay,
@@ -75,35 +75,59 @@ def _stream_margin_bytes() -> int:
 
 
 _player_cache: str | None = None
+_player_exe_cache: str | None = None
 _ffprobe_cache: bool | None = None
+
+
+def _remember_player(kind: str, exe: str) -> str:
+    global _player_cache, _player_exe_cache
+    _player_cache = kind
+    _player_exe_cache = exe
+    return kind
+
+
+def player_binary(player: str) -> str:
+    if _player_exe_cache and _player_cache == player:
+        return _player_exe_cache
+    return find_program(player) or player
+
+
+def available_players() -> list[str]:
+    return [name for name in ("mpv", "vlc", "ffplay") if find_program(name)]
+
+
+def resolve_player(requested: str | None = None) -> str:
+    global _player_cache, _player_exe_cache
+    if requested and requested != "auto":
+        exe = find_program(requested)
+        if exe is None:
+            raise RuntimeError(f"player not found: {requested}")
+        kind = Path(exe).stem.lower()
+        if kind not in {"mpv", "vlc", "ffplay"}:
+            kind = Path(requested).stem.lower()
+        return _remember_player(kind, exe)
+    env = os.environ.get("ANNIE_PLAYER", "").strip().lower()
+    if env and env != "auto":
+        exe = find_program(env)
+        if exe is None:
+            raise RuntimeError(f"ANNIE_PLAYER={env} not found")
+        return _remember_player(env, exe)
+    if (
+        _player_cache
+        and _player_exe_cache
+        and find_program(_player_cache) == _player_exe_cache
+    ):
+        return _player_cache
+    for name in ("mpv", "vlc", "ffplay"):
+        exe = find_program(name)
+        if exe:
+            return _remember_player(name, exe)
+    raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
 
 
 def die(message: str, code: int = 1) -> None:
     print(format_stream_fatal(message), file=sys.stderr)
     raise SystemExit(code)
-
-
-def available_players() -> list[str]:
-    return [name for name in ("mpv", "vlc", "ffplay") if shutil.which(name)]
-
-
-def resolve_player(requested: str | None = None) -> str:
-    global _player_cache
-    if requested and requested != "auto":
-        if shutil.which(requested) is None:
-            raise RuntimeError(f"player not found: {requested}")
-        return requested
-    env = os.environ.get("ANNIE_PLAYER", "").strip().lower()
-    if env and env != "auto":
-        if shutil.which(env) is None:
-            raise RuntimeError(f"ANNIE_PLAYER={env} not found")
-        return env
-    if _player_cache and shutil.which(_player_cache):
-        return _player_cache
-    for name in available_players():
-        _player_cache = name
-        return name
-    raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
 
 
 def player_command(
@@ -117,7 +141,7 @@ def player_command(
     target = str(path.resolve())
     if player == "mpv":
         mpv = settings.player.mpv
-        cmd = ["mpv"]
+        cmd = [player_binary("mpv")]
         if mpv.force_window:
             cmd.append("--force-window=immediate")
         cmd.extend(
@@ -158,7 +182,7 @@ def player_command(
     if player == "vlc":
         vlc = settings.player.vlc
         cmd = [
-            "vlc",
+            player_binary("vlc"),
             "--intf",
             "dummy",
             "--quiet",
@@ -172,7 +196,7 @@ def player_command(
         return cmd
     if player == "ffplay":
         return [
-            "ffplay",
+            player_binary("ffplay"),
             "-autoexit",
             "-infbuf",
             "-fflags",
