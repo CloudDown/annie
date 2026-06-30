@@ -1,8 +1,4 @@
-﻿# Installation complete Annie sur Windows (PowerShell 5.1+).
-# Installe Python, uv, fzf et mpv si necessaire, puis configure la commande annie.
-#
-# Usage :
-#   powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
+﻿# Installation Annie sur Windows (appele par install-windows.bat).
 param(
     [switch]$SkipOptional
 )
@@ -182,7 +178,7 @@ function Ensure-Python {
         Write-Error @"
 Python toujours introuvable apres installation.
 1. Fermez ce terminal, rouvrez PowerShell
-2. Relancez packaging\windows\install.ps1
+2. Relancez install-windows.bat
 3. Si le message Microsoft Store apparait, desactivez les alias python.exe dans
    Parametres > Applications > Alias d execution d applications
 "@
@@ -327,7 +323,7 @@ function Annie-CmdLines {
         '  "%PY%" "%ROOT%\annie.py" %*'
         '  exit /b %ERRORLEVEL%'
         ')'
-        'echo Python introuvable. Relancez packaging\windows\install.ps1'
+        'echo Python introuvable. Relancez install-windows.bat'
         'exit /b 1'
     )
 }
@@ -718,9 +714,8 @@ Write-Host "========================================"
 Write-Host " Installation terminee."
 Write-Host ""
 Write-Host " Lancer Annie tout de suite :"
-Write-Host "   annie          (si ce terminal a le PATH a jour)"
-Write-Host "   .\annie.cmd    (depuis le dossier du clone)"
-Write-Host "   & `"$env:LOCALAPPDATA\Programs\Annie\bin\annie.cmd`""
+Write-Host "   annie"
+Write-Host "   .\annie.cmd"
 Write-Host ""
-Write-Host " Nouveau terminal Windows : fermez celui-ci, rouvrez, puis : annie"
+Write-Host " Nouveau terminal : fermez celui-ci, rouvrez, puis : annie"
 Write-Host "========================================"

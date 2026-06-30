@@ -33,5 +33,5 @@ if not errorlevel 1 (
 )
 
 echo Python introuvable.
-echo Lancez : packaging\windows\install.ps1
+echo Lancez : install-windows.bat
 exit /b 1

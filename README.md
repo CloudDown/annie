@@ -86,12 +86,10 @@ make install
 
 Double-clic ou terminal (installe **Python, uv, fzf, mpv** si absents) :
 
-```powershell
+```bat
 git clone https://github.com/CloudDown/annie.git
 cd annie
-.\install-windows.bat
-# ou :
-powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
+install-windows.bat
 ```
 
 L’installateur crée la commande **`annie`** dans le PATH utilisateur, installe les dépendances et **détecte automatiquement** mpv, VLC ou ffplay (winget, Chocolatey, Scoop). Le chemin du lecteur est enregistré dans `%APPDATA%\annie\config.toml`.
@@ -105,7 +103,7 @@ Si Windows affiche *« Python was not found… Microsoft Store »*, désactivez 
 
 Si la lecture échoue, relancez `.\install-windows.bat` après `git pull`.
 
-Options : `-SkipOptional` pour ne pas installer fzf/mpv automatiquement.
+Options : `install-windows.bat -SkipOptional` pour ne pas installer fzf/mpv automatiquement.
 
 ---
 
