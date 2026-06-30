@@ -84,34 +84,26 @@ make install
 
 ### Installation — Windows
 
+Double-clic ou terminal (installe **Python, uv, fzf, mpv** si absents) :
+
 ```powershell
 git clone https://github.com/CloudDown/annie.git
 cd annie
+.\install-windows.bat
+# ou :
 powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
 ```
 
-L’installateur crée la commande **`annie`** dans le PATH utilisateur (nouveau terminal requis).
+L’installateur crée la commande **`annie`** dans le PATH utilisateur (**fermez et rouvrez le terminal**).
 
-Sans réinstaller, depuis le dossier du projet :
+Sans réinstaller, depuis le dossier du projet : `.\annie.cmd`
 
-```powershell
-.\annie.cmd
-# ou
-.\annie.py
-```
+Si Windows affiche *« Python was not found… Microsoft Store »*, désactivez les alias dans  
+**Paramètres → Applications → Paramètres avancés → Alias d’exécution d’applications** (désactiver `python.exe` et `python3.exe`), puis relancez l’installateur.
 
-**Important** : n’exécutez pas `python -m venv .` à la racine du dépôt — cela casse Python (`No module named 'encodings'`). Annie utilise `.venv\` (créé par `uv sync`). Si vous avez ce problème, relancez `install.ps1` qui nettoie les artefacts incorrects.
+**Important** : n’exécutez pas `python -m venv .` à la racine du dépôt. Utilisez **`annie`** ou **`annie.cmd`** (pas `annie.exe` pip).
 
-Si Python est corrompu (`Lib\encodings` manquant) : `winget uninstall --id Python.Python.3.11` puis `winget install --id Python.Python.3.11`.
-
-Utilisez **`annie`** ou **`annie.cmd`** (pas `annie.exe` dans `Python\Scripts`) pour l’UTF-8 des titres japonais.
-
-Puis installe les outils recommandés :
-
-```powershell
-winget install junegunn.fzf
-winget install mpv.mpv
-```
+Options : `-SkipOptional` pour ne pas installer fzf/mpv automatiquement.
 
 ---
 

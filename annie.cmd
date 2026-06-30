@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUTF8=1"
@@ -12,12 +12,26 @@ if exist "%VENV_PY%" (
   exit /b %ERRORLEVEL%
 )
 
-where python >nul 2>&1
-if errorlevel 1 (
-  echo Python 3.11+ requis. Installez-le depuis https://www.python.org/downloads/
-  echo Puis relancez : packaging\windows\install.ps1
-  exit /b 1
+for %%V in (313 312 311) do (
+  set "CAND=%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe"
+  if exist "!CAND!" (
+    "!CAND!" "%ROOT%\annie.py" %*
+    exit /b !ERRORLEVEL!
+  )
 )
 
-python "%ROOT%\annie.py" %*
-exit /b %ERRORLEVEL%
+where py >nul 2>&1
+if not errorlevel 1 (
+  py -3 "%ROOT%\annie.py" %*
+  exit /b %ERRORLEVEL%
+)
+
+where python >nul 2>&1
+if not errorlevel 1 (
+  python "%ROOT%\annie.py" %*
+  exit /b %ERRORLEVEL%
+)
+
+echo Python introuvable.
+echo Lancez : packaging\windows\install.ps1
+exit /b 1
