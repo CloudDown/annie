@@ -11,13 +11,13 @@ function Require-Python {
         Write-Error @"
 Python 3.11+ requis.
 Installez-le depuis https://www.python.org/downloads/
-Cochez « Add python.exe to PATH » pendant l'installation.
+Cochez "Add python.exe to PATH" pendant l installation.
 "@
     }
     $version = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
     $parts = $version.Split(".")
     if ([int]$parts[0] -lt 3 -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -lt 11)) {
-        Write-Error "Python 3.11+ requis (trouvé $version)."
+        Write-Error "Python 3.11+ requis (trouve $version)."
     }
 }
 
@@ -28,10 +28,10 @@ function Repair-BrokenRootVenv {
         return
     }
     if (Test-Path $dotVenvCfg) {
-        Write-Warning "pyvenv.cfg à la racine du dépôt (en plus de .venv) — peut casser Python."
+        Write-Warning "pyvenv.cfg a la racine du depot (en plus de .venv) - peut casser Python."
     } else {
-        Write-Warning "Environnement virtuel incorrect à la racine (pyvenv.cfg + Lib/Scripts)."
-        Write-Warning "Annie utilise .venv\ — suppression des artefacts à la racine…"
+        Write-Warning "Environnement virtuel incorrect a la racine (pyvenv.cfg + Lib/Scripts)."
+        Write-Warning "Annie utilise .venv\ - suppression des artefacts a la racine..."
     }
     foreach ($name in @("pyvenv.cfg", "Lib", "Scripts", "Include", "share")) {
         $path = Join-Path $Root $name
@@ -46,16 +46,16 @@ function Install-Annie {
     if ($uv) {
         Write-Host "==> uv sync"
         uv sync
-        uv run python -c "from annie.user_config import ensure_user_config; ensure_user_config()"
+        uv run python -c 'from annie.user_config import ensure_user_config; ensure_user_config()'
         return
     }
 
-    Write-Host "==> pip install (uv non trouvé — installez uv pour une meilleure expérience)"
+    Write-Host "==> pip install (uv non trouve - installez uv pour une meilleure experience)"
     python -m pip install --upgrade pip build
     python -m build --wheel
     $wheel = Get-ChildItem dist\*.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     python -m pip install --force-reinstall $wheel.FullName
-    python -c "from annie.user_config import ensure_user_config; ensure_user_config()"
+    python -c 'from annie.user_config import ensure_user_config; ensure_user_config()'
 }
 
 function Install-AnnieCommand {
@@ -64,23 +64,24 @@ function Install-AnnieCommand {
 
     $launcher = Join-Path $binDir "annie.cmd"
     $rootEsc = $Root.Replace('"', '""')
-    @"
-@echo off
-setlocal EnableExtensions
-set "ROOT=$rootEsc"
-set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"
-if exist "%VENV_PY%" (
-  "%VENV_PY%" "%ROOT%\annie.py" %*
-  exit /b %ERRORLEVEL%
-)
-where python >nul 2>&1
-if errorlevel 1 (
-  echo Python introuvable. Relancez packaging\windows\install.ps1 depuis $rootEsc
-  exit /b 1
-)
-python "%ROOT%\annie.py" %*
-exit /b %ERRORLEVEL%
-"@ | Set-Content -LiteralPath $launcher -Encoding ASCII
+    $cmdLines = @(
+        '@echo off'
+        'setlocal EnableExtensions'
+        "set `"ROOT=$rootEsc`""
+        'set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"'
+        'if exist "%VENV_PY%" ('
+        '  "%VENV_PY%" "%ROOT%\annie.py" %*'
+        '  exit /b %ERRORLEVEL%'
+        ')'
+        'where python >nul 2>&1'
+        'if errorlevel 1 ('
+        "  echo Python introuvable. Relancez packaging\windows\install.ps1 depuis $rootEsc"
+        '  exit /b 1'
+        ')'
+        'python "%ROOT%\annie.py" %*'
+        'exit /b %ERRORLEVEL%'
+    )
+    $cmdLines | Set-Content -LiteralPath $launcher -Encoding ASCII
 
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) {
@@ -89,10 +90,10 @@ exit /b %ERRORLEVEL%
     if ($userPath.Split(";") -notcontains $binDir) {
         [Environment]::SetEnvironmentVariable("Path", "$binDir;$userPath", "User")
         $env:Path = "$binDir;$env:Path"
-        Write-Host "==> Commande « annie » ajoutée au PATH utilisateur : $binDir"
+        Write-Host "==> Commande annie ajoutee au PATH utilisateur : $binDir"
         Write-Host "    Fermez et rouvrez le terminal, puis tapez : annie"
     } else {
-        Write-Host "==> Commande « annie » déjà dans le PATH : $binDir"
+        Write-Host "==> Commande annie deja dans le PATH : $binDir"
     }
 }
 
@@ -111,14 +112,15 @@ function Warn-OptionalTools {
 }
 
 function Test-AnnieLaunch {
+    $pyCheck = 'from annie.cli import main; from annie.paths import config_dir; print("ok", config_dir())'
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if ($uv) {
-        uv run python -c "from annie.cli import main; from annie.paths import config_dir; print('ok', config_dir())"
+        uv run python -c $pyCheck
     } else {
-        python -c "from annie.cli import main; from annie.paths import config_dir; print('ok', config_dir())"
+        python -c $pyCheck
     }
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Import Annie échoué — voir les messages ci-dessus."
+        Write-Error "Import Annie echoue - voir les messages ci-dessus."
     }
     Write-Host "==> Import Annie : OK"
 }
@@ -131,6 +133,6 @@ Test-AnnieLaunch
 Warn-OptionalTools
 
 Write-Host ""
-Write-Host "Installation terminée."
+Write-Host "Installation terminee."
 Write-Host "  Depuis ce dossier : .\annie.cmd   ou   .\annie.py"
 Write-Host "  Partout (nouveau terminal) : annie"

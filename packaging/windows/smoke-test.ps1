@@ -16,13 +16,13 @@ function Check-Command($name) {
     return $false
 }
 
-Write-Host "==> Dépendances Python"
+Write-Host "==> Dependances Python"
 if (-not (Check-Command python)) { $failures++ }
 $uv = Get-Command uv -ErrorAction SilentlyContinue
 if ($uv) {
     Write-Host "[ok] uv : $($uv.Source)"
 } else {
-    Write-Host "[warn] uv absent — pip/wheel utilisé à la place"
+    Write-Host "[warn] uv absent - pip/wheel utilise a la place"
 }
 
 Write-Host ""
@@ -32,7 +32,7 @@ if (-not (Check-Command fzf)) {
     Write-Host "       winget install junegunn.fzf"
 }
 if (-not (Check-Command mpv)) {
-    Write-Host "[warn] mpv absent — lecture et barres de buffer indisponibles"
+    Write-Host "[warn] mpv absent - lecture et barres de buffer indisponibles"
     Write-Host "       winget install mpv.mpv"
 }
 
@@ -52,10 +52,11 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "==> Import Annie"
+$pyImport = 'from annie.cli import main; from annie.paths import config_dir; print("config:", config_dir())'
 if ($uv) {
-    uv run python -c "from annie.cli import main; from annie.paths import config_dir; print('config:', config_dir())"
+    uv run python -c $pyImport
 } else {
-    python -c "from annie.cli import main; from annie.paths import config_dir; print('config:', config_dir())"
+    python -c $pyImport
 }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[FAIL] import Annie" -ForegroundColor Red
@@ -72,7 +73,7 @@ if (-not (Test-Path (Join-Path $Root "annie.cmd"))) {
 } else {
     & cmd /c "annie.cmd --help" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[warn] annie.cmd --help a échoué (peut être normal sans fzf)"
+        Write-Host "[warn] annie.cmd --help a echoue (peut etre normal sans fzf)"
     } else {
         Write-Host "[ok] annie.cmd"
     }
@@ -80,8 +81,8 @@ if (-not (Test-Path (Join-Path $Root "annie.cmd"))) {
 
 Write-Host ""
 if ($failures -gt 0) {
-    Write-Host "Smoke test : $failures échec(s). Corrigez puis relancez." -ForegroundColor Red
+    Write-Host "Smoke test : $failures echec(s). Corrigez puis relancez." -ForegroundColor Red
     exit 1
 }
-Write-Host "Smoke test automatisé : OK."
-Write-Host "Étape manuelle : lancer annie (ou .\annie.cmd), choisir un anime et vérifier la lecture mpv + Ctrl-O (magnet)."
+Write-Host "Smoke test automatise : OK."
+Write-Host "Etape manuelle : lancer annie (ou .\annie.cmd), choisir un anime et verifier la lecture mpv + Ctrl-O (magnet)."
