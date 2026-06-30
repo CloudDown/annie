@@ -1,4 +1,4 @@
-# Smoke test Annie sur Windows (PowerShell 5.1+).
+﻿# Smoke test Annie sur Windows (PowerShell 5.1+).
 # Usage : powershell -ExecutionPolicy Bypass -File packaging\windows\smoke-test.ps1
 $ErrorActionPreference = "Stop"
 

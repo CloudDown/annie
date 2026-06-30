@@ -535,13 +535,14 @@ def _run_fzf(
     if expect:
         command.extend(["--expect", expect])
 
+    text_in = "\n".join(lines or [])
     proc = subprocess.run(
         command,
-        input="\n".join(lines or []),
+        input=text_in.encode("utf-8"),
         stdout=subprocess.PIPE,
-        text=True,
     )
-    return proc.returncode, proc.stdout
+    stdout = proc.stdout.decode("utf-8", errors="replace") if proc.stdout else ""
+    return proc.returncode, stdout
 
 
 def _extend_expect(expect: str) -> str:

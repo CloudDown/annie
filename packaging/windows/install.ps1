@@ -1,9 +1,43 @@
-# Installation Annie sur Windows (PowerShell 5.1+).
+﻿# Installation Annie sur Windows (PowerShell 5.1+).
 # Usage : powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $Root
+
+function Write-Utf8BomFile {
+    param(
+        [string]$Path,
+        [string[]]$Lines
+    )
+    $content = ($Lines -join "`r`n") + "`r`n"
+    $utf8Bom = New-Object System.Text.UTF8Encoding $true
+    [System.IO.File]::WriteAllText($Path, $content, $utf8Bom)
+}
+
+function Annie-CmdLines {
+    param([string]$RootEsc)
+    return @(
+        '@echo off'
+        'setlocal EnableExtensions'
+        'chcp 65001 >nul'
+        'set "PYTHONIOENCODING=utf-8"'
+        'set "PYTHONUTF8=1"'
+        "set `"ROOT=$RootEsc`""
+        'set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"'
+        'if exist "%VENV_PY%" ('
+        '  "%VENV_PY%" "%ROOT%\annie.py" %*'
+        '  exit /b %ERRORLEVEL%'
+        ')'
+        'where python >nul 2>&1'
+        'if errorlevel 1 ('
+        "  echo Python introuvable. Relancez packaging\windows\install.ps1 depuis $rootEsc"
+        '  exit /b 1'
+        ')'
+        'python "%ROOT%\annie.py" %*'
+        'exit /b %ERRORLEVEL%'
+    )
+}
 
 function Require-Python {
     $py = Get-Command python -ErrorAction SilentlyContinue
@@ -18,6 +52,23 @@ Cochez "Add python.exe to PATH" pendant l installation.
     $parts = $version.Split(".")
     if ([int]$parts[0] -lt 3 -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -lt 11)) {
         Write-Error "Python 3.11+ requis (trouve $version)."
+    }
+}
+
+function Test-PythonStdlib {
+    $py = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $py) {
+        return
+    }
+    $prefix = & python -c "import sys; print(sys.base_prefix)"
+    $encodings = Join-Path $prefix "Lib\encodings\__init__.py"
+    if (-not (Test-Path $encodings)) {
+        Write-Warning @"
+Installation Python corrompue (Lib\encodings manquant).
+Reinstallez Python 3.11 :
+  winget uninstall --id Python.Python.3.11
+  winget install --id Python.Python.3.11
+"@
     }
 }
 
@@ -38,6 +89,25 @@ function Repair-BrokenRootVenv {
         if (Test-Path $path) {
             Remove-Item -LiteralPath $path -Recurse -Force
         }
+    }
+}
+
+function Remove-ConflictingAnnieExe {
+    $candidates = @()
+    $venvExe = Join-Path $Root ".venv\Scripts\annie.exe"
+    if (Test-Path $venvExe) {
+        $candidates += $venvExe
+    }
+    $py = Get-Command python -ErrorAction SilentlyContinue
+    if ($py) {
+        $scriptsExe = Join-Path (Split-Path $py.Source -Parent) "Scripts\annie.exe"
+        if (Test-Path $scriptsExe) {
+            $candidates += $scriptsExe
+        }
+    }
+    foreach ($exe in $candidates) {
+        Remove-Item -LiteralPath $exe -Force
+        Write-Host "==> Supprime $exe (la commande annie passe par annie.cmd)"
     }
 }
 
@@ -64,24 +134,7 @@ function Install-AnnieCommand {
 
     $launcher = Join-Path $binDir "annie.cmd"
     $rootEsc = $Root.Replace('"', '""')
-    $cmdLines = @(
-        '@echo off'
-        'setlocal EnableExtensions'
-        "set `"ROOT=$rootEsc`""
-        'set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"'
-        'if exist "%VENV_PY%" ('
-        '  "%VENV_PY%" "%ROOT%\annie.py" %*'
-        '  exit /b %ERRORLEVEL%'
-        ')'
-        'where python >nul 2>&1'
-        'if errorlevel 1 ('
-        "  echo Python introuvable. Relancez packaging\windows\install.ps1 depuis $rootEsc"
-        '  exit /b 1'
-        ')'
-        'python "%ROOT%\annie.py" %*'
-        'exit /b %ERRORLEVEL%'
-    )
-    $cmdLines | Set-Content -LiteralPath $launcher -Encoding ASCII
+    Write-Utf8BomFile -Path $launcher -Lines (Annie-CmdLines -RootEsc $rootEsc)
 
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) {
@@ -126,8 +179,10 @@ function Test-AnnieLaunch {
 }
 
 Require-Python
+Test-PythonStdlib
 Repair-BrokenRootVenv
 Install-Annie
+Remove-ConflictingAnnieExe
 Install-AnnieCommand
 Test-AnnieLaunch
 Warn-OptionalTools

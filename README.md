@@ -102,6 +102,10 @@ Sans réinstaller, depuis le dossier du projet :
 
 **Important** : n’exécutez pas `python -m venv .` à la racine du dépôt — cela casse Python (`No module named 'encodings'`). Annie utilise `.venv\` (créé par `uv sync`). Si vous avez ce problème, relancez `install.ps1` qui nettoie les artefacts incorrects.
 
+Si Python est corrompu (`Lib\encodings` manquant) : `winget uninstall --id Python.Python.3.11` puis `winget install --id Python.Python.3.11`.
+
+Utilisez **`annie`** ou **`annie.cmd`** (pas `annie.exe` dans `Python\Scripts`) pour l’UTF-8 des titres japonais.
+
 Puis installe les outils recommandés :
 
 ```powershell
