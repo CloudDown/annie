@@ -432,7 +432,23 @@ def search(
     lang: SubtitleLanguage,
     *,
     api_key: str | None = None,
+    strategy: str | None = None,
 ) -> list[SubtitleCandidate]:
+    """Recherche OpenSubtitles.
+
+    Override expérimental (dev/) : ``ANNIE_SUBTITLE_STRATEGY=legacy|broad``
+    avec ``PYTHONPATH`` incluant ``dev/`` (voir ``dev/run_annie.sh``).
+    """
+    chosen = (strategy or os.environ.get("ANNIE_SUBTITLE_STRATEGY", "")).strip()
+    if chosen:
+        try:
+            import subtitle_strategy
+
+            return subtitle_strategy.run_search(
+                query, lang, api_key=api_key, strategy=chosen
+            )
+        except ImportError:
+            pass
     for _title, candidates in probe_search(query, lang, api_key=api_key):
         filtered = filter_subtitle_candidates(candidates, query)
         if filtered:
