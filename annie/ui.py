@@ -174,10 +174,20 @@ _preview_digest: str | None = None
 
 
 def _preview_command() -> str:
-    path = shlex.quote(str(PREVIEW_FILE))
+    preview_file = str(PREVIEW_FILE)
     if shutil.which("jq"):
+        if sys.platform == "win32":
+            path = preview_file.replace('"', '""')
+            return f'jq -r --arg k {{1}} ".[$k] // empty" "{path}"'
+        path = shlex.quote(preview_file)
         return f"jq -r --arg k {{1}} '.[$k] // empty' {path}"
+
     root = Path(__file__).resolve().parent.parent
+    if sys.platform == "win32":
+        root_esc = str(root).replace('"', '""')
+        exe_esc = sys.executable.replace('"', '""')
+        return f'set "PYTHONPATH={root_esc}"&& "{exe_esc}" -m annie.preview {{1}}'
+
     exe = shlex.quote(sys.executable)
     return f"PYTHONPATH={shlex.quote(str(root))} {exe} -m annie.preview {{1}}"
 
