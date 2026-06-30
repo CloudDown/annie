@@ -87,8 +87,8 @@ class StreamingSettings:
 @dataclass
 class BufferSettings:
     max_wait_sec: float = 5.0
-    no_peers_sec: float = 20.0
-    absolute_sec: float = 45.0
+    no_peers_sec: float = 45.0
+    absolute_sec: float = 90.0
     mkv_start_mib: int = 16
     mkv_head_mib: int = 16
     stream_margin_mib: int = 12

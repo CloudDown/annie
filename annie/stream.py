@@ -42,8 +42,8 @@ START_MIN_MP4_BYTES = 256 * 1024
 START_MIN_OTHER_BYTES = 4 * 1024 * 1024
 START_TARGET_BYTES = MKV_START_CONTIGUOUS_BYTES
 BUFFER_MAX_WAIT_SEC = 5.0
-BUFFER_NO_PEERS_SEC = 20.0
-BUFFER_ABSOLUTE_SEC = 45.0
+BUFFER_NO_PEERS_SEC = 45.0
+BUFFER_ABSOLUTE_SEC = 90.0
 MP4_TAIL_BYTES = 8 * 1024 * 1024
 MPV_RETRY_WAIT_SEC = 15.0
 MKV_HEAD_BYTES = 16 * 1024 * 1024
@@ -714,13 +714,76 @@ def _prioritize_mp4_tail(
         handle.piece_priority(piece, 6)
 
 
-def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[int, str]:
+def _is_downloading_metadata(status) -> bool:
+    state = getattr(status, "state", None)
+    if state is None:
+        return False
+    name = getattr(state, "name", None)
+    if name == "downloading_metadata":
+        return True
+    try:
+        return state == lt.torrent_status.downloading_metadata
+    except Exception:
+        return False
+
+
+def _buffer_peer_state(
+    status,
+    *,
+    listed_seeders: int | None = None,
+) -> tuple[bool, str]:
+    """Activité réseau utile et libellé peers (Nyaa seeders ≠ peers connectés)."""
+    download_rate = int(getattr(status, "download_rate", 0) or 0)
+    upload_rate = int(getattr(status, "upload_rate", 0) or 0)
+    num_peers = int(getattr(status, "num_peers", 0) or 0)
+    num_seeds = int(getattr(status, "num_seeds", 0) or 0)
+
+    if download_rate > 0 or upload_rate > 0 or num_peers > 0:
+        return True, f"{num_peers} peers"
+
+    if _is_downloading_metadata(status):
+        return False, "récupération métadonnées…"
+
+    if num_seeds > 0:
+        return False, f"connexion au swarm… ({num_seeds} seeds)"
+
+    if listed_seeders and listed_seeders > 0:
+        return False, f"connexion au swarm… ({listed_seeders}S Nyaa)"
+
+    return False, "connexion au swarm…"
+
+
+def _peer_wait_deadlines(
+    buf,
+    started_at: float,
+    *,
+    listed_seeders: int | None = None,
+) -> tuple[float, float]:
+    """Délais d'attente ; bonus si Nyaa annonçait des seeders."""
+    no_peers_sec = buf.no_peers_sec
+    absolute_sec = buf.absolute_sec
+    if listed_seeders and listed_seeders > 0:
+        bonus = min(90.0, 15.0 + listed_seeders * 1.5)
+        no_peers_sec += bonus * 0.5
+        absolute_sec += bonus
+    return started_at + no_peers_sec, started_at + absolute_sec
+
+
+def wait_startable(
+    handle,
+    file_index,
+    target: Path,
+    file_size: int,
+    *,
+    listed_seeders: int | None = None,
+) -> tuple[int, str]:
     """Wait until the file is startable or timeout. Returns (ready_bytes, mode)."""
     buf = _buffer_cfg()
     started_at = time.monotonic()
     deadline = started_at + buf.max_wait_sec
-    no_peers_deadline = started_at + buf.no_peers_sec
-    absolute_deadline = started_at + buf.absolute_sec
+    no_peers_deadline, absolute_deadline = _peer_wait_deadlines(
+        buf, started_at, listed_seeders=listed_seeders
+    )
     last_ready = -1
     stall_ticks = 0
     target_bytes = _mkv_start_bytes()
@@ -731,7 +794,9 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
         contiguous = _contiguous_file_bytes(handle, file_index)
         now = time.monotonic()
         status = handle.status()
-        has_transfer = status.num_peers > 0 or status.download_rate > 0
+        has_transfer, peer_hint = _buffer_peer_state(
+            status, listed_seeders=listed_seeders
+        )
         can_start = has_transfer or ready >= int(file_size * 0.98)
         startable = _is_startable(
             target, ready, file_size, handle=handle, file_index=file_index
@@ -755,10 +820,17 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
                 display.finish(format_buffer_forced_start(contiguous // 1024 // 1024))
                 return contiguous, "forced"
             display.finish("")
+            peer_note = ""
+            if listed_seeders and listed_seeders > 0:
+                peer_note = (
+                    f" — Nyaa affichait {listed_seeders} seeders ; "
+                    "la connexion au swarm peut prendre plus de temps"
+                )
             die(
                 "buffer timeout — fichier incomplet "
                 f"({contiguous // 1024 // 1024} MiB contigu / "
-                f"{ready // 1024 // 1024} MiB total, en attente de peers ou données)"
+                f"{ready // 1024 // 1024} MiB total, {peer_hint.lower()})"
+                f"{peer_note}"
             )
 
         if status.state == lt.torrent_status.seeding and _is_startable(
@@ -767,9 +839,6 @@ def wait_startable(handle, file_index, target: Path, file_size: int) -> tuple[in
             display.finish(format_buffer_local_file(contiguous // 1024 // 1024))
             return contiguous, "seeding"
 
-        peer_hint = (
-            "en attente de peers…" if not has_transfer else f"{status.num_peers} peers"
-        )
         probe_hint = ""
         if (
             target.suffix.lower() == ".mkv"
@@ -877,6 +946,7 @@ def _play_while_downloading(
     session: lt.session | None = None,
     seed_while_watching: bool = False,
     show_download_progress: bool = True,
+    listed_seeders: int | None = None,
 ) -> int:
     paused_for_buffer = False
     ipc_available = ipc_path is not None and _wait_mpv_ipc(ipc_path)
@@ -905,11 +975,8 @@ def _play_while_downloading(
                 paused_for_buffer = False
 
         if display is not None:
-            has_transfer = status.num_peers > 0 or status.download_rate > 0
-            peer_hint = (
-                "en attente de peers…"
-                if not has_transfer
-                else f"{status.num_peers} peers"
+            _has_transfer, peer_hint = _buffer_peer_state(
+                status, listed_seeders=listed_seeders
             )
             extra_hint = " · ⏸ buffer insuffisant" if paused_for_buffer else ""
             display.update(
@@ -961,9 +1028,12 @@ def _launch_and_stream(
     seed_while_watching: bool = False,
     retry: bool = True,
     sub_file: Path | None = None,
+    listed_seeders: int | None = None,
 ) -> int:
     buf = _buffer_cfg()
-    wait_startable(handle, file_index, target, file_size)
+    wait_startable(
+        handle, file_index, target, file_size, listed_seeders=listed_seeders
+    )
     if not target.exists():
         die(f"file missing: {target}")
 
@@ -1011,6 +1081,7 @@ def _launch_and_stream(
             session=session,
             seed_while_watching=seed_while_watching,
             show_download_progress=show_progress,
+            listed_seeders=listed_seeders,
         )
     finally:
         if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
@@ -1044,6 +1115,7 @@ def _launch_and_stream(
                 session=session,
                 seed_while_watching=seed_while_watching,
                 show_download_progress=show_progress,
+                listed_seeders=listed_seeders,
             )
         finally:
             if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
@@ -1064,6 +1136,7 @@ def play(
     seed_while_watching: bool = True,
     subtitle_lang: str | None = None,
     subtitle_query=None,
+    listed_seeders: int | None = None,
 ) -> int:
     session = make_session(seed_while_watching=seed_while_watching)
     handle: lt.torrent_handle
@@ -1146,6 +1219,7 @@ def play(
                 session=session,
                 seed_while_watching=seed_while_watching,
                 sub_file=sub_file,
+                listed_seeders=listed_seeders,
             )
             if code != 0:
                 stream_log_err(player_name, f"code {code}")

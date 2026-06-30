@@ -399,6 +399,7 @@ def play_item(
         seed_while_watching=AnnieSettings.load().seed_while_watching,
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
+        listed_seeders=item.entry.seeders,
     )
 
 
@@ -624,6 +625,7 @@ def run_watch(
         seed_while_watching=AnnieSettings.load().seed_while_watching,
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
+        listed_seeders=entry.seeders,
     )
 
 
