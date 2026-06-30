@@ -136,12 +136,27 @@ def player_command(
     *,
     ipc_path: Path | None = None,
     sub_file: Path | None = None,
+    mpv_profile: str = "default",
 ) -> list[str]:
     settings = _settings()
     target = str(path.resolve())
     if player == "mpv":
         mpv = settings.player.mpv
         cmd = [player_binary("mpv")]
+        gpu_api = mpv.gpu_api
+        hwdec = mpv.hwdec
+        vo = mpv.vo
+        really_quiet = mpv.really_quiet
+        if sys.platform == "win32" and gpu_api in {"opengl", ""}:
+            gpu_api = "d3d11"
+        if mpv_profile == "safe":
+            gpu_api = "d3d11"
+            hwdec = "auto-safe"
+            vo = "gpu"
+        elif mpv_profile == "software":
+            gpu_api = "d3d11"
+            hwdec = "no"
+            vo = "gpu"
         if mpv.force_window:
             cmd.append("--force-window=immediate")
         cmd.extend(
@@ -150,7 +165,7 @@ def player_command(
                 "--no-terminal",
             ]
         )
-        if mpv.really_quiet:
+        if really_quiet:
             cmd.extend(
                 [
                     "--really-quiet",
@@ -167,9 +182,9 @@ def player_command(
                 "--demuxer-max-bytes=32M",
                 "--demuxer-lavf-analyzeduration=5",
                 "--demuxer-lavf-probesize=5242880",
-                f"--vo={mpv.vo}",
-                f"--gpu-api={mpv.gpu_api}",
-                f"--hwdec={mpv.hwdec}",
+                f"--vo={vo}",
+                f"--gpu-api={gpu_api}",
+                f"--hwdec={hwdec}",
             ]
         )
         if ipc_path is not None:
@@ -1081,69 +1096,63 @@ def _launch_and_stream(
         )
         active_sub = None
 
-    ipc_path: Path | None = None
-    if player_name == "mpv":
-        ipc_dir = CACHE_DIR / "ipc"
-        ipc_dir.mkdir(parents=True, exist_ok=True)
-        ipc_path = mpv_ipc_path(ipc_dir)
-
     from annie.config import AnnieConfig
 
     show_progress = AnnieConfig.load().ui.show_download_progress
 
-    try:
-        proc = _player_popen(
-            player_command(player_name, target, ipc_path=ipc_path, sub_file=active_sub)
-        )
-        code = _play_while_downloading(
-            proc,
-            handle,
-            file_index,
-            target,
-            file_size,
-            ipc_path=ipc_path,
-            session=session,
-            seed_while_watching=seed_while_watching,
-            show_download_progress=show_progress,
-            listed_seeders=listed_seeders,
-        )
-    finally:
-        if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
-            ipc_path.unlink(missing_ok=True)
-
-    if code == 2 and retry:
-        stream_log("mpv", "n'a pas pu lire le fichier, nouvel essai…", tone="warn")
-        ready = _wait_mkv_playable(
-            handle, file_index, target, file_size, max_wait_sec=buf.mpv_retry_sec
-        )
-        if target.suffix.lower() == ".mkv" and not _mkv_playable(target, ready):
-            return code
-        ipc_path = None
+    def _run_pass(*, mpv_profile: str = "default") -> int:
+        pass_ipc: Path | None = None
         if player_name == "mpv":
             ipc_dir = CACHE_DIR / "ipc"
             ipc_dir.mkdir(parents=True, exist_ok=True)
-            ipc_path = mpv_ipc_path(ipc_dir)
+            pass_ipc = mpv_ipc_path(ipc_dir)
         try:
             proc = _player_popen(
                 player_command(
-                    player_name, target, ipc_path=ipc_path, sub_file=active_sub
+                    player_name,
+                    target,
+                    ipc_path=pass_ipc,
+                    sub_file=active_sub,
+                    mpv_profile=mpv_profile,
                 )
             )
-            code = _play_while_downloading(
+            return _play_while_downloading(
                 proc,
                 handle,
                 file_index,
                 target,
                 file_size,
-                ipc_path=ipc_path,
+                ipc_path=pass_ipc,
                 session=session,
                 seed_while_watching=seed_while_watching,
                 show_download_progress=show_progress,
                 listed_seeders=listed_seeders,
             )
         finally:
-            if ipc_path is not None and sys.platform != "win32" and ipc_path.exists():
-                ipc_path.unlink(missing_ok=True)
+            if pass_ipc is not None and sys.platform != "win32" and pass_ipc.exists():
+                pass_ipc.unlink(missing_ok=True)
+
+    code = _run_pass(mpv_profile="default")
+
+    if retry and player_name == "mpv" and code != 0:
+        stream_log("mpv", "échec lecture, nouvel essai…", tone="warn")
+        if target.suffix.lower() == ".mkv":
+            ready = _wait_mkv_playable(
+                handle,
+                file_index,
+                target,
+                file_size,
+                max_wait_sec=buf.mpv_retry_sec,
+            )
+            if not _mkv_playable(target, ready):
+                return code
+        retry_profiles = ["safe"]
+        if sys.platform == "win32":
+            retry_profiles.append("software")
+        for profile in retry_profiles:
+            code = _run_pass(mpv_profile=profile)
+            if code == 0:
+                break
 
     return code
 
@@ -1171,9 +1180,16 @@ def play(
         player_future = pool.submit(resolve_player, player)
         sub_future = None
         if subtitle_lang and subtitle_query is not None:
-            from annie.subtitles import fetch_best
+            from annie.subtitles import (
+                _opensubtitles_config_hint,
+                fetch_best,
+                subtitles_api_available,
+            )
 
-            sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
+            if subtitles_api_available():
+                sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
+            else:
+                stream_log_err("sous-titres", _opensubtitles_config_hint())
 
         if source.startswith("magnet:?"):
             save_path = magnet_save_path(source)

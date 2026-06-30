@@ -32,8 +32,25 @@ if (-not (Check-Command fzf)) {
     Write-Host "       winget install junegunn.fzf"
 }
 if (-not (Check-Command mpv)) {
-    Write-Host "[warn] mpv absent - lecture et barres de buffer indisponibles"
-    Write-Host "       winget install mpv.mpv"
+    Write-Host "[warn] mpv absent du PATH (Annie peut utiliser un chemin configure)"
+}
+
+Write-Host ""
+Write-Host "==> Lecteur video (resolution Annie)"
+$playerCode = @'
+from annie.stream import resolve_player
+print(resolve_player())
+'@
+if ($uv) {
+    uv run python -c $playerCode
+} else {
+    python -c $playerCode
+}
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[FAIL] aucun lecteur resolu par Annie" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "[ok] lecteur video"
 }
 
 Write-Host ""

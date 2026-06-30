@@ -773,7 +773,11 @@ BackToEpisode = _BackToEpisode
 
 def pick_subtitle_language() -> str | None | _BackToEpisode:
     """fzf : langues + Aucun. Retourne code ISO, None (sans subs), ou BACK_TO_EPISODE."""
-    from annie.subtitles import languages
+    from annie.subtitles import languages, subtitles_api_available, _opensubtitles_config_hint
+
+    if not subtitles_api_available():
+        print_status(_opensubtitles_config_hint(), kind="warn")
+        return None
 
     indexed: dict[str, str | _SkipSubs] = {}
     previews: dict[str, str] = {}

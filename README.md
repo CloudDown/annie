@@ -94,7 +94,7 @@ cd annie
 powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
 ```
 
-L’installateur crée la commande **`annie`** dans le PATH utilisateur (**fermez et rouvrez le terminal**).
+L’installateur crée la commande **`annie`** dans le PATH utilisateur, installe les dépendances et **détecte automatiquement** mpv, VLC ou ffplay (winget, Chocolatey, Scoop). Le chemin du lecteur est enregistré dans `%APPDATA%\annie\config.toml`.
 
 Sans réinstaller, depuis le dossier du projet : `.\annie.cmd`
 
@@ -103,20 +103,7 @@ Si Windows affiche *« Python was not found… Microsoft Store »*, désactivez 
 
 **Important** : n’exécutez pas `python -m venv .` à la racine du dépôt. Utilisez **`annie`** ou **`annie.cmd`** (pas `annie.exe` pip).
 
-Si Annie affiche *« no player found »*, mpv n’est pas dans le PATH. Relancez `.\install-windows.bat`, ou installez mpv manuellement :
-
-```powershell
-winget install -e --id shinchiro.mpv
-# puis fermez et rouvrez le terminal
-mpv --version
-```
-
-Vous pouvez aussi indiquer le chemin complet dans `%APPDATA%\annie\config.toml` :
-
-```toml
-[player]
-command = "C:\\Program Files\\mpv\\mpv.exe"
-```
+Si la lecture échoue, relancez `.\install-windows.bat` après `git pull`.
 
 Options : `-SkipOptional` pour ne pas installer fzf/mpv automatiquement.
 

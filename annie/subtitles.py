@@ -150,13 +150,24 @@ def _resolve_credentials() -> tuple[str, str]:
     return username, password
 
 
+def _opensubtitles_config_hint() -> str:
+    from annie.paths import config_dir
+
+    config_path = config_dir() / "config.toml"
+    return (
+        "clé API OpenSubtitles manquante — ajoutez api_key dans [subtitles] de "
+        f"{config_path} (gratuit : https://www.opensubtitles.com/en/consumers)"
+    )
+
+
+def subtitles_api_available(explicit: str | None = None) -> bool:
+    return bool(_resolve_api_key(explicit))
+
+
 def _require_api_key(explicit: str | None = None) -> str:
     key = _resolve_api_key(explicit)
     if not key:
-        raise SubtitlesError(
-            "clé API OpenSubtitles manquante — définissez opensubtitles_api_key dans "
-            "~/.config/annie/config.toml (gratuit : https://www.opensubtitles.com/en/consumers)"
-        )
+        raise SubtitlesError(_opensubtitles_config_hint())
     return key
 
 

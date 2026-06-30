@@ -19,9 +19,33 @@ _WINDOWS_PROGRAM_DIRS: dict[str, tuple[str, ...]] = {
     ),
     "ffplay": (
         r"C:\Program Files\ffmpeg\bin",
+        r"C:\Program Files (x86)\ffmpeg\bin",
         r"C:\ffmpeg\bin",
     ),
 }
+
+_MEDIA_PLAYER_NAMES: tuple[str, ...] = ("mpv", "vlc", "ffplay")
+
+
+def _windows_extra_dirs(stem: str) -> tuple[Path, ...]:
+    dirs: list[Path] = []
+    for key in ("LOCALAPPDATA", "USERPROFILE"):
+        value = os.environ.get(key)
+        if not value:
+            continue
+        base = Path(value)
+        dirs.extend(
+            (
+                base / "Programs" / stem,
+                base / "Programs" / stem / "bin",
+                base / "scoop" / "apps" / stem / "current",
+                base / "scoop" / "shims",
+            )
+        )
+    choco = Path(r"C:\ProgramData\chocolatey\bin")
+    if choco.is_dir():
+        dirs.append(choco)
+    return tuple(dirs)
 
 
 def find_program(name: str) -> str | None:
@@ -48,6 +72,10 @@ def find_program(name: str) -> str | None:
         path = Path(directory) / exe_name
         if path.is_file():
             return str(path.resolve())
+    for directory in _windows_extra_dirs(stem):
+        path = directory / exe_name
+        if path.is_file():
+            return str(path.resolve())
 
     local = os.environ.get("LOCALAPPDATA")
     if local:
@@ -56,13 +84,30 @@ def find_program(name: str) -> str | None:
             for match in winget.rglob(exe_name):
                 if match.is_file():
                     return str(match.resolve())
+        programs = Path(local) / "Programs"
+        if programs.is_dir():
+            for match in programs.rglob(exe_name):
+                if match.is_file():
+                    return str(match.resolve())
 
-    program_files = os.environ.get("ProgramFiles")
-    if program_files:
-        for match in Path(program_files).rglob(exe_name):
+    for env_key in ("ProgramFiles", "ProgramFiles(x86)"):
+        root = os.environ.get(env_key)
+        if not root:
+            continue
+        base = Path(root)
+        for match in base.rglob(exe_name):
             if match.is_file() and match.name.lower() == exe_name.lower():
                 return str(match.resolve())
 
+    return None
+
+
+def find_best_media_player() -> tuple[str, str] | None:
+    """Retourne (nom, chemin) du premier lecteur utilisable trouvé."""
+    for name in _MEDIA_PLAYER_NAMES:
+        exe = find_program(name)
+        if exe:
+            return name, exe
     return None
 
 

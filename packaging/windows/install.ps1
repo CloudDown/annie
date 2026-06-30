@@ -357,6 +357,20 @@ function Install-AnnieCommand {
     }
 }
 
+function Invoke-AnnieUvPython {
+    param([string]$Code)
+    $uv = Get-Command uv -ErrorAction SilentlyContinue
+    if ($uv) {
+        & uv run python -c $Code
+    } else {
+        Invoke-AnniePython -PythonArgs @("-c", $Code)
+    }
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        return $false
+    }
+    return $true
+}
+
 function Add-UserPathEntry {
     param([string]$Directory)
     if (-not $Directory -or -not (Test-Path -LiteralPath $Directory)) {
@@ -365,6 +379,9 @@ function Add-UserPathEntry {
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) { $userPath = "" }
     if ($userPath.Split(";") -contains $Directory) {
+        if ($env:Path.Split(";") -notcontains $Directory) {
+            $env:Path = "$Directory;$env:Path"
+        }
         return
     }
     [Environment]::SetEnvironmentVariable("Path", "$Directory;$userPath", "User")
@@ -374,15 +391,22 @@ function Add-UserPathEntry {
     Write-Host "==> Ajoute au PATH utilisateur : $Directory"
 }
 
-function Find-ProgramExe {
-    param([string]$Name)
-    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($cmd -and $cmd.Source) {
-        return $cmd.Source
+function Test-ProgramRunnable {
+    param([string]$Exe)
+    if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) {
+        return $false
     }
-    $exeName = if ($Name.ToLower().EndsWith(".exe")) { $Name } else { "$Name.exe" }
+    & $Exe --version 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    & $Exe -version 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
+function Get-ProgramSearchDirs {
+    param([string]$Name)
+    $stem = $Name.ToLower().Replace(".exe", "")
     $dirs = @()
-    switch ($Name.ToLower()) {
+    switch ($stem) {
         "mpv" {
             $dirs = @(
                 "$env:ProgramFiles\mpv",
@@ -400,26 +424,61 @@ function Find-ProgramExe {
         "ffplay" {
             $dirs = @(
                 "$env:ProgramFiles\ffmpeg\bin",
-                "C:\ffmpeg\bin"
+                "${env:ProgramFiles(x86)}\ffmpeg\bin",
+                "C:\ffmpeg\bin",
+                "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+            )
+        }
+        "fzf" {
+            $dirs = @(
+                "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
+                "$env:USERPROFILE\scoop\shims"
             )
         }
     }
-    foreach ($dir in $dirs) {
-        $candidate = Join-Path $dir $exeName
-        if (Test-Path -LiteralPath $candidate) {
-            return $candidate
+    foreach ($root in @($env:LOCALAPPDATA, $env:USERPROFILE)) {
+        if (-not $root) { continue }
+        $dirs += @(
+            (Join-Path $root "Programs\$stem"),
+            (Join-Path $root "Programs\$stem\bin"),
+            (Join-Path $root "scoop\apps\$stem\current"),
+            (Join-Path $root "scoop\shims")
+        )
+    }
+    $dirs += @(
+        "C:\ProgramData\chocolatey\bin",
+        (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"),
+        (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"),
+        (Join-Path $env:LOCALAPPDATA "Programs")
+    )
+    return $dirs | Where-Object { $_ -and $_.Trim() } | Select-Object -Unique
+}
+
+function Find-ProgramExe {
+    param([string]$Name)
+    Refresh-SessionPath
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+        return $cmd.Source
+    }
+    $exeName = if ($Name.ToLower().EndsWith(".exe")) { $Name } else { "$Name.exe" }
+    foreach ($dir in (Get-ProgramSearchDirs -Name $Name)) {
+        if (-not (Test-Path -LiteralPath $dir)) { continue }
+        $direct = Join-Path $dir $exeName
+        if (Test-Path -LiteralPath $direct) {
+            return (Resolve-Path -LiteralPath $direct).Path
+        }
+        if (Test-Path -LiteralPath $dir -PathType Container) {
+            $found = Get-ChildItem -Path $dir -Filter $exeName -Recurse -Depth 5 -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($found) {
+                return $found.FullName
+            }
         }
     }
-    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
-    if (Test-Path -LiteralPath $wingetRoot) {
-        $found = Get-ChildItem -Path $wingetRoot -Filter $exeName -Recurse -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($found) {
-            return $found.FullName
-        }
-    }
-    if ($env:ProgramFiles) {
-        $found = Get-ChildItem -Path $env:ProgramFiles -Filter $exeName -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+        $found = Get-ChildItem -Path $root -Filter $exeName -Recurse -Depth 4 -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($found) {
             return $found.FullName
@@ -428,41 +487,179 @@ function Find-ProgramExe {
     return $null
 }
 
+function Find-BestMediaPlayer {
+    foreach ($name in @("mpv", "vlc", "ffplay")) {
+        $exe = Find-ProgramExe -Name $name
+        if ($exe -and (Test-ProgramRunnable -Exe $exe)) {
+            return @{ Name = $name; Exe = $exe }
+        }
+    }
+    return $null
+}
+
+function Install-WingetPackages {
+    param(
+        [string]$Label,
+        [string[]]$Ids
+    )
+    foreach ($id in $Ids) {
+        if (Install-WingetPackage -Id $id -Label $Label) {
+            Start-Sleep -Seconds 2
+            Refresh-SessionPath
+            return $true
+        }
+    }
+    return $false
+}
+
+function Install-ViaChocolatey {
+    param([string]$Package)
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        return $false
+    }
+    Write-Host "==> Installation $Package via Chocolatey..."
+    choco install $Package -y --no-progress 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Refresh-SessionPath
+        return $true
+    }
+    return $false
+}
+
+function Install-ViaScoop {
+    param([string]$Package)
+    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+        return $false
+    }
+    Write-Host "==> Installation $Package via Scoop..."
+    scoop install $Package 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Refresh-SessionPath
+        return $true
+    }
+    return $false
+}
+
 function Ensure-ProgramOnPath {
     param(
         [string]$Name,
-        [string[]]$WingetIds
+        [string[]]$WingetIds,
+        [string[]]$ChocolateyPackages = @(),
+        [string[]]$ScoopPackages = @()
     )
     Refresh-SessionPath
     $exe = Find-ProgramExe -Name $Name
     if ($exe) {
         Write-Host "==> $Name deja installe : $exe"
         Add-UserPathEntry -Directory (Split-Path $exe -Parent)
-        return
+        return $exe
     }
-    foreach ($id in $WingetIds) {
-        if (Install-WingetPackage -Id $id -Label $Name) {
-            Refresh-SessionPath
+    if ($WingetIds -and (Install-WingetPackages -Label $Name -Ids $WingetIds)) {
+        $exe = Find-ProgramExe -Name $Name
+        if ($exe) {
+            Write-Host "==> $Name installe : $exe"
+            Add-UserPathEntry -Directory (Split-Path $exe -Parent)
+            return $exe
+        }
+    }
+    foreach ($pkg in $ChocolateyPackages) {
+        if (Install-ViaChocolatey -Package $pkg) {
             $exe = Find-ProgramExe -Name $Name
             if ($exe) {
-                Write-Host "==> $Name installe : $exe"
+                Write-Host "==> $Name installe (Chocolatey) : $exe"
                 Add-UserPathEntry -Directory (Split-Path $exe -Parent)
-                return
+                return $exe
             }
         }
     }
-    Write-Warning "$Name toujours absent."
-    Write-Warning "  Essayez (PowerShell admin) : winget install -e --id shinchiro.mpv"
-    Write-Warning "  Ou telechargez mpv : https://mpv.io/installation/"
-    Write-Warning "  Puis ajoutez le dossier de mpv.exe au PATH utilisateur."
+    foreach ($pkg in $ScoopPackages) {
+        if (Install-ViaScoop -Package $pkg) {
+            $exe = Find-ProgramExe -Name $Name
+            if ($exe) {
+                Write-Host "==> $Name installe (Scoop) : $exe"
+                Add-UserPathEntry -Directory (Split-Path $exe -Parent)
+                return $exe
+            }
+        }
+    }
+    return $null
 }
 
-function Ensure-OptionalTool {
-    param(
-        [string]$Name,
-        [string]$WingetId
-    )
-    Ensure-ProgramOnPath -Name $Name -WingetIds @($WingetId)
+function Ensure-MediaPlayer {
+    $player = Find-BestMediaPlayer
+    if ($player) {
+        Write-Host "==> Lecteur detecte : $($player.Name) -> $($player.Exe)"
+        Add-UserPathEntry -Directory (Split-Path $player.Exe -Parent)
+        return $player
+    }
+
+    Write-Host "==> Aucun lecteur detecte - installation automatique..."
+    $null = Ensure-ProgramOnPath -Name "mpv" -WingetIds @(
+        "shinchiro.mpv",
+        "mpv.mpv",
+        "mpv-player.mpv-CI.MSVC",
+        "zhongfly.mpv"
+    ) -ChocolateyPackages @("mpv") -ScoopPackages @("mpv")
+    $player = Find-BestMediaPlayer
+    if ($player) {
+        Write-Host "==> Lecteur installe : $($player.Name) -> $($player.Exe)"
+        return $player
+    }
+
+    $null = Ensure-ProgramOnPath -Name "vlc" -WingetIds @(
+        "VideoLAN.VLC"
+    ) -ChocolateyPackages @("vlc") -ScoopPackages @("vlc")
+    $player = Find-BestMediaPlayer
+    if ($player) {
+        Write-Host "==> Lecteur de repli : $($player.Name) -> $($player.Exe)"
+        return $player
+    }
+
+    $null = Ensure-ProgramOnPath -Name "ffplay" -WingetIds @(
+        "Gyan.FFmpeg",
+        "ffmpeg"
+    ) -ChocolateyPackages @("ffmpeg") -ScoopPackages @("ffmpeg")
+    $player = Find-BestMediaPlayer
+    if ($player) {
+        Write-Host "==> Lecteur de repli : $($player.Name) -> $($player.Exe)"
+        return $player
+    }
+
+    return $null
+}
+
+function Configure-AnnieMediaPlayer {
+    $code = @'
+from annie.user_config import ensure_media_player_config
+from annie.stream import resolve_player
+exe = ensure_media_player_config(force=True)
+if not exe:
+    raise SystemExit("no player")
+kind = resolve_player()
+print(kind, exe)
+'@
+    if (-not (Invoke-AnnieUvPython -Code $code)) {
+        return $false
+    }
+    return $true
+}
+
+function Test-MediaPlayerReady {
+    $code = @'
+from annie.stream import resolve_player
+from annie.paths import find_best_media_player
+kind = resolve_player()
+found = find_best_media_player()
+print(kind, found[1] if found else "")
+'@
+    if (-not (Invoke-AnnieUvPython -Code $code)) {
+        Write-Warning "Lecteur video non configure."
+        Write-Warning "  Installez mpv : winget install -e --id shinchiro.mpv"
+        Write-Warning "  Puis relancez install-windows.bat"
+        return $false
+    }
+    Write-Host "==> Lecteur video : OK"
+    return $true
 }
 
 function Install-OptionalTools {
@@ -470,13 +667,19 @@ function Install-OptionalTools {
         Write-Host "==> Outils optionnels ignores (-SkipOptional)"
         return
     }
-    Write-Host "==> Outils interactifs (fzf, mpv)"
-    Ensure-OptionalTool -Name "fzf" -WingetId "junegunn.fzf"
-    Ensure-ProgramOnPath -Name "mpv" -WingetIds @(
-        "shinchiro.mpv",
-        "mpv.mpv",
-        "mpv-player.mpv-CI.MSVC"
-    )
+    Write-Host "==> Outils interactifs (fzf, lecteur video)"
+    Ensure-ProgramOnPath -Name "fzf" -WingetIds @(
+        "junegunn.fzf"
+    ) -ChocolateyPackages @("fzf") -ScoopPackages @("fzf") | Out-Null
+    $player = Ensure-MediaPlayer
+    if ($player) {
+        if (-not (Configure-AnnieMediaPlayer)) {
+            Write-Warning "Lecteur trouve mais configuration Annie echouee."
+        }
+    } else {
+        Write-Warning "Aucun lecteur video installe (mpv, vlc ou ffmpeg/ffplay)."
+        Write-Warning "Annie fonctionnera mais ne pourra pas lire les episodes."
+    }
 }
 
 function Test-AnnieLaunch {
@@ -508,6 +711,7 @@ Remove-ConflictingAnnieExe
 Install-AnnieCommand
 Install-OptionalTools
 Test-AnnieLaunch
+Test-MediaPlayerReady
 
 Write-Host ""
 Write-Host "========================================"

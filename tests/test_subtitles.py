@@ -28,6 +28,17 @@ from annie.subtitles import (
 from tests.helpers import FIXTURES_DIR, result_item
 
 
+class OpenSubtitlesConfigHintTests(unittest.TestCase):
+    def test_hint_uses_platform_config_path(self) -> None:
+        from annie.paths import config_dir
+        from annie.subtitles import _opensubtitles_config_hint
+
+        hint = _opensubtitles_config_hint()
+        self.assertIn(str(config_dir() / "config.toml"), hint)
+        self.assertIn("[subtitles]", hint)
+        self.assertNotIn("~/.config/annie", hint)
+
+
 class SubtitleLanguageTests(unittest.TestCase):
     def test_language_for_known_codes(self) -> None:
         self.assertEqual(language_for("en").code, "en")
