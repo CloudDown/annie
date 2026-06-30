@@ -22,15 +22,19 @@ class ReZeroCatalogFixtureTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.fixture = load_fixture("catalog_re_zero.json")
         cls.entries = entries_from_fixture(cls.fixture)
-        cls.releases = [
-            mal_release(
-                mal_id=row["mal_id"],
-                season=row["season"],
-                episode_count=row["episode_count"],
-                label=row["label"],
+        cursor = 0
+        cls.releases = []
+        for row in cls.fixture["releases"]:
+            cls.releases.append(
+                mal_release(
+                    mal_id=row["mal_id"],
+                    season=row["season"],
+                    episode_count=row["episode_count"],
+                    label=row["label"],
+                    absolute_episode_offset=cursor,
+                )
             )
-            for row in cls.fixture["releases"]
-        ]
+            cursor += row["episode_count"]
 
     def test_no_spinoff_in_catalog(self) -> None:
         for title in self.fixture["entries"]:
@@ -59,6 +63,7 @@ class ReZeroCatalogFixtureTests(unittest.TestCase):
         self.assertIn(1, by_season)
         self.assertIn(2, by_season)
         self.assertIn(3, by_season)
+        self.assertIn(4, by_season)
 
         for season_str, rules in self.fixture["expectations"].items():
             season = int(season_str)
@@ -85,6 +90,46 @@ class ReZeroCatalogFixtureTests(unittest.TestCase):
         self.assertIsNotNone(ep15)
         self.assertNotIn("2nd Season", ep15.entry.title)
 
+    def test_s4_absolute_episodes_from_subsplease(self) -> None:
+        def fake_search(query: str, **kwargs):
+            return self.entries
+
+        sections = build_catalog_from_releases(
+            self.releases,
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        s4 = next(s for s in sections if s.season == 4)
+        ep1 = s4.episodes.get(1)
+        ep11 = s4.episodes.get(11)
+        self.assertIsNotNone(ep1)
+        self.assertIsNotNone(ep11)
+        self.assertIn("- 67", ep1.entry.title)
+        self.assertIn("- 77", ep11.entry.title)
+
+    def test_s4_scoped_build_keeps_absolute_offset(self) -> None:
+        scoped = scope_releases_for_target(self.releases, season=4)
+        self.assertEqual(len(scoped), 1)
+        self.assertEqual(scoped[0].absolute_episode_offset, 66)
+
+        def fake_search(query: str, **kwargs):
+            return self.entries
+
+        sections = build_catalog_from_releases(
+            scoped,
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertEqual(section.season, 4)
+        self.assertIn(1, section.episodes)
+        self.assertIn(11, section.episodes)
+        self.assertNotIn(12, section.episodes)
+        self.assertNotIn(25, section.episodes)
+
 
 class NyaaQueriesForTests(unittest.TestCase):
     def test_season_variants_not_truncated(self) -> None:
@@ -108,6 +153,24 @@ class NyaaQueriesForTests(unittest.TestCase):
         self.assertNotIn("Re S01", queries)
         self.assertNotIn("Re Season 01", queries)
 
+    def test_season_4_includes_ordinal_variant(self) -> None:
+        from annie.mal import MalAnime, nyaa_queries_for
+
+        anime = MalAnime(
+            mal_id=4,
+            title="Re:ZERO kara Hajimeru Isekai Seikatsu 4th Season",
+            title_english="Re:ZERO kara Hajimeru Isekai Seikatsu 4th Season",
+            title_japanese="",
+            type="TV",
+            episodes=19,
+            aired_from="2026",
+            is_recap=False,
+            via_relation="Sequel",
+        )
+        queries = nyaa_queries_for(anime, user_query="re zero", season=4)
+        self.assertIn("re zero 4th Season", queries)
+        self.assertIn("re zero S04", queries)
+
 
 class ScopeReleasesTests(unittest.TestCase):
     def test_filters_to_target_season(self) -> None:
@@ -118,6 +181,31 @@ class ScopeReleasesTests(unittest.TestCase):
         scoped = scope_releases_for_target(releases, season=2)
         self.assertEqual(len(scoped), 1)
         self.assertEqual(scoped[0].season, 2)
+
+    def test_target_season_excludes_movies(self) -> None:
+        from annie.types import MalRelease
+
+        releases = [
+            mal_release(
+                mal_id=4,
+                season=4,
+                episode_count=19,
+                absolute_episode_offset=66,
+            ),
+            MalRelease(
+                mal_id=99,
+                label="Memory Snow",
+                kind=MediaKind.MOVIE,
+                season=None,
+                episode_count=1,
+                nyaa_queries=["re zero movie"],
+                sort_key=(99, "movie"),
+            ),
+        ]
+        scoped = scope_releases_for_target(releases, season=4)
+        self.assertEqual(len(scoped), 1)
+        self.assertEqual(scoped[0].kind, MediaKind.EPISODE)
+        self.assertEqual(scoped[0].absolute_episode_offset, 66)
 
 
 class ResolveCatalogTargetTests(unittest.TestCase):

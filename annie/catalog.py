@@ -132,12 +132,9 @@ def scope_releases_for_target(
     for release in releases:
         if kind is not None and release.kind != kind:
             continue
-        if (
-            season is not None
-            and release.kind == MediaKind.EPISODE
-            and release.season != season
-        ):
-            continue
+        if season is not None:
+            if release.kind != MediaKind.EPISODE or release.season != season:
+                continue
         scoped.append(release)
     return scoped or releases
 
@@ -1265,7 +1262,7 @@ def build_catalog_from_releases(
     sections: list[MediaSection] = []
     seen_magnets: set[str] = set()
     workers = min(app_cfg.nyaa.parallel, max(len(releases), 1))
-    absolute_offsets = franchise_absolute_offsets(releases)
+    computed_offsets = franchise_absolute_offsets(releases)
     franchise_max_tv_season = max_tv_season(releases)
 
     unique_queries: list[str] = []
@@ -1345,7 +1342,10 @@ def build_catalog_from_releases(
             skip_recap_movies=skip_recap_movies,
             match_queries=release.nyaa_queries,
         )
-        absolute_offset = absolute_offsets.get(release.mal_id, 0)
+        absolute_offset = max(
+            release.absolute_episode_offset,
+            computed_offsets.get(release.mal_id, 0),
+        )
         section = _pick_section_for_release(
             parts,
             release,

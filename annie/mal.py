@@ -575,7 +575,12 @@ def nyaa_queries_for(
     if season is not None:
         short = _franchise_short_query(user_query, anime)
         if short:
-            for variant in (f"{short} S{season:02d}", f"{short} Season {season:02d}"):
+            ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(season, f"{season}th")
+            for variant in (
+                f"{short} S{season:02d}",
+                f"{short} Season {season:02d}",
+                f"{short} {ordinal} Season",
+            ):
                 if variant not in season_variants:
                     season_variants.append(variant)
             if anime.episodes and anime.episodes <= 52:
@@ -639,6 +644,7 @@ def franchise_to_releases(
     )
 
     releases: list[MalRelease] = []
+    cursor = 0
     for index, (anime, part2) in enumerate(tv_seasons, start=1):
         queries: list[str] = []
         for value in (
@@ -661,8 +667,10 @@ def franchise_to_releases(
                 episode_count=anime.episodes,
                 nyaa_queries=queries,
                 sort_key=(index * 10, anime.title.lower()),
+                absolute_episode_offset=cursor,
             )
         )
+        cursor += anime.episodes or 0
 
     for index, anime in enumerate(movies, start=1):
         releases.append(

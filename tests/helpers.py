@@ -48,6 +48,7 @@ def mal_release(
     episode_count: int,
     label: str | None = None,
     queries: list[str] | None = None,
+    absolute_episode_offset: int = 0,
 ) -> MalRelease:
     label = label or f"Season {season:02d}"
     return MalRelease(
@@ -58,6 +59,7 @@ def mal_release(
         episode_count=episode_count,
         nyaa_queries=queries or ["re zero"],
         sort_key=(season, label.lower()),
+        absolute_episode_offset=absolute_episode_offset,
     )
 
 

@@ -82,3 +82,4 @@ class MalRelease:
     episode_count: int | None
     nyaa_queries: list[str]
     sort_key: tuple[int, str]
+    absolute_episode_offset: int = 0
