@@ -8,22 +8,18 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from annie.settings import AnnieSettings
-from annie.media import (
-    AnnieConfig,
-    MediaKind,
-    MediaSection,
-    ResultItem,
-    WatchTarget,
+from annie.config import AnnieConfig
+from annie.catalog import (
     build_catalog,
     build_catalog_from_releases,
     fill_catalog_gaps,
     fill_section_gaps,
-    minimal_label,
-    pick_best,
-    rank_entry,
     resolve_catalog_target,
     scope_releases_for_target,
 )
+from annie.parsing import minimal_label
+from annie.scoring import pick_best, rank_entry
+from annie.types import MediaKind, MediaSection, ResultItem, WatchTarget
 from annie.mal import (
     collect_franchise,
     franchise_to_releases,

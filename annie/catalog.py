@@ -752,21 +752,6 @@ def build_catalog(
     return result
 
 
-def find_section(
-    sections: list[MediaSection],
-    season: int | None,
-    kind: MediaKind | None,
-) -> MediaSection | None:
-    for section in sections:
-        if kind is not None and section.kind != kind:
-            continue
-        if season is None:
-            return section
-        if section.season == season:
-            return section
-    return None
-
-
 def _empty_section_for_release(release: MalRelease) -> MediaSection:
     return MediaSection(
         key=f"mal:{release.mal_id}",

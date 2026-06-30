@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from annie.scoring import (
-    catalog_episode_rank,
-    catalog_episode_score,
-    pick_best,
-    rank_entry,
-)
+from annie.scoring import pick_best, rank_entry
+from tests.quality_helpers import catalog_episode_rank, catalog_episode_score
 from annie.types import MediaKind, ResultItem, WatchTarget
 from tests.helpers import nyaa_entry
 

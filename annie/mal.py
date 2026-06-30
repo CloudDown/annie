@@ -14,7 +14,9 @@ from pathlib import Path
 
 from annie.cache import read_json, write_json
 from annie.paths import cache_dir
-from annie.media import MediaKind, MalRelease, is_recap_movie, normalize
+from annie.catalog import is_recap_movie
+from annie.parsing import normalize
+from annie.types import MalRelease, MediaKind
 from annie.net import fetch_json
 
 JIKAN_BASE = "https://api.jikan.moe/v4"

@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from annie.paths import cache_dir
-from annie.media import MediaKind, MediaSection, ResultItem, minimal_label
+from annie.parsing import minimal_label
+from annie.types import MediaKind, MediaSection, ResultItem
 
 
 class C:

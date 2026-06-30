@@ -46,7 +46,6 @@ annie/
   parsing.py          Parsing titres Nyaa
   scoring.py          Scoring des releases
   catalog.py          Construction catalogue aligné MAL
-  media.py            Façade de compatibilité (ré-exporte les modules ci-dessus)
   settings.py         Options streaming (sections [streaming], [buffer], … dans config.toml)
   nyaa.py             Client Nyaa & cache
   stream.py           libtorrent + lecteurs

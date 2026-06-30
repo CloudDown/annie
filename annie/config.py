@@ -5,68 +5,15 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, replace
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib  # type: ignore
-
-from annie.user_config import CONFIG_DIR, CONFIG_FILE, ensure_user_config
+from annie import toml_util
+from annie.user_config import CONFIG_FILE, ensure_user_config
 
 _config_cache: AnnieConfig | None = None
 
 
-def _table(data: dict, key: str) -> dict:
-    value = data.get(key, {})
-    return value if isinstance(value, dict) else {}
-
-
-def _bool(value: object, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _int(value: object, default: int) -> int:
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(value: object, default: float) -> float:
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _str(value: object, default: str = "") -> str:
-    if value is None:
-        return default
-    return str(value).strip()
-
-
-def _str_list(value: object) -> list[str]:
-    if not value:
-        return []
-    if isinstance(value, str):
-        return [value.strip()] if value.strip() else []
-    return [str(item).strip() for item in value if str(item).strip()]
-
-
 def _load_config_data() -> dict:
     ensure_user_config()
-    if not CONFIG_FILE.is_file():
-        return {}
-    return tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    return toml_util.read_toml(CONFIG_FILE)
 
 
 @dataclass
@@ -192,45 +139,49 @@ class AnnieConfig:
             return replace(_config_cache)
 
         data = _load_config_data()
-        player_table = _table(data, "player")
-        nyaa_table = _table(data, "nyaa")
-        mal_table = _table(data, "mal")
-        catalog_table = _table(data, "catalog")
-        subtitles_table = _table(data, "subtitles")
-        ui_table = _table(data, "ui")
+        player_table = toml_util.table(data, "player")
+        nyaa_table = toml_util.table(data, "nyaa")
+        mal_table = toml_util.table(data, "mal")
+        catalog_table = toml_util.table(data, "catalog")
+        subtitles_table = toml_util.table(data, "subtitles")
+        ui_table = toml_util.table(data, "ui")
 
         player_raw = data.get("player")
         if isinstance(player_raw, dict):
             player_raw = player_raw.get("command")
-        player = os.environ.get("ANNIE_PLAYER") or _str(
+        player = os.environ.get("ANNIE_PLAYER") or toml_util.str_val(
             player_raw or player_table.get("command"),
             "auto",
         )
 
         nyaa = NyaaConfig(
-            category=_str(data.get("category") or nyaa_table.get("category"), "0_0"),
-            filter_code=_str(
+            category=toml_util.str_val(
+                data.get("category") or nyaa_table.get("category"), "0_0"
+            ),
+            filter_code=toml_util.str_val(
                 data.get("filter")
                 or data.get("filter_code")
                 or nyaa_table.get("filter")
                 or nyaa_table.get("filter_code"),
                 "0",
             ),
-            search_pages=_int(nyaa_table.get("search_pages"), 2),
-            parallel=_int(nyaa_table.get("parallel"), 10),
-            rate=_float(nyaa_table.get("rate"), 6.0),
-            rate_burst=_int(nyaa_table.get("rate_burst"), 8),
-            cache_ttl_minutes=_int(nyaa_table.get("cache_ttl_minutes"), 45),
-            sort=_str(nyaa_table.get("sort"), "seeders"),
-            order=_str(nyaa_table.get("order"), "desc"),
-            timeout=_float(nyaa_table.get("timeout"), 30.0),
-            retries=_int(nyaa_table.get("retries"), 4),
+            search_pages=toml_util.int_val(nyaa_table.get("search_pages"), 2),
+            parallel=toml_util.int_val(nyaa_table.get("parallel"), 10),
+            rate=toml_util.float_val(nyaa_table.get("rate"), 6.0),
+            rate_burst=toml_util.int_val(nyaa_table.get("rate_burst"), 8),
+            cache_ttl_minutes=toml_util.int_val(
+                nyaa_table.get("cache_ttl_minutes"), 45
+            ),
+            sort=toml_util.str_val(nyaa_table.get("sort"), "seeders"),
+            order=toml_util.str_val(nyaa_table.get("order"), "desc"),
+            timeout=toml_util.float_val(nyaa_table.get("timeout"), 30.0),
+            retries=toml_util.int_val(nyaa_table.get("retries"), 4),
         )
 
         mal = MalConfig(
-            enabled=_bool(mal_table.get("enabled"), True),
-            parallel=_int(mal_table.get("parallel"), 10),
-            cache_ttl_hours=_int(mal_table.get("cache_ttl_hours"), 168),
+            enabled=toml_util.bool_val(mal_table.get("enabled"), True),
+            parallel=toml_util.int_val(mal_table.get("parallel"), 10),
+            cache_ttl_hours=toml_util.int_val(mal_table.get("cache_ttl_hours"), 168),
         )
 
         skip_recap = data.get("skip_recap_movies")
@@ -238,54 +189,60 @@ class AnnieConfig:
             skip_recap = catalog_table.get("skip_recap_movies")
 
         catalog = CatalogConfig(
-            skip_recap_movies=_bool(skip_recap, False),
-            fill_gaps_on_search=_bool(
+            skip_recap_movies=toml_util.bool_val(skip_recap, False),
+            fill_gaps_on_search=toml_util.bool_val(
                 catalog_table.get("fill_gaps_on_search"), False
             ),
-            search_results_limit=_int(
+            search_results_limit=toml_util.int_val(
                 catalog_table.get("search_results_limit"), 8
             ),
-            franchise_max_queries=_int(
+            franchise_max_queries=toml_util.int_val(
                 catalog_table.get("franchise_max_queries"), 20
             ),
-            primary_search_pages=_int(
+            primary_search_pages=toml_util.int_val(
                 catalog_table.get("primary_search_pages"), 2
             ),
-            franchise_search_pages=_int(
+            franchise_search_pages=toml_util.int_val(
                 catalog_table.get("franchise_search_pages"), 2
             ),
-            gap_search_pages=_int(catalog_table.get("gap_search_pages"), 1),
-            gap_max_missing=_int(catalog_table.get("gap_max_missing"), 6),
-            gap_max_queries=_int(catalog_table.get("gap_max_queries"), 10),
-            preferred_groups=_str_list(
+            gap_search_pages=toml_util.int_val(
+                catalog_table.get("gap_search_pages"), 1
+            ),
+            gap_max_missing=toml_util.int_val(
+                catalog_table.get("gap_max_missing"), 6
+            ),
+            gap_max_queries=toml_util.int_val(
+                catalog_table.get("gap_max_queries"), 10
+            ),
+            preferred_groups=toml_util.str_list(
                 data.get("preferred_groups")
                 or catalog_table.get("preferred_groups")
             ),
-            preferred_group_bonus=_int(
+            preferred_group_bonus=toml_util.int_val(
                 catalog_table.get("preferred_group_bonus"), 10
             ),
-            min_seeders_strict=_int(
+            min_seeders_strict=toml_util.int_val(
                 catalog_table.get("min_seeders_strict"), 10
             ),
-            min_seeders_relaxed=_int(
+            min_seeders_relaxed=toml_util.int_val(
                 catalog_table.get("min_seeders_relaxed"), 3
             ),
-            min_quality_strict=_int(
+            min_quality_strict=toml_util.int_val(
                 catalog_table.get("min_quality_strict"), 26
             ),
-            min_quality_relaxed=_int(
+            min_quality_relaxed=toml_util.int_val(
                 catalog_table.get("min_quality_relaxed"), 12
             ),
-            coverage_relaxed=_float(
+            coverage_relaxed=toml_util.float_val(
                 catalog_table.get("coverage_relaxed"), 0.85
             ),
-            prefer_season_batch=_bool(
+            prefer_season_batch=toml_util.bool_val(
                 catalog_table.get("prefer_season_batch"), True
             ),
-            season_batch_min_coverage=_float(
+            season_batch_min_coverage=toml_util.float_val(
                 catalog_table.get("season_batch_min_coverage"), 0.85
             ),
-            coherence_min_share=_float(
+            coherence_min_share=toml_util.float_val(
                 catalog_table.get("coherence_min_share"), 0.60
             ),
         )
@@ -295,23 +252,25 @@ class AnnieConfig:
             subtitles_enabled = subtitles_table.get("enabled")
 
         subtitles = SubtitlesConfig(
-            enabled=_bool(subtitles_enabled, True),
-            default_lang=_str(
+            enabled=toml_util.bool_val(subtitles_enabled, True),
+            default_lang=toml_util.str_val(
                 data.get("default_sub_lang")
                 or subtitles_table.get("default_lang")
             ),
-            fetch_timeout=_float(subtitles_table.get("fetch_timeout"), 20.0),
-            api_key=_str(
+            fetch_timeout=toml_util.float_val(
+                subtitles_table.get("fetch_timeout"), 20.0
+            ),
+            api_key=toml_util.str_val(
                 os.environ.get("OPENSUBTITLES_API_KEY")
                 or data.get("opensubtitles_api_key")
                 or subtitles_table.get("api_key")
             ),
-            username=_str(
+            username=toml_util.str_val(
                 os.environ.get("OPENSUBTITLES_USERNAME")
                 or data.get("opensubtitles_username")
                 or subtitles_table.get("username")
             ),
-            password=_str(
+            password=toml_util.str_val(
                 os.environ.get("OPENSUBTITLES_PASSWORD")
                 or data.get("opensubtitles_password")
                 or subtitles_table.get("password")
@@ -319,10 +278,12 @@ class AnnieConfig:
         )
 
         ui = UiConfig(
-            seeders_highlight=_int(ui_table.get("seeders_highlight"), 50),
-            show_banner=_bool(ui_table.get("show_banner"), True),
-            mal_pool_workers=_int(ui_table.get("mal_pool_workers"), 16),
-            show_download_progress=_bool(
+            seeders_highlight=toml_util.int_val(
+                ui_table.get("seeders_highlight"), 50
+            ),
+            show_banner=toml_util.bool_val(ui_table.get("show_banner"), True),
+            mal_pool_workers=toml_util.int_val(ui_table.get("mal_pool_workers"), 16),
+            show_download_progress=toml_util.bool_val(
                 ui_table.get("show_download_progress"), True
             ),
         )

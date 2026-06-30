@@ -777,13 +777,6 @@ def minimal_label(parsed: ParsedTitle) -> str:
     return f"{name}{quality}"
 
 
-def minimal_filename(parsed: ParsedTitle, source_name: str | None = None) -> str:
-    ext = Path(source_name or parsed.raw).suffix.lower()
-    if ext not in {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}:
-        ext = ".mkv"
-    return f"{minimal_label(parsed)}{ext}"
-
-
 def query_tokens(query: str) -> list[str]:
     return [token for token in normalize(query).split() if len(token) > 1]
 
@@ -867,18 +860,6 @@ def target_match_score(
         score += 50
 
     return score
-
-
-def same_section(a: ParsedTitle, b: ParsedTitle) -> bool:
-    if a.kind != b.kind:
-        return False
-    if a.kind == MediaKind.EPISODE:
-        if a.arc and b.arc:
-            return normalize(a.arc) == normalize(b.arc)
-        if a.arc or b.arc:
-            return False
-        return _resolved_season(a) == _resolved_season(b)
-    return True
 
 
 CRC_TAG_RE = re.compile(r"\[[0-9A-Fa-f]{8,16}\]")

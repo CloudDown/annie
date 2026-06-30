@@ -5,77 +5,18 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, replace
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib  # type: ignore
-
+from annie import toml_util
 from annie.user_config import CONFIG_FILE, SETTINGS_FILE, ensure_user_config
 
 _settings_cache: AnnieSettings | None = None
 
 
-def _table(data: dict, key: str) -> dict:
-    value = data.get(key, {})
-    return value if isinstance(value, dict) else {}
-
-
-def _merge_dict(base: dict, override: dict) -> dict:
-    """Fusionne deux tables TOML ; override prime sur base."""
-    out = dict(base)
-    for key, value in override.items():
-        if key in out and isinstance(out[key], dict) and isinstance(value, dict):
-            out[key] = _merge_dict(out[key], value)
-        else:
-            out[key] = value
-    return out
-
-
 def _load_settings_data() -> dict:
     ensure_user_config()
-    data: dict = {}
-    if SETTINGS_FILE.is_file():
-        data = tomllib.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    data = toml_util.read_toml(SETTINGS_FILE)
     if CONFIG_FILE.is_file():
-        config_data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        data = _merge_dict(data, config_data)
+        data = toml_util.merge_dict(data, toml_util.read_toml(CONFIG_FILE))
     return data
-
-
-def _bool(value: object, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _int(value: object, default: int) -> int:
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(value: object, default: float) -> float:
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _str_list(value: object) -> list[str]:
-    if not value:
-        return []
-    if isinstance(value, str):
-        return [value.strip()] if value.strip() else []
-    return [str(item).strip() for item in value if str(item).strip()]
 
 
 @dataclass
@@ -155,18 +96,18 @@ class AnnieSettings:
 
         data = _load_settings_data()
 
-        streaming_table = _table(data, "streaming")
-        buffer_table = _table(data, "buffer")
-        torrent_table = _table(data, "torrent")
-        player_table = _table(data, "player")
-        mpv_table = _table(player_table, "mpv")
-        vlc_table = _table(player_table, "vlc")
+        streaming_table = toml_util.table(data, "streaming")
+        buffer_table = toml_util.table(data, "buffer")
+        torrent_table = toml_util.table(data, "torrent")
+        player_table = toml_util.table(data, "player")
+        mpv_table = toml_util.table(player_table, "mpv")
+        vlc_table = toml_util.table(player_table, "vlc")
 
         if "streaming" in data:
             seed_default = streaming_table.get("seed_while_watching")
         else:
             seed_default = data.get("seed_while_watching")
-        seed_while_watching = _bool(seed_default, True)
+        seed_while_watching = toml_util.bool_val(seed_default, True)
 
         env = os.environ.get("ANNIE_SEED_WHILE_WATCHING", "").strip().lower()
         if env in {"0", "false", "no", "off"}:
@@ -176,51 +117,67 @@ class AnnieSettings:
 
         streaming = StreamingSettings(
             seed_while_watching=seed_while_watching,
-            upload_limit_kib=_int(streaming_table.get("upload_limit_kib"), 512),
+            upload_limit_kib=toml_util.int_val(
+                streaming_table.get("upload_limit_kib"), 512
+            ),
         )
 
         buffer = BufferSettings(
-            max_wait_sec=_float(buffer_table.get("max_wait_sec"), 5.0),
-            no_peers_sec=_float(buffer_table.get("no_peers_sec"), 20.0),
-            absolute_sec=_float(buffer_table.get("absolute_sec"), 45.0),
-            mkv_start_mib=_int(buffer_table.get("mkv_start_mib"), 16),
-            mkv_head_mib=_int(buffer_table.get("mkv_head_mib"), 16),
-            stream_margin_mib=_int(buffer_table.get("stream_margin_mib"), 12),
-            mpv_retry_sec=_float(buffer_table.get("mpv_retry_sec"), 15.0),
-            mkv_playable_wait_sec=_float(
+            max_wait_sec=toml_util.float_val(buffer_table.get("max_wait_sec"), 5.0),
+            no_peers_sec=toml_util.float_val(buffer_table.get("no_peers_sec"), 45.0),
+            absolute_sec=toml_util.float_val(buffer_table.get("absolute_sec"), 90.0),
+            mkv_start_mib=toml_util.int_val(buffer_table.get("mkv_start_mib"), 16),
+            mkv_head_mib=toml_util.int_val(buffer_table.get("mkv_head_mib"), 16),
+            stream_margin_mib=toml_util.int_val(
+                buffer_table.get("stream_margin_mib"), 12
+            ),
+            mpv_retry_sec=toml_util.float_val(
+                buffer_table.get("mpv_retry_sec"), 15.0
+            ),
+            mkv_playable_wait_sec=toml_util.float_val(
                 buffer_table.get("mkv_playable_wait_sec"), 8.0
             ),
         )
 
         torrent = TorrentSettings(
-            metadata_timeout=_float(torrent_table.get("metadata_timeout"), 60.0),
-            connections_limit=_int(torrent_table.get("connections_limit"), 300),
-            active_downloads=_int(torrent_table.get("active_downloads"), 1),
-            active_limit=_int(torrent_table.get("active_limit"), 4),
-            unchoke_slots=_int(torrent_table.get("unchoke_slots"), 12),
-            unchoke_slots_seeding=_int(
+            metadata_timeout=toml_util.float_val(
+                torrent_table.get("metadata_timeout"), 60.0
+            ),
+            connections_limit=toml_util.int_val(
+                torrent_table.get("connections_limit"), 300
+            ),
+            active_downloads=toml_util.int_val(
+                torrent_table.get("active_downloads"), 1
+            ),
+            active_limit=toml_util.int_val(torrent_table.get("active_limit"), 4),
+            unchoke_slots=toml_util.int_val(torrent_table.get("unchoke_slots"), 12),
+            unchoke_slots_seeding=toml_util.int_val(
                 torrent_table.get("unchoke_slots_seeding"), 20
             ),
-            enable_dht=_bool(torrent_table.get("enable_dht"), True),
-            enable_lsd=_bool(torrent_table.get("enable_lsd"), True),
-            enable_upnp=_bool(torrent_table.get("enable_upnp"), True),
-            enable_natpmp=_bool(torrent_table.get("enable_natpmp"), True),
+            enable_dht=toml_util.bool_val(torrent_table.get("enable_dht"), True),
+            enable_lsd=toml_util.bool_val(torrent_table.get("enable_lsd"), True),
+            enable_upnp=toml_util.bool_val(torrent_table.get("enable_upnp"), True),
+            enable_natpmp=toml_util.bool_val(torrent_table.get("enable_natpmp"), True),
         )
 
         player = PlayerSettings(
             mpv=MpvPlayerSettings(
-                cache_secs=_int(mpv_table.get("cache_secs"), 30),
+                cache_secs=toml_util.int_val(mpv_table.get("cache_secs"), 30),
                 hwdec=str(mpv_table.get("hwdec") or "auto-safe"),
                 vo=str(mpv_table.get("vo") or "gpu"),
                 gpu_api=str(mpv_table.get("gpu_api") or "opengl"),
-                really_quiet=_bool(mpv_table.get("really_quiet"), True),
-                force_window=_bool(mpv_table.get("force_window"), True),
-                extra_args=_str_list(mpv_table.get("extra_args")),
+                really_quiet=toml_util.bool_val(mpv_table.get("really_quiet"), True),
+                force_window=toml_util.bool_val(mpv_table.get("force_window"), True),
+                extra_args=toml_util.str_list(mpv_table.get("extra_args")),
             ),
             vlc=VlcPlayerSettings(
-                file_caching_ms=_int(vlc_table.get("file_caching_ms"), 3000),
-                network_caching_ms=_int(vlc_table.get("network_caching_ms"), 3000),
-                extra_args=_str_list(vlc_table.get("extra_args")),
+                file_caching_ms=toml_util.int_val(
+                    vlc_table.get("file_caching_ms"), 3000
+                ),
+                network_caching_ms=toml_util.int_val(
+                    vlc_table.get("network_caching_ms"), 3000
+                ),
+                extra_args=toml_util.str_list(vlc_table.get("extra_args")),
             ),
         )
 
