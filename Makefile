@@ -37,7 +37,7 @@ test-offline: install
 		-v
 
 debug-rezero: install
-	$(UV) run python -m unittest tests.test_catalog.ReZeroCatalogFixtureTests -v
+	$(UV) run python dev/debug_rezero.py
 
 clean:
 	rm -rf .venv build dist *.egg-info annie.egg-info
