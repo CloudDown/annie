@@ -9,6 +9,12 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+set "ANNIE_BIN=%LOCALAPPDATA%\Programs\Annie\bin"
+if exist "%ANNIE_BIN%\annie.cmd" (
+  set "PATH=%ANNIE_BIN%;%PATH%"
+)
 echo.
-echo OK. Fermez ce terminal, ouvrez-en un nouveau, puis tapez : annie
+echo OK. Dans CE terminal vous pouvez taper : annie
+echo    ou depuis ce dossier : annie.cmd
+echo Pour les autres fenetres : fermez-les et rouvrez un terminal, puis : annie
 pause

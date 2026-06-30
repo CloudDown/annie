@@ -345,10 +345,15 @@ function Install-AnnieCommand {
     if (-not $userPath) { $userPath = "" }
     if ($userPath.Split(";") -notcontains $binDir) {
         [Environment]::SetEnvironmentVariable("Path", "$binDir;$userPath", "User")
+    }
+    if ($env:Path.Split(";") -notcontains $binDir) {
         $env:Path = "$binDir;$env:Path"
-        Write-Host "==> Commande annie ajoutee au PATH : $binDir"
+    }
+    Write-Host "==> Commande annie : $binDir\annie.cmd"
+    if ($userPath.Split(";") -notcontains $binDir) {
+        Write-Host "    (ajoutee au PATH utilisateur)"
     } else {
-        Write-Host "==> Commande annie deja dans le PATH : $binDir"
+        Write-Host "    (deja dans le PATH utilisateur)"
     }
 }
 
@@ -414,7 +419,11 @@ Test-AnnieLaunch
 Write-Host ""
 Write-Host "========================================"
 Write-Host " Installation terminee."
-Write-Host " Fermez et rouvrez le terminal."
-Write-Host " Puis tapez : annie"
-Write-Host " Ou depuis ce dossier : .\annie.cmd"
+Write-Host ""
+Write-Host " Lancer Annie tout de suite :"
+Write-Host "   annie          (si ce terminal a le PATH a jour)"
+Write-Host "   .\annie.cmd    (depuis le dossier du clone)"
+Write-Host "   & `"$env:LOCALAPPDATA\Programs\Annie\bin\annie.cmd`""
+Write-Host ""
+Write-Host " Nouveau terminal Windows : fermez celui-ci, rouvrez, puis : annie"
 Write-Host "========================================"
