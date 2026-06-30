@@ -65,9 +65,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
+Write-Host "==> Lanceur annie.cmd"
+if (-not (Test-Path (Join-Path $Root "annie.cmd"))) {
+    Write-Host "[FAIL] annie.cmd introuvable" -ForegroundColor Red
+    $failures++
+} else {
+    & cmd /c "annie.cmd --help" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[warn] annie.cmd --help a échoué (peut être normal sans fzf)"
+    } else {
+        Write-Host "[ok] annie.cmd"
+    }
+}
+
+Write-Host ""
 if ($failures -gt 0) {
     Write-Host "Smoke test : $failures échec(s). Corrigez puis relancez." -ForegroundColor Red
     exit 1
 }
 Write-Host "Smoke test automatisé : OK."
-Write-Host "Étape manuelle : lancer .\annie.py dans PowerShell, choisir un anime et vérifier la lecture mpv + Ctrl-O (magnet)."
+Write-Host "Étape manuelle : lancer annie (ou .\annie.cmd), choisir un anime et vérifier la lecture mpv + Ctrl-O (magnet)."

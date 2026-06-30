@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,9 +14,28 @@ if str(ROOT) not in sys.path:
 
 from annie.paths import venv_python  # noqa: E402
 
-_venv_py = venv_python(ROOT)
-if _venv_py is not None and Path(sys.executable).resolve() != _venv_py.resolve():
-    os.execv(str(_venv_py), [str(_venv_py), str(__file__), *sys.argv[1:]])
+
+def _clean_venv_env(env: dict[str, str]) -> dict[str, str]:
+    cleaned = dict(env)
+    for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"):
+        cleaned.pop(key, None)
+    return cleaned
+
+
+def _reexec_with_venv() -> None:
+    venv_py = venv_python(ROOT)
+    if venv_py is None:
+        return
+    if Path(sys.executable).resolve() == venv_py.resolve():
+        return
+    argv = [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]]
+    env = _clean_venv_env(os.environ)
+    if sys.platform == "win32":
+        raise SystemExit(subprocess.call(argv, env=env))
+    os.execv(str(venv_py), argv)
+
+
+_reexec_with_venv()
 
 from annie.cli import main  # noqa: E402
 

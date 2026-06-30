@@ -88,8 +88,19 @@ make install
 git clone https://github.com/CloudDown/annie.git
 cd annie
 powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
+```
+
+L’installateur crée la commande **`annie`** dans le PATH utilisateur (nouveau terminal requis).
+
+Sans réinstaller, depuis le dossier du projet :
+
+```powershell
+.\annie.cmd
+# ou
 .\annie.py
 ```
+
+**Important** : n’exécutez pas `python -m venv .` à la racine du dépôt — cela casse Python (`No module named 'encodings'`). Annie utilise `.venv\` (créé par `uv sync`). Si vous avez ce problème, relancez `install.ps1` qui nettoie les artefacts incorrects.
 
 Puis installe les outils recommandés :
 
