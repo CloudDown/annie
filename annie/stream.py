@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import socket
@@ -15,8 +14,15 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from annie.paths import cache_dir, find_program, ipc_ready as mpv_ipc_is_ready, mpv_ipc_path
+from annie.paths import cache_dir, ipc_ready as mpv_ipc_is_ready, mpv_ipc_path
 from annie.parsing import _filename_for_episode_match, match_episode_filename
+from annie.player import (  # noqa: F401  (ré-exports publics)
+    available_players,
+    player_binary,
+    player_command,
+    player_popen as _player_popen,
+    resolve_player,
+)
 from annie.ui import (
     BufferStatusDisplay,
     format_buffer_forced_start,
@@ -35,18 +41,12 @@ MKV_MAGIC = b"\x1a\x45\xdf\xa3"
 MKV_CLUSTER = b"\x1f\x43\xb6\x75"
 CACHE_DIR = cache_dir()
 START_MIN_MKV_BYTES = 2 * 1024 * 1024
-MKV_START_CONTIGUOUS_BYTES = 16 * 1024 * 1024
 MKV_FRONTIER_PIECES = 64
-STREAM_MARGIN_BYTES = 12 * 1024 * 1024
 START_MIN_MP4_BYTES = 256 * 1024
 START_MIN_OTHER_BYTES = 4 * 1024 * 1024
-START_TARGET_BYTES = MKV_START_CONTIGUOUS_BYTES
-BUFFER_MAX_WAIT_SEC = 5.0
-BUFFER_NO_PEERS_SEC = 45.0
-BUFFER_ABSOLUTE_SEC = 90.0
 MP4_TAIL_BYTES = 8 * 1024 * 1024
-MPV_RETRY_WAIT_SEC = 15.0
-MKV_HEAD_BYTES = 16 * 1024 * 1024
+
+
 def _settings():
     from annie.settings import AnnieSettings
 
@@ -74,157 +74,12 @@ def _stream_margin_bytes() -> int:
     return _buffer_cfg().stream_margin_mib * 1024 * 1024
 
 
-_player_cache: str | None = None
-_player_exe_cache: str | None = None
 _ffprobe_cache: bool | None = None
-
-
-def _remember_player(kind: str, exe: str) -> str:
-    global _player_cache, _player_exe_cache
-    _player_cache = kind
-    _player_exe_cache = exe
-    return kind
-
-
-def player_binary(player: str) -> str:
-    if _player_exe_cache and _player_cache == player:
-        return _player_exe_cache
-    return find_program(player) or player
-
-
-def available_players() -> list[str]:
-    return [name for name in ("mpv", "vlc", "ffplay") if find_program(name)]
-
-
-def resolve_player(requested: str | None = None) -> str:
-    global _player_cache, _player_exe_cache
-    if requested and requested != "auto":
-        exe = find_program(requested)
-        if exe is None:
-            raise RuntimeError(f"player not found: {requested}")
-        kind = Path(exe).stem.lower()
-        if kind not in {"mpv", "vlc", "ffplay"}:
-            kind = Path(requested).stem.lower()
-        return _remember_player(kind, exe)
-    env = os.environ.get("ANNIE_PLAYER", "").strip().lower()
-    if env and env != "auto":
-        exe = find_program(env)
-        if exe is None:
-            raise RuntimeError(f"ANNIE_PLAYER={env} not found")
-        return _remember_player(env, exe)
-    if (
-        _player_cache
-        and _player_exe_cache
-        and find_program(_player_cache) == _player_exe_cache
-    ):
-        return _player_cache
-    for name in ("mpv", "vlc", "ffplay"):
-        exe = find_program(name)
-        if exe:
-            return _remember_player(name, exe)
-    raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
 
 
 def die(message: str, code: int = 1) -> None:
     print(format_stream_fatal(message), file=sys.stderr)
     raise SystemExit(code)
-
-
-def player_command(
-    player: str,
-    path: Path,
-    *,
-    ipc_path: Path | None = None,
-    sub_file: Path | None = None,
-    mpv_profile: str = "default",
-) -> list[str]:
-    settings = _settings()
-    target = str(path.resolve())
-    if player == "mpv":
-        mpv = settings.player.mpv
-        cmd = [player_binary("mpv")]
-        gpu_api = mpv.gpu_api
-        hwdec = mpv.hwdec
-        vo = mpv.vo
-        really_quiet = mpv.really_quiet
-        if sys.platform == "win32" and gpu_api in {"opengl", ""}:
-            gpu_api = "d3d11"
-        if mpv_profile == "safe":
-            gpu_api = "d3d11"
-            hwdec = "auto-safe"
-            vo = "gpu"
-        elif mpv_profile == "software":
-            gpu_api = "d3d11"
-            hwdec = "no"
-            vo = "gpu"
-        if mpv.force_window:
-            cmd.append("--force-window=immediate")
-        cmd.extend(
-            [
-                "--keep-open=no",
-                "--no-terminal",
-            ]
-        )
-        if really_quiet:
-            cmd.extend(
-                [
-                    "--really-quiet",
-                    "--msg-level=all=fatal",
-                ]
-            )
-        cmd.extend(
-            [
-                "--cache=yes",
-                f"--cache-secs={mpv.cache_secs}",
-                "--cache-pause=yes",
-                "--cache-pause-initial=yes",
-                "--demuxer-readahead-secs=3",
-                "--demuxer-max-bytes=32M",
-                "--demuxer-lavf-analyzeduration=5",
-                "--demuxer-lavf-probesize=5242880",
-                f"--vo={vo}",
-                f"--gpu-api={gpu_api}",
-                f"--hwdec={hwdec}",
-            ]
-        )
-        if ipc_path is not None:
-            cmd.append(f"--input-ipc-server={ipc_path}")
-        if sub_file is not None:
-            cmd.append(f"--sub-file={sub_file.resolve()}")
-        cmd.extend(mpv.extra_args)
-        cmd.append(target)
-        return cmd
-    if player == "vlc":
-        vlc = settings.player.vlc
-        cmd = [
-            player_binary("vlc"),
-            "--intf",
-            "dummy",
-            "--quiet",
-            "--play-and-exit",
-            "--no-video-title-show",
-            f"--file-caching={vlc.file_caching_ms}",
-            f"--network-caching={vlc.network_caching_ms}",
-        ]
-        cmd.extend(vlc.extra_args)
-        cmd.append(target)
-        return cmd
-    if player == "ffplay":
-        return [
-            player_binary("ffplay"),
-            "-autoexit",
-            "-infbuf",
-            "-fflags",
-            "+genpts+discardcorrupt",
-            "-loglevel",
-            "error",
-            target,
-        ]
-    raise RuntimeError(f"unsupported player: {player}")
-
-
-def _player_popen(cmd: list[str]) -> subprocess.Popen:
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def make_session(*, seed_while_watching: bool = False) -> lt.session:

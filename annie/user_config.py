@@ -107,7 +107,7 @@ def ensure_media_player_config(*, force: bool = False) -> str | None:
         return None
     _name, exe = found
     set_player_command(exe, only_if_auto=not force)
-    from annie.stream import resolve_player
+    from annie.player import resolve_player
 
     resolve_player()
     return exe

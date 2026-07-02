@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import unittest
 from types import SimpleNamespace
 
@@ -113,8 +115,10 @@ class PickFileTests(unittest.TestCase):
         files = [
             (0, "[SubsPlease] Re Zero - 07 (1080p) [ABCD1234].mkv", 100),
         ]
-        with self.assertRaises(SystemExit):
+        stderr = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(stderr):
             pick_file(files, None, None, episode=8, season=1)
+        self.assertIn("no file matches episode 8", stderr.getvalue())
 
 
 class FixtureFilenameTests(unittest.TestCase):

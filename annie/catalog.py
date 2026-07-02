@@ -159,6 +159,18 @@ def franchise_absolute_offsets(releases: list[MalRelease]) -> dict[int, int]:
     return offsets
 
 
+def effective_absolute_offsets(releases: list[MalRelease]) -> dict[int, int]:
+    """Offset absolu par mal_id : max entre l'offset stocké (franchise complète)
+    et celui recalculé sur la liste courante (compatible releases scoped)."""
+    computed = franchise_absolute_offsets(releases)
+    return {
+        release.mal_id: max(
+            release.absolute_episode_offset, computed.get(release.mal_id, 0)
+        )
+        for release in releases
+    }
+
+
 def max_tv_season(releases: list[MalRelease]) -> int | None:
     seasons = [
         release.season
@@ -1262,7 +1274,7 @@ def build_catalog_from_releases(
     sections: list[MediaSection] = []
     seen_magnets: set[str] = set()
     workers = min(app_cfg.nyaa.parallel, max(len(releases), 1))
-    computed_offsets = franchise_absolute_offsets(releases)
+    absolute_offsets = effective_absolute_offsets(releases)
     franchise_max_tv_season = max_tv_season(releases)
 
     unique_queries: list[str] = []
@@ -1342,10 +1354,7 @@ def build_catalog_from_releases(
             skip_recap_movies=skip_recap_movies,
             match_queries=release.nyaa_queries,
         )
-        absolute_offset = max(
-            release.absolute_episode_offset,
-            computed_offsets.get(release.mal_id, 0),
-        )
+        absolute_offset = absolute_offsets.get(release.mal_id, 0)
         section = _pick_section_for_release(
             parts,
             release,
