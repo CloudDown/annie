@@ -357,13 +357,20 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
     return result[0]
 
 
+def _fzf_binary() -> str | None:
+    """Chemin de fzf — cherche aussi hors PATH sous Windows (winget, scoop…)."""
+    from annie.paths import find_program
+
+    return find_program("fzf")
+
+
 def fzf_available() -> bool:
-    return shutil.which("fzf") is not None
+    return _fzf_binary() is not None
 
 
 def fzf_install_hint() -> str:
     if sys.platform == "win32":
-        return "winget install junegunn.fzf  (ou choco install fzf)"
+        return "relancez install-windows.bat  (ou : winget install junegunn.fzf)"
     if sys.platform == "darwin":
         return "brew install fzf"
     return "pacman -S fzf  (Debian/Ubuntu: sudo apt install fzf)"
@@ -516,7 +523,7 @@ def _run_fzf(
 ) -> tuple[int, str]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     command = [
-        "fzf",
+        _fzf_binary() or "fzf",
         "--ansi",
         "--no-sort",
         "--cycle",

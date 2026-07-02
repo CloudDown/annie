@@ -84,7 +84,9 @@ make install
 
 ### Installation — Windows
 
-Double-clic ou terminal (installe **Python, uv, fzf, mpv** si absents) :
+**Le plus simple (sans git)** : télécharge le projet en ZIP — bouton **Code → Download ZIP** sur GitHub — décompresse-le où tu veux, puis **double-clique sur `install-windows.bat`**. C'est tout : le script installe **Python, uv, fzf et mpv** automatiquement s'ils manquent.
+
+Ou avec git dans un terminal :
 
 ```bat
 git clone https://github.com/CloudDown/annie.git

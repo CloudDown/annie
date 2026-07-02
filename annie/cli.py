@@ -392,6 +392,7 @@ def play_item(
         player=config.resolved_player(player),
         episode=episode,
         season=season,
+        source_episode=item.parsed.source_episode,
         seed_while_watching=AnnieSettings.load().seed_while_watching,
         subtitle_lang=lang,
         subtitle_query=subtitle_query,

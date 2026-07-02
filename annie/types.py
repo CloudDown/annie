@@ -31,6 +31,9 @@ class ParsedTitle:
     quality: int
     resolution: str | None
     is_repack: bool
+    # Numéro d'épisode d'origine (avant remap saison/absolu) — sert à
+    # retrouver le fichier dans le torrent (ex. S4E01 affiché, fichier « - 67 »).
+    source_episode: int | None = None
 
 
 @dataclass(frozen=True)

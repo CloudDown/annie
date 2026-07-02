@@ -250,7 +250,10 @@ def _remap_item_for_release(
                 return ResultItem(
                     entry=item.entry,
                     parsed=replace(
-                        parsed, season=release.season, episode=relative
+                        parsed,
+                        season=release.season,
+                        episode=relative,
+                        source_episode=parsed.source_episode or episode,
                     ),
                     score=item.score,
                 )
@@ -265,7 +268,10 @@ def _remap_item_for_release(
             return ResultItem(
                 entry=item.entry,
                 parsed=replace(
-                    parsed, season=release.season, episode=relative
+                    parsed,
+                    season=release.season,
+                    episode=relative,
+                    source_episode=parsed.source_episode or episode,
                 ),
                 score=item.score,
             )
@@ -530,10 +536,12 @@ def item_for_episode(item: ResultItem, episode: int) -> ResultItem:
     parsed = item.parsed
     if parsed.episode == episode and parsed.kind == MediaKind.EPISODE:
         return item
+    source = parsed.source_episode or parsed.episode
     new_parsed = replace(
         parsed,
         episode=episode,
         season=parsed.season or infer_batch_season(item.entry.title, parsed.season),
+        source_episode=source if source != episode else None,
     )
     penalty = 5.0 if parsed.kind == MediaKind.BATCH else 0.0
     return ResultItem(entry=item.entry, parsed=new_parsed, score=item.score - penalty)

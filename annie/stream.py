@@ -259,7 +259,13 @@ def human_size(num: int) -> str:
 
 
 def pick_file(
-    files, index, query, *, episode: int | None = None, season: int | None = None
+    files,
+    index,
+    query,
+    *,
+    episode: int | None = None,
+    season: int | None = None,
+    source_episode: int | None = None,
 ):
     if not files:
         die("no video files in torrent")
@@ -269,16 +275,26 @@ def pick_file(
                 return item
         die(f"index {index} not found")
     if episode is not None:
-        matches = [
-            f for f in files if match_episode_filename(f[1], episode, season=season)
-        ]
-        if len(matches) == 1:
-            return matches[0]
-        if matches:
-            die(
-                " multiple files match:\n"
-                + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches)
-            )
+        # Le catalogue peut remapper la numérotation absolue (fichier « - 67 »
+        # affiché S4E01) : on essaie le numéro affiché puis le numéro d'origine.
+        candidates: list[tuple[int, int | None]] = [(episode, season)]
+        if source_episode is not None and source_episode != episode:
+            candidates.append((source_episode, None))
+        for candidate, candidate_season in candidates:
+            matches = [
+                f
+                for f in files
+                if match_episode_filename(f[1], candidate, season=candidate_season)
+            ]
+            if len(matches) == 1:
+                return matches[0]
+            if matches:
+                die(
+                    " multiple files match:\n"
+                    + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches)
+                )
+        if len(files) == 1:
+            return files[0]
         die(f"no file matches episode {episode}")
     if query:
         pattern = re.compile(query, re.I)
@@ -1021,6 +1037,7 @@ def play(
     player: str | None = None,
     episode: int | None = None,
     season: int | None = None,
+    source_episode: int | None = None,
     seed_while_watching: bool = True,
     subtitle_lang: str | None = None,
     subtitle_query=None,
@@ -1060,7 +1077,12 @@ def play(
 
         files = torrent_files(info)
         file_index, rel_path, file_size = pick_file(
-            files, index, query, episode=episode, season=season
+            files,
+            index,
+            query,
+            episode=episode,
+            season=season,
+            source_episode=source_episode,
         )
         target = (save_path / rel_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)

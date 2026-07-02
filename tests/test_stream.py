@@ -114,11 +114,44 @@ class PickFileTests(unittest.TestCase):
     def test_fails_clearly_on_missing_episode(self) -> None:
         files = [
             (0, "[SubsPlease] Re Zero - 07 (1080p) [ABCD1234].mkv", 100),
+            (1, "[SubsPlease] Re Zero - 09 (1080p) [ABCD1234].mkv", 100),
         ]
         stderr = io.StringIO()
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(stderr):
             pick_file(files, None, None, episode=8, season=1)
         self.assertIn("no file matches episode 8", stderr.getvalue())
+
+    def test_single_file_fallback_when_numbering_differs(self) -> None:
+        # Épisode affiché S4E01 mais fichier en numérotation absolue « - 67 » :
+        # le torrent ne contient qu'un fichier, on le lit.
+        files = [
+            (
+                0,
+                "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 67 (1080p) [ABCD1234].mkv",
+                100,
+            ),
+        ]
+        picked = pick_file(files, None, None, episode=1, season=4)
+        self.assertEqual(picked[0], 0)
+
+    def test_source_episode_matches_absolute_numbering_in_batch(self) -> None:
+        # Batch en numérotation absolue : S4E02 affiché → fichier « - 68 ».
+        files = [
+            (
+                0,
+                "[Batch] Re Zero kara Hajimeru Isekai Seikatsu - 67 (1080p).mkv",
+                100,
+            ),
+            (
+                1,
+                "[Batch] Re Zero kara Hajimeru Isekai Seikatsu - 68 (1080p).mkv",
+                100,
+            ),
+        ]
+        picked = pick_file(
+            files, None, None, episode=2, season=4, source_episode=68
+        )
+        self.assertEqual(picked[0], 1)
 
 
 class FixtureFilenameTests(unittest.TestCase):

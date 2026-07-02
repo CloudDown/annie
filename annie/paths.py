@@ -29,6 +29,10 @@ _MEDIA_PLAYER_NAMES: tuple[str, ...] = ("mpv", "vlc", "ffplay")
 
 def _windows_extra_dirs(stem: str) -> tuple[Path, ...]:
     dirs: list[Path] = []
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        # winget expose les exécutables installés via des liens dans Links.
+        dirs.append(Path(local) / "Microsoft" / "WinGet" / "Links")
     for key in ("LOCALAPPDATA", "USERPROFILE"):
         value = os.environ.get(key)
         if not value:
