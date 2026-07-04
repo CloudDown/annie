@@ -72,6 +72,7 @@ def _mpv_command(
     ipc_path: Path | None,
     sub_file: Path | None,
     profile: str,
+    streaming: bool = False,
 ) -> list[str]:
     mpv = _settings().player.mpv
     cmd = [player_binary("mpv")]
@@ -104,14 +105,16 @@ def _mpv_command(
                 "--msg-level=all=fatal",
             ]
         )
+    readahead_secs = 10 if streaming else 3
+    demuxer_max_bytes = "64M" if streaming else "32M"
     cmd.extend(
         [
             "--cache=yes",
             f"--cache-secs={mpv.cache_secs}",
             "--cache-pause=yes",
             "--cache-pause-initial=yes",
-            "--demuxer-readahead-secs=3",
-            "--demuxer-max-bytes=32M",
+            f"--demuxer-readahead-secs={readahead_secs}",
+            f"--demuxer-max-bytes={demuxer_max_bytes}",
             "--demuxer-lavf-analyzeduration=5",
             "--demuxer-lavf-probesize=5242880",
             f"--vo={vo}",
@@ -165,11 +168,16 @@ def player_command(
     ipc_path: Path | None = None,
     sub_file: Path | None = None,
     mpv_profile: str = "default",
+    streaming: bool = False,
 ) -> list[str]:
     target = windows_extended_path(path.resolve())
     if player == "mpv":
         return _mpv_command(
-            target, ipc_path=ipc_path, sub_file=sub_file, profile=mpv_profile
+            target,
+            ipc_path=ipc_path,
+            sub_file=sub_file,
+            profile=mpv_profile,
+            streaming=streaming,
         )
     if player == "vlc":
         return _vlc_command(target)

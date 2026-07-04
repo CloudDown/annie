@@ -34,8 +34,11 @@ from annie.ui import (
     C,
     copy_magnet,
     EXIT_CANCELLED,
+    PLAY_COMPLETED,
+    PLAY_INCOMPLETE,
     fzf_available,
     fzf_install_hint,
+    is_play_completed,
     pick_catalog,
     pick_episode,
     pick_subtitle_language,
@@ -47,6 +50,7 @@ from annie.ui import (
     stylize,
     is_user_cancel,
 )
+from annie.watch_history import WatchHistory
 
 MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
 
@@ -328,6 +332,30 @@ def _find_section_for_item(
             if candidate.entry.magnet == item.entry.magnet:
                 return section
     return None
+
+
+def _find_section_for_episode(
+    catalog: list[MediaSection],
+    item: ResultItem,
+) -> MediaSection | None:
+    episode = item.parsed.episode
+    season = item.parsed.season
+    if episode is not None:
+        for section in catalog:
+            if season is not None and section.season not in {season, None}:
+                continue
+            if episode in section.episodes:
+                return section
+    return _find_section_for_item(catalog, item)
+
+
+def _next_episode_item(
+    section: MediaSection, item: ResultItem
+) -> ResultItem | None:
+    episode = item.parsed.episode
+    if episode is None:
+        return None
+    return section.episodes.get(episode + 1)
 
 
 def _resolve_subtitle_lang(
@@ -712,6 +740,8 @@ def interactive_loop(config: AnnieConfig) -> int:
 
         binge_season = options.get("season")
         next_episode = options.get("episode")
+        require_episode_pick = False
+        watch_history = WatchHistory.load()
 
         while True:
             picked = pick_catalog(
@@ -720,8 +750,11 @@ def interactive_loop(config: AnnieConfig) -> int:
                 episode=next_episode,
                 kind=kind_from_options(options),
                 on_section=on_section,
+                require_episode_pick=require_episode_pick,
+                watch_history=watch_history,
             )
             next_episode = None
+            require_episode_pick = False
 
             if picked is None:
                 break
@@ -734,7 +767,13 @@ def interactive_loop(config: AnnieConfig) -> int:
                     print_status("clipboard unavailable", kind="warn")
                 continue
 
+            session_sub_lang = _resolve_subtitle_lang(config, interactive=True)
+            if session_sub_lang is BACK_TO_EPISODE:
+                require_episode_pick = True
+                continue
+
             code = 0
+            active_section = _find_section_for_episode(catalog, item)
             while True:
                 try:
                     code = play_item(
@@ -742,7 +781,10 @@ def interactive_loop(config: AnnieConfig) -> int:
                         config,
                         series_query=raw_query,
                         mal_titles=tuple(options.get("mal_titles", ())),
-                        interactive_subs=True,
+                        interactive_subs=False,
+                        subtitle_lang=session_sub_lang
+                        if isinstance(session_sub_lang, str)
+                        else None,
                     )
                 except KeyboardInterrupt:
                     code = EXIT_CANCELLED
@@ -751,30 +793,61 @@ def interactive_loop(config: AnnieConfig) -> int:
                     print_status(str(exc), kind="err")
                     code = 1
                     break
-                if code != -1:
+                if code == -1:
+                    section = active_section or _find_section_for_episode(
+                        catalog, item
+                    )
+                    if section is None:
+                        code = 0
+                        break
+                    ep_picked = pick_episode(
+                        section,
+                        force_interactive=True,
+                        watch_history=watch_history,
+                    )
+                    if ep_picked is None:
+                        code = 0
+                        break
+                    ep_action, item = ep_picked
+                    active_section = section
+                    if ep_action == "ctrl-o":
+                        if copy_magnet(item.entry.magnet):
+                            print_status("magnet copied", kind="ok")
+                        else:
+                            print_status("clipboard unavailable", kind="warn")
+                        continue
+                    continue
+
+                if is_play_completed(code):
+                    section = active_section or _find_section_for_episode(
+                        catalog, item
+                    )
+                    if section is not None:
+                        watch_history.mark_item(section, item)
+                    next_item = (
+                        _next_episode_item(section, item) if section is not None else None
+                    )
+                    if next_item is not None:
+                        item = next_item
+                        active_section = section
+                        continue
                     break
 
-                section = _find_section_for_item(catalog, item)
-                if section is None:
-                    code = 0
+                if code == PLAY_INCOMPLETE:
                     break
-                ep_picked = pick_episode(section)
-                if ep_picked is None:
-                    code = 0
-                    break
-                ep_action, item = ep_picked
-                if ep_action == "ctrl-o":
-                    if copy_magnet(item.entry.magnet):
-                        print_status("magnet copied", kind="ok")
-                    else:
-                        print_status("clipboard unavailable", kind="warn")
-                    continue
+
+                break
 
             if item.parsed.season is not None:
                 binge_season = item.parsed.season
 
-            if code != 0 and not is_user_cancel(code):
+            if is_user_cancel(code):
+                break
+
+            if code not in (PLAY_COMPLETED, PLAY_INCOMPLETE) and code != 0:
                 print_status("playback interrupted", kind="warn")
+
+            require_episode_pick = True
 
 
 def _add_player_flag(parser: argparse.ArgumentParser) -> None:

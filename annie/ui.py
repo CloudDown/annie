@@ -17,10 +17,16 @@ from annie.types import MediaKind, MediaSection, ResultItem
 
 # Code de sortie conventionnel (SIGINT / Ctrl+C volontaire).
 EXIT_CANCELLED = 130
+PLAY_COMPLETED = 0
+PLAY_INCOMPLETE = 2
 
 
 def is_user_cancel(code: int | None) -> bool:
     return code == EXIT_CANCELLED
+
+
+def is_play_completed(code: int | None) -> bool:
+    return code == PLAY_COMPLETED
 
 
 class C:
@@ -478,8 +484,23 @@ def _compact_ep_label(item: ResultItem) -> str:
     return _clip(minimal_label(parsed), 28)
 
 
-def format_torrent_line(item: ResultItem) -> str:
-    return stylize(_list_item_label(item), C.LIST, C.BOLD)
+def format_torrent_line(
+    item: ResultItem,
+    *,
+    section: MediaSection | None = None,
+    watch_history=None,
+) -> str:
+    label = stylize(_list_item_label(item), C.LIST, C.BOLD)
+    if section is None or watch_history is None or item.parsed.episode is None:
+        return label
+    if watch_history.is_watched(
+        mal_id=section.mal_id,
+        section_key=section.key,
+        season=item.parsed.season or section.season,
+        episode=item.parsed.episode,
+    ):
+        return f"{stylize('●', C.GREEN)} {label}"
+    return label
 
 
 def format_section_line(section: MediaSection) -> str:
@@ -497,12 +518,29 @@ def format_section_line(section: MediaSection) -> str:
     return f"{stylize(label, C.LIST, C.BOLD)}  {stylize(detail, C.META)}"
 
 
-def format_preview_item(item: ResultItem) -> str:
+def format_preview_item(
+    item: ResultItem,
+    *,
+    section: MediaSection | None = None,
+    watch_history=None,
+) -> str:
     parsed = item.parsed
     if parsed.episode is not None:
         title = stylize(f"Episode {parsed.episode:02d}", C.LIST, C.BOLD)
     else:
         title = stylize(_compact_ep_label(item), C.LIST, C.BOLD)
+    if (
+        section is not None
+        and watch_history is not None
+        and parsed.episode is not None
+        and watch_history.is_watched(
+            mal_id=section.mal_id,
+            section_key=section.key,
+            season=parsed.season or section.season,
+            episode=parsed.episode,
+        )
+    ):
+        title = f"{title} {stylize('· vu', C.GREEN)}"
     seeds = item.entry.seeders
     seed_line = stylize(
         f"{seeds} seeders · {item.entry.leechers} leechers · {item.entry.size}",
@@ -749,11 +787,16 @@ def _episode_query(item: ResultItem) -> str:
     return minimal_label(item.parsed)
 
 
-def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
+def pick_episode(
+    section: MediaSection,
+    *,
+    force_interactive: bool = False,
+    watch_history=None,
+) -> tuple[str, ResultItem] | None:
     items = section.choices()
     if not items:
         return None
-    if len(items) == 1:
+    if len(items) == 1 and not force_interactive:
         return "enter", items[0]
 
     indexed: dict[str, ResultItem] = {}
@@ -762,8 +805,12 @@ def pick_episode(section: MediaSection) -> tuple[str, ResultItem] | None:
     for item_index, item in enumerate(items):
         key = f"e{item_index:03d}"
         indexed[key] = item
-        previews[key] = format_preview_item(item)
-        lines.append(f"{key}{SEP}{format_torrent_line(item)}")
+        previews[key] = format_preview_item(
+            item, section=section, watch_history=watch_history
+        )
+        lines.append(
+            f"{key}{SEP}{format_torrent_line(item, section=section, watch_history=watch_history)}"
+        )
 
     prompt = f"{_clip(section.label, 18)}> "
     header = _fzf_header("→ Enter · Ctrl-N/P · Ctrl-O · ← · Esc")
@@ -857,6 +904,8 @@ def pick_catalog(
     episode: int | None = None,
     kind: MediaKind | None = None,
     on_section: Callable[[MediaSection], None] | None = None,
+    require_episode_pick: bool = False,
+    watch_history=None,
 ) -> tuple[str, ResultItem] | None:
     if not sections:
         return None
@@ -904,7 +953,11 @@ def pick_catalog(
         if on_section is not None:
             on_section(section)
 
-        picked = pick_episode(section)
+        picked = pick_episode(
+            section,
+            force_interactive=require_episode_pick,
+            watch_history=watch_history,
+        )
         if picked is None:
             return None
         action, item = picked
