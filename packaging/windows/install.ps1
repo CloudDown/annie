@@ -315,12 +315,12 @@ function Annie-CmdLines {
         "set `"ROOT=$RootEsc`""
         'set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"'
         'if exist "%VENV_PY%" ('
-        '  "%VENV_PY%" "%ROOT%\annie.py" %*'
+        '  call "%VENV_PY%" "%ROOT%\annie.py" %*'
         '  exit /b %ERRORLEVEL%'
         ')'
         "set `"PY=$PythonEsc`""
         'if exist "%PY%" ('
-        '  "%PY%" "%ROOT%\annie.py" %*'
+        '  call "%PY%" "%ROOT%\annie.py" %*'
         '  exit /b %ERRORLEVEL%'
         ')'
         'echo Python introuvable. Relancez install-windows.bat'

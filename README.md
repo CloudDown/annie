@@ -202,6 +202,13 @@ Sous-titres externes = **mpv** uniquement. Ne partage pas ce fichier (mot de pas
 ## Dépannage
 
 <details>
+<summary><strong>« filename or extension is too long » (Windows)</strong></summary>
+
+Certains packs torrent ont des dossiers très longs. Annie utilise des chemins étendus (`\\?\`) pour contourner la limite de 260 caractères. Mets à jour Annie (`git pull` + `install-windows.bat`) si tu vois encore cette erreur.
+
+</details>
+
+<details>
 <summary><strong>« fzf not found »</strong></summary>
 
 **Windows :** relance `install-windows.bat`.

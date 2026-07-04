@@ -343,18 +343,37 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
     threading.Thread(target=worker, daemon=True).start()
 
     frame = 0
-    while not done.is_set():
-        spin = _SEARCH_SPINNER[frame % len(_SEARCH_SPINNER)]
-        line = f"{_s('Searching · ', C.MAGENTA)}{_s(spin, C.MAGENTA)}"
-        print(f"\r{line}", end="", flush=True)
-        frame += 1
-        done.wait(0.09)
+    try:
+        while not done.is_set():
+            spin = _SEARCH_SPINNER[frame % len(_SEARCH_SPINNER)]
+            line = f"{_s('Searching · ', C.MAGENTA)}{_s(spin, C.MAGENTA)}"
+            print(f"\r{line}", end="", flush=True)
+            frame += 1
+            done.wait(0.09)
+    except KeyboardInterrupt:
+        print("\r\033[K", end="", flush=True)
+        print()
+        raise
 
     print("\r\033[K", end="", flush=True)
 
     if error:
         raise error[0]
     return result[0]
+
+
+def _stop_subprocess(proc: subprocess.Popen[bytes]) -> None:
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except OSError:
+            pass
 
 
 def _fzf_binary() -> str | None:
@@ -553,13 +572,21 @@ def _run_fzf(
         command.extend(["--expect", expect])
 
     text_in = "\n".join(lines or [])
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         command,
-        input=text_in.encode("utf-8"),
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
     )
-    stdout = proc.stdout.decode("utf-8", errors="replace") if proc.stdout else ""
-    return proc.returncode, stdout
+    try:
+        stdout_bytes, _ = proc.communicate(input=text_in.encode("utf-8"))
+    except KeyboardInterrupt:
+        _stop_subprocess(proc)
+        print()
+        return 130, ""
+
+    stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+    return proc.returncode or 0, stdout
 
 
 def _extend_expect(expect: str) -> str:

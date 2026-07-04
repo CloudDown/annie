@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from annie.paths import find_program
+from annie.paths import find_program, windows_extended_path
 
 PLAYER_NAMES = ("mpv", "vlc", "ffplay")
 
@@ -122,7 +122,7 @@ def _mpv_command(
     if ipc_path is not None:
         cmd.append(f"--input-ipc-server={ipc_path}")
     if sub_file is not None:
-        cmd.append(f"--sub-file={sub_file.resolve()}")
+        cmd.append(f"--sub-file={windows_extended_path(sub_file.resolve())}")
     cmd.extend(mpv.extra_args)
     cmd.append(target)
     return cmd
@@ -166,7 +166,7 @@ def player_command(
     sub_file: Path | None = None,
     mpv_profile: str = "default",
 ) -> list[str]:
-    target = str(path.resolve())
+    target = windows_extended_path(path.resolve())
     if player == "mpv":
         return _mpv_command(
             target, ipc_path=ipc_path, sub_file=sub_file, profile=mpv_profile

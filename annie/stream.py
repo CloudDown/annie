@@ -14,7 +14,15 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from annie.paths import cache_dir, ipc_ready as mpv_ipc_is_ready, mpv_ipc_path
+from annie.paths import (
+    cache_dir,
+    ensure_directory,
+    ipc_ready as mpv_ipc_is_ready,
+    mpv_ipc_path,
+    path_exists,
+    path_open,
+    windows_extended_path,
+)
 from annie.parsing import _filename_for_episode_match, match_episode_filename
 from annie.player import (  # noqa: F401  (ré-exports publics)
     available_players,
@@ -191,7 +199,7 @@ def _save_torrent_file(info: lt.torrent_info) -> None:
     if path.is_file():
         return
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(path.parent)
         params = lt.add_torrent_params()
         params.ti = info
         path.write_bytes(lt.bencode(lt.write_torrent_file(params)))
@@ -203,25 +211,30 @@ def is_video(path: str) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXT
 
 
+def _torrent_save_path(save_path: Path) -> str:
+    return windows_extended_path(save_path)
+
+
 def add_torrent(session: lt.session, source: str, save_path: Path) -> lt.torrent_handle:
-    save_path.mkdir(parents=True, exist_ok=True)
+    ensure_directory(save_path)
+    save = _torrent_save_path(save_path)
     if source.startswith("magnet:?"):
         info_hash = magnet_info_hash(source)
         cached = torrent_file_cache_path(info_hash)
         if cached.is_file():
             params = lt.add_torrent_params()
             params.ti = lt.torrent_info(str(cached))
-            params.save_path = str(save_path)
+            params.save_path = save
             return session.add_torrent(params)
         params = lt.parse_magnet_uri(source)
-        params.save_path = str(save_path)
+        params.save_path = save
         return session.add_torrent(params)
     torrent_path = Path(source).expanduser().resolve()
     if not torrent_path.is_file():
         die(f"file not found: {torrent_path}")
     params = lt.add_torrent_params()
     params.ti = lt.torrent_info(str(torrent_path))
-    params.save_path = str(save_path)
+    params.save_path = save
     return session.add_torrent(params)
 
 
@@ -447,10 +460,10 @@ def _contiguous_file_bytes(handle: lt.torrent_handle, file_index: int) -> int:
 def _has_mkv_header(path: Path) -> bool:
     for _ in range(4):
         try:
-            if not path.exists():
+            if not path_exists(path):
                 time.sleep(0.05)
                 continue
-            with path.open("rb") as f:
+            with path_open(path, "rb") as f:
                 if f.read(4) == MKV_MAGIC:
                     return True
         except OSError:
@@ -496,7 +509,7 @@ def _file_header_on_disk(
 
 def _mp4_has_ftyp(path: Path) -> bool:
     try:
-        with path.open("rb") as f:
+        with path_open(path, "rb") as f:
             head = f.read(12)
         return len(head) >= 8 and head[4:8] == b"ftyp"
     except OSError:
@@ -509,7 +522,7 @@ def _mp4_has_moov_in_bytes(data: bytes) -> bool:
 
 def _mp4_moov_in_head(path: Path, nbytes: int) -> bool:
     try:
-        with path.open("rb") as f:
+        with path_open(path, "rb") as f:
             data = f.read(max(0, nbytes))
         return _mp4_has_moov_in_bytes(data)
     except OSError:
@@ -518,11 +531,11 @@ def _mp4_moov_in_head(path: Path, nbytes: int) -> bool:
 
 def _mp4_moov_in_tail(path: Path, file_size: int) -> bool:
     try:
-        if not path.exists() or file_size < 1024:
+        if not path_exists(path) or file_size < 1024:
             return False
         read_len = min(MP4_TAIL_BYTES, file_size)
         start = max(0, file_size - read_len)
-        with path.open("rb") as f:
+        with path_open(path, "rb") as f:
             f.seek(start)
             data = f.read(read_len)
         return _mp4_has_moov_in_bytes(data)
@@ -538,7 +551,7 @@ def _ffprobe_available() -> bool:
 
 
 def _probe_with_ffprobe(path: Path) -> bool:
-    if not _ffprobe_available() or not path.exists():
+    if not _ffprobe_available() or not path_exists(path):
         return False
     try:
         result = subprocess.run(
@@ -550,7 +563,7 @@ def _probe_with_ffprobe(path: Path) -> bool:
                 "format=format_name",
                 "-of",
                 "default=noprint_wrappers=1:nokey=1",
-                str(path),
+                windows_extended_path(path),
             ],
             capture_output=True,
             text=True,
@@ -565,7 +578,7 @@ def _mkv_has_clusters(path: Path, nbytes: int) -> bool:
     if nbytes < 1024:
         return False
     try:
-        with path.open("rb") as f:
+        with path_open(path, "rb") as f:
             data = f.read(nbytes)
         return MKV_CLUSTER in data
     except OSError:
@@ -944,7 +957,7 @@ def _launch_and_stream(
     wait_startable(
         handle, file_index, target, file_size, listed_seeders=listed_seeders
     )
-    if not target.exists():
+    if not path_exists(target):
         die(f"file missing: {target}")
 
     ready = _contiguous_file_bytes(handle, file_index)
@@ -1072,7 +1085,7 @@ def play(
             save_path = torrent_cache_dir(info)
             params = lt.add_torrent_params()
             params.ti = info
-            params.save_path = str(save_path)
+            params.save_path = _torrent_save_path(save_path)
             handle = session.add_torrent(params)
 
         files = torrent_files(info)
@@ -1085,7 +1098,7 @@ def play(
             source_episode=source_episode,
         )
         target = (save_path / rel_path).resolve()
-        target.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(target.parent)
         configure_stream(
             handle,
             file_index,

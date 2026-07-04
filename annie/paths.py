@@ -184,3 +184,34 @@ def ipc_ready(ipc_path: Path) -> bool:
         except OSError:
             return False
     return ipc_path.is_socket()
+
+
+def windows_extended_path(path: Path | str) -> str:
+    """Préfixe ``\\\\?\\`` pour contourner MAX_PATH (260) sous Windows."""
+    if sys.platform != "win32":
+        return str(path)
+    text = str(path)
+    if text.startswith("\\\\?\\"):
+        return text
+    resolved = str(Path(text).resolve())
+    if resolved.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + resolved[2:]
+    return "\\\\?\\" + resolved
+
+
+def ensure_directory(path: Path) -> None:
+    """Crée un répertoire (parents inclus), compatible chemins longs Windows."""
+    if sys.platform == "win32":
+        os.makedirs(windows_extended_path(path), exist_ok=True)
+    else:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def path_exists(path: Path) -> bool:
+    if sys.platform == "win32":
+        return os.path.exists(windows_extended_path(path))
+    return path.exists()
+
+
+def path_open(path: Path, mode: str = "rb"):
+    return open(windows_extended_path(path), mode)

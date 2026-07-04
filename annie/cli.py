@@ -668,6 +668,9 @@ def interactive_loop(config: AnnieConfig) -> int:
                     target_kind=kind_from_options(options),
                 ),
             )
+        except KeyboardInterrupt:
+            print()
+            continue
         except Exception as exc:  # noqa: BLE001
             print_status(str(exc), kind="err")
             continue
@@ -796,6 +799,15 @@ def _add_nyaa_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def main() -> int:
+    try:
+        return _main_impl()
+    except KeyboardInterrupt:
+        if sys.stdout.isatty():
+            print()
+        return 0
+
+
+def _main_impl() -> int:
     config = AnnieConfig.load()
 
     if len(sys.argv) == 1:
