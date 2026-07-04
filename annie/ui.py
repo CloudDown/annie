@@ -169,7 +169,7 @@ HELP = f"""
 {stylize("Navigation", C.PALE_PINK, C.BOLD)}
   {stylize("①", C.PALE_PINK)} season / movie / ova
   {stylize("②", C.PALE_PINK)} episode (best torrent)
-  {stylize("Enter/→", C.GREEN)} select · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back · {stylize("Esc", C.YELLOW)} cancel
+  {stylize("Enter/→", C.GREEN)} select · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back / search · {stylize("Esc", C.YELLOW)} search
 
 {stylize("Shortcuts", C.PALE_PINK, C.BOLD)}
   frieren s2e10        stream directly
@@ -734,11 +734,14 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
         previews,
         lines,
         prompt="group> ",
-        header=_fzf_header("→ Enter · Esc"),
+        header=_fzf_header("→ Enter · ← search · Esc"),
+        expect="left,enter",
     )
     if picked is None:
         return None
-    _, group_key = picked
+    action, group_key = picked
+    if action == "left":
+        return None
     return group_key
 
 
@@ -752,11 +755,20 @@ def _pick_section_flat(sections: list[MediaSection]) -> MediaSection | None:
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = _fzf_header("→ Enter · Esc")
-    picked = _fzf_choose(indexed, previews, lines, prompt="section> ", header=header)
+    header = _fzf_header("→ Enter · ← search · Esc")
+    picked = _fzf_choose(
+        indexed,
+        previews,
+        lines,
+        prompt="section> ",
+        header=header,
+        expect="left,enter",
+    )
     if picked is None:
         return None
-    _, section = picked
+    action, section = picked
+    if action == "left":
+        return None
     return section
 
 
@@ -813,7 +825,7 @@ def pick_episode(
         )
 
     prompt = f"{_clip(section.label, 18)}> "
-    header = _fzf_header("→ Enter · Ctrl-N/P · Ctrl-O · ← · Esc")
+    header = _fzf_header("→ Enter · Ctrl-N/P · Ctrl-O · ← back · Esc search")
     index = 0
     jumped = False
     while 0 <= index < len(items):
