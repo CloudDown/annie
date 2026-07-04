@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from annie.catalog import (
+    _batch_coverage,
+    _batch_episodes_for_release,
+    _fill_missing_episodes,
     build_catalog,
+    item_for_episode,
     build_catalog_from_releases,
     is_franchise_multi_season_batch,
     is_spinoff,
@@ -13,8 +18,8 @@ from annie.catalog import (
     resolve_catalog_target,
     scope_releases_for_target,
 )
-from annie.types import MediaKind
-from tests.helpers import entries_from_fixture, load_fixture, mal_release, result_item
+from annie.types import MediaKind, MediaSection
+from tests.helpers import entries_from_fixture, load_fixture, mal_release, nyaa_entry, result_item
 
 
 class ReZeroCatalogFixtureTests(unittest.TestCase):
@@ -293,6 +298,99 @@ class CodeGeassCatalogFixtureTests(unittest.TestCase):
         self.assertEqual(
             by_season[1].episodes[1].entry.magnet, s2_ep1.entry.magnet
         )
+
+
+class FranchiseBatchPickTests(unittest.TestCase):
+    BATCH = "[Batch] Black Clover Season 1-4 Complete [1080p]"
+    SINGLE = "[SubsPlease] Black Clover - 05 (1080p) [ABCD1234].mkv"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.release = mal_release(
+            mal_id=1,
+            season=1,
+            episode_count=51,
+            label="Season 01",
+            queries=["black clover"],
+        )
+        cls.batch_magnet = "magnet:?xt=urn:btih:blackcloverbatch"
+        cls.single_magnet = "magnet:?xt=urn:btih:blackcloversingle"
+
+    def test_season_span_parsed_as_franchise_not_full_episode_list(self) -> None:
+        season, episodes = parse_batch_episode_range(self.BATCH)
+        self.assertTrue(is_franchise_multi_season_batch(self.BATCH))
+        self.assertLess(len(episodes), self.release.episode_count)
+
+    def test_franchise_batch_maps_all_season_episodes(self) -> None:
+        batch = replace(
+            result_item(self.BATCH, score=80.0),
+            entry=nyaa_entry(self.BATCH, seeders=300, magnet=self.batch_magnet),
+        )
+        pairs = _batch_episodes_for_release(batch, self.release)
+        self.assertEqual(len(pairs), 51)
+        self.assertEqual(pairs[4], (5, 5))
+
+    def test_franchise_batch_coverage_is_full_season(self) -> None:
+        batch = replace(
+            result_item(self.BATCH),
+            entry=nyaa_entry(self.BATCH, seeders=300, magnet=self.batch_magnet),
+        )
+        covered, coverage = _batch_coverage(batch, self.release.episode_count)
+        self.assertEqual(len(covered), 51)
+        self.assertGreaterEqual(coverage, 0.85)
+
+    def test_catalog_prefers_batch_over_low_seed_singles(self) -> None:
+        entries = [
+            nyaa_entry(self.BATCH, seeders=300, magnet=self.batch_magnet),
+            nyaa_entry(self.SINGLE, seeders=1, magnet=self.single_magnet),
+        ]
+
+        def fake_search(query: str, **kwargs):
+            return entries
+
+        sections = build_catalog_from_releases(
+            [self.release],
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        ep5 = section.episodes.get(5)
+        self.assertIsNotNone(ep5)
+        self.assertEqual(ep5.entry.seeders, 300)
+        self.assertEqual(ep5.entry.magnet, self.batch_magnet)
+
+    def test_gap_fill_does_not_replace_high_seed_batch(self) -> None:
+        batch = replace(
+            result_item(self.BATCH, score=50.0),
+            entry=nyaa_entry(self.BATCH, seeders=300, magnet=self.batch_magnet),
+        )
+        section = MediaSection(
+            key="mal:1",
+            label="Season 01",
+            kind=MediaKind.EPISODE,
+            season=1,
+            expected_episodes=51,
+            mal_id=1,
+            nyaa_queries=["black clover"],
+        )
+        section.episodes[5] = item_for_episode(batch, 5)
+
+        def fake_search(query: str, **kwargs):
+            return [nyaa_entry(self.SINGLE, seeders=1, magnet=self.single_magnet)]
+
+        _fill_missing_episodes(
+            self.release,
+            section,
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+            skip_recap_movies=False,
+            pool=None,
+        )
+        self.assertEqual(section.episodes[5].entry.magnet, self.batch_magnet)
+        self.assertEqual(section.episodes[5].entry.seeders, 300)
 
 
 if __name__ == "__main__":

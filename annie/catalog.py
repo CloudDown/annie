@@ -438,15 +438,34 @@ def _filter_section_for_release(
     ]
 
 
+def _better_episode_pick(new: ResultItem, current: ResultItem | None) -> bool:
+    if current is None:
+        return True
+    return catalog_episode_pick_rank(new) > catalog_episode_pick_rank(current)
+
+
+def _franchise_batch_covers_full_season(
+    title: str, episodes: list[int], expected: int
+) -> bool:
+    """Pack multi-saisons : « Season 1-4 » est parsé 1~4, pas les 51 épisodes."""
+    if not is_franchise_multi_season_batch(title):
+        return False
+    if not episodes:
+        return True
+    if max(episodes) <= 2:
+        return True
+    if expected and len(episodes) < expected * 0.5:
+        return True
+    return False
+
+
 def upsert_episode(section: MediaSection, item: ResultItem) -> None:
     episode = item.parsed.episode
     if episode is None:
         section.singles.append(item)
         return
     current = section.episodes.get(episode)
-    if current is None or catalog_episode_pick_rank(item) > catalog_episode_pick_rank(
-        current
-    ):
+    if _better_episode_pick(item, current):
         section.episodes[episode] = item
 
 
@@ -601,9 +620,7 @@ def _batch_episodes_for_release(
             seen.add(relative)
             pairs.append((relative, raw))
 
-    if is_franchise_multi_season_batch(title) and (
-        not episodes or max(episodes) <= 2
-    ):
+    if _franchise_batch_covers_full_season(title, episodes, expected):
         for relative in range(1, expected + 1):
             add(relative, absolute_offset + relative)
         return pairs
@@ -869,11 +886,17 @@ def _batch_candidates(section: MediaSection) -> list[ResultItem]:
 def _batch_coverage(
     batch: ResultItem, expected: int | None
 ) -> tuple[list[int], float]:
-    _, episodes = parse_batch_episode_range(batch.entry.title)
+    title = batch.entry.title
+    _, episodes = parse_batch_episode_range(title)
+    if not expected:
+        if not episodes:
+            return [], 0.0
+        return episodes, 1.0
+    if _franchise_batch_covers_full_season(title, episodes, expected):
+        covered = list(range(1, expected + 1))
+        return covered, 1.0
     if not episodes:
         return [], 0.0
-    if not expected:
-        return episodes, 1.0
     covered = [episode for episode in episodes if 1 <= episode <= expected]
     return covered, len(covered) / expected
 
@@ -982,7 +1005,7 @@ def normalize_section_episodes(
 
         candidate = item if relative == episode else item_for_episode(item, relative)
         current = remapped.get(relative)
-        if current is None or candidate.score > current.score:
+        if _better_episode_pick(candidate, current):
             remapped[relative] = candidate
 
     if absolute_offset == 0:
@@ -1012,7 +1035,7 @@ def _legacy_contiguous_remap(
             continue
         item = item_for_episode(source[episode], relative)
         current = remapped.get(relative)
-        if current is None or item.score > current.score:
+        if _better_episode_pick(item, current):
             remapped[relative] = item
 
 
@@ -1139,7 +1162,7 @@ def _fill_missing_episodes(
 
     for ep, item in extra.episodes.items():
         current = section.episodes.get(ep)
-        if current is None or item.score > current.score:
+        if _better_episode_pick(item, current):
             section.episodes[ep] = item
 
     _filter_section_for_release(
