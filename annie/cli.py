@@ -33,6 +33,7 @@ from annie.ui import (
     BACK_TO_EPISODE,
     C,
     copy_magnet,
+    EXIT_CANCELLED,
     fzf_available,
     fzf_install_hint,
     pick_catalog,
@@ -44,6 +45,7 @@ from annie.ui import (
     print_help,
     print_status,
     stylize,
+    is_user_cancel,
 )
 
 MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
@@ -653,7 +655,7 @@ def interactive_loop(config: AnnieConfig) -> int:
 
         direct = try_direct_play(raw_query, config)
         if direct is not None:
-            if direct != 0:
+            if direct != 0 and not is_user_cancel(direct):
                 print_status("playback interrupted", kind="warn")
             continue
 
@@ -669,7 +671,6 @@ def interactive_loop(config: AnnieConfig) -> int:
                 ),
             )
         except KeyboardInterrupt:
-            print()
             continue
         except Exception as exc:  # noqa: BLE001
             print_status(str(exc), kind="err")
@@ -743,6 +744,9 @@ def interactive_loop(config: AnnieConfig) -> int:
                         mal_titles=tuple(options.get("mal_titles", ())),
                         interactive_subs=True,
                     )
+                except KeyboardInterrupt:
+                    code = EXIT_CANCELLED
+                    break
                 except Exception as exc:  # noqa: BLE001
                     print_status(str(exc), kind="err")
                     code = 1
@@ -769,7 +773,7 @@ def interactive_loop(config: AnnieConfig) -> int:
             if item.parsed.season is not None:
                 binge_season = item.parsed.season
 
-            if code != 0:
+            if code != 0 and not is_user_cancel(code):
                 print_status("playback interrupted", kind="warn")
 
 
@@ -802,8 +806,6 @@ def main() -> int:
     try:
         return _main_impl()
     except KeyboardInterrupt:
-        if sys.stdout.isatty():
-            print()
         return 0
 
 

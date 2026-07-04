@@ -15,6 +15,13 @@ from annie.paths import cache_dir
 from annie.parsing import minimal_label
 from annie.types import MediaKind, MediaSection, ResultItem
 
+# Code de sortie conventionnel (SIGINT / Ctrl+C volontaire).
+EXIT_CANCELLED = 130
+
+
+def is_user_cancel(code: int | None) -> bool:
+    return code == EXIT_CANCELLED
+
 
 class C:
     RESET = "\033[0m"
@@ -352,7 +359,6 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
             done.wait(0.09)
     except KeyboardInterrupt:
         print("\r\033[K", end="", flush=True)
-        print()
         raise
 
     print("\r\033[K", end="", flush=True)
@@ -582,8 +588,7 @@ def _run_fzf(
         stdout_bytes, _ = proc.communicate(input=text_in.encode("utf-8"))
     except KeyboardInterrupt:
         _stop_subprocess(proc)
-        print()
-        return 130, ""
+        return EXIT_CANCELLED, ""
 
     stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
     return proc.returncode or 0, stdout

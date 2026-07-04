@@ -32,6 +32,7 @@ from annie.player import (  # noqa: F401  (ré-exports publics)
     resolve_player,
 )
 from annie.ui import (
+    EXIT_CANCELLED,
     BufferStatusDisplay,
     format_buffer_forced_start,
     format_buffer_lines,
@@ -39,6 +40,7 @@ from annie.ui import (
     format_buffer_quick_start,
     format_buffer_ready,
     format_stream_fatal,
+    is_user_cancel,
     log_playback_start,
     stream_log,
     stream_log_err,
@@ -876,45 +878,54 @@ def _play_while_downloading(
     display = BufferStatusDisplay() if show_download_progress else None
     target_bytes = _mkv_start_bytes()
 
-    while proc.poll() is None:
-        _enforce_sequential_frontier(handle, file_index)
-        if seed_while_watching and session is not None:
-            _enable_watch_seed(session, handle, file_index)
-        contiguous = _contiguous_file_bytes(handle, file_index)
-        ready = _file_ready(handle, file_index)
-        status = handle.status()
+    try:
+        while proc.poll() is None:
+            _enforce_sequential_frontier(handle, file_index)
+            if seed_while_watching and session is not None:
+                _enable_watch_seed(session, handle, file_index)
+            contiguous = _contiguous_file_bytes(handle, file_index)
+            ready = _file_ready(handle, file_index)
+            status = handle.status()
 
-        if ipc_available and ipc_path is not None:
-            time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
-            duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
-            play_byte = _estimate_play_byte(time_pos, duration, file_size)
-            need_pause = contiguous < play_byte + _stream_margin_bytes()
+            if ipc_available and ipc_path is not None:
+                time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
+                duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
+                play_byte = _estimate_play_byte(time_pos, duration, file_size)
+                need_pause = contiguous < play_byte + _stream_margin_bytes()
 
-            if need_pause and not paused_for_buffer:
-                _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
-                paused_for_buffer = True
-            elif paused_for_buffer and contiguous >= play_byte + _stream_margin_bytes():
-                _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
-                paused_for_buffer = False
+                if need_pause and not paused_for_buffer:
+                    _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
+                    paused_for_buffer = True
+                elif paused_for_buffer and contiguous >= play_byte + _stream_margin_bytes():
+                    _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
+                    paused_for_buffer = False
 
-        if display is not None:
-            _has_transfer, peer_hint = _buffer_peer_state(
-                status, listed_seeders=listed_seeders
-            )
-            extra_hint = " · ⏸ buffer insuffisant" if paused_for_buffer else ""
-            display.update(
-                format_buffer_lines(
-                    contiguous=contiguous,
-                    ready=ready,
-                    file_size=file_size,
-                    target_bytes=target_bytes,
-                    peer_hint=peer_hint,
-                    download_kib=status.download_rate / 1024,
-                    extra_hint=extra_hint,
+            if display is not None:
+                _has_transfer, peer_hint = _buffer_peer_state(
+                    status, listed_seeders=listed_seeders
                 )
-            )
+                extra_hint = " · ⏸ buffer insuffisant" if paused_for_buffer else ""
+                display.update(
+                    format_buffer_lines(
+                        contiguous=contiguous,
+                        ready=ready,
+                        file_size=file_size,
+                        target_bytes=target_bytes,
+                        peer_hint=peer_hint,
+                        download_kib=status.download_rate / 1024,
+                        extra_hint=extra_hint,
+                    )
+                )
 
-        time.sleep(0.25)
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        if display is not None:
+            display.finish("")
+        return EXIT_CANCELLED
 
     if display is not None:
         display.finish("")
@@ -1057,81 +1068,82 @@ def play(
     listed_seeders: int | None = None,
 ) -> int:
     session = make_session(seed_while_watching=seed_while_watching)
-    handle: lt.torrent_handle
+    handle: lt.torrent_handle | None = None
     target: Path
     player_name: str
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        player_future = pool.submit(resolve_player, player)
-        sub_future = None
-        if subtitle_lang and subtitle_query is not None:
-            from annie.subtitles import (
-                _opensubtitles_config_hint,
-                fetch_best,
-                subtitles_api_available,
-            )
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            player_future = pool.submit(resolve_player, player)
+            sub_future = None
+            if subtitle_lang and subtitle_query is not None:
+                from annie.subtitles import (
+                    _opensubtitles_config_hint,
+                    fetch_best,
+                    subtitles_api_available,
+                )
 
-            if subtitles_api_available():
-                sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
+                if subtitles_api_available():
+                    sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
+                else:
+                    stream_log_err("sous-titres", _opensubtitles_config_hint())
+
+            if source.startswith("magnet:?"):
+                save_path = magnet_save_path(source)
+                handle = add_torrent(session, source, save_path)
+                info = wait_metadata(handle)
             else:
-                stream_log_err("sous-titres", _opensubtitles_config_hint())
+                info = load_torrent_info(source)
+                save_path = torrent_cache_dir(info)
+                params = lt.add_torrent_params()
+                params.ti = info
+                params.save_path = _torrent_save_path(save_path)
+                handle = session.add_torrent(params)
 
-        if source.startswith("magnet:?"):
-            save_path = magnet_save_path(source)
-            handle = add_torrent(session, source, save_path)
-            info = wait_metadata(handle)
-        else:
-            info = load_torrent_info(source)
-            save_path = torrent_cache_dir(info)
-            params = lt.add_torrent_params()
-            params.ti = info
-            params.save_path = _torrent_save_path(save_path)
-            handle = session.add_torrent(params)
+            files = torrent_files(info)
+            file_index, rel_path, file_size = pick_file(
+                files,
+                index,
+                query,
+                episode=episode,
+                season=season,
+                source_episode=source_episode,
+            )
+            target = (save_path / rel_path).resolve()
+            ensure_directory(target.parent)
+            configure_stream(
+                handle,
+                file_index,
+                info.files().num_files(),
+                target=target,
+                file_size=file_size,
+            )
+            player_name = player_future.result()
+            sub_file: Path | None = None
+            if sub_future is not None:
+                from annie.config import AnnieConfig
 
-        files = torrent_files(info)
-        file_index, rel_path, file_size = pick_file(
-            files,
-            index,
-            query,
-            episode=episode,
-            season=season,
-            source_episode=source_episode,
-        )
-        target = (save_path / rel_path).resolve()
-        ensure_directory(target.parent)
-        configure_stream(
-            handle,
-            file_index,
-            info.files().num_files(),
-            target=target,
-            file_size=file_size,
-        )
-        player_name = player_future.result()
-        sub_file: Path | None = None
-        if sub_future is not None:
-            from annie.config import AnnieConfig
+                sub_timeout = AnnieConfig.load().subtitles.fetch_timeout
+                try:
+                    sub_file = sub_future.result(timeout=sub_timeout)
+                    if sub_file is not None:
+                        stream_log("sous-titres", sub_file.name, tone="accent")
+                    else:
+                        from annie.subtitles import SubtitlesError, no_subtitles_message
 
-            sub_timeout = AnnieConfig.load().subtitles.fetch_timeout
-            try:
-                sub_file = sub_future.result(timeout=sub_timeout)
-                if sub_file is not None:
-                    stream_log("sous-titres", sub_file.name, tone="accent")
-                else:
-                    from annie.subtitles import SubtitlesError, no_subtitles_message
+                        detail = (
+                            no_subtitles_message(subtitle_query, subtitle_lang)
+                            if subtitle_query and subtitle_lang
+                            else "aucun trouvé"
+                        )
+                        stream_log_err("sous-titres", detail, tone="warn")
+                except Exception as exc:
+                    from annie.subtitles import SubtitlesError
 
-                    detail = (
-                        no_subtitles_message(subtitle_query, subtitle_lang)
-                        if subtitle_query and subtitle_lang
-                        else "aucun trouvé"
-                    )
-                    stream_log_err("sous-titres", detail, tone="warn")
-            except Exception as exc:
-                from annie.subtitles import SubtitlesError
-
-                if isinstance(exc, SubtitlesError):
-                    stream_log_err("sous-titres", str(exc))
-                else:
-                    stream_log_err("sous-titres", f"indisponibles ({exc})")
+                    if isinstance(exc, SubtitlesError):
+                        stream_log_err("sous-titres", str(exc))
+                    else:
+                        stream_log_err("sous-titres", f"indisponibles ({exc})")
 
         log_playback_start(target.name, player_name)
         if seed_while_watching:
@@ -1151,11 +1163,19 @@ def play(
                 sub_file=sub_file,
                 listed_seeders=listed_seeders,
             )
-            if code != 0:
+            if code != 0 and not is_user_cancel(code):
                 stream_log_err(player_name, f"code {code}")
         finally:
             if seed_while_watching:
                 _disable_watch_seed(session)
-            session.remove_torrent(handle, 0 if keep else 1)
+            if handle is not None:
+                session.remove_torrent(handle, 0 if keep else 1)
 
-    return code
+        return code
+    except KeyboardInterrupt:
+        if handle is not None:
+            try:
+                session.remove_torrent(handle, 0 if keep else 1)
+            except Exception:
+                pass
+        return EXIT_CANCELLED
