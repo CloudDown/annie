@@ -757,6 +757,7 @@ def interactive_loop(config: AnnieConfig) -> int:
             require_episode_pick = False
 
             if picked is None:
+                binge_season = None
                 break
 
             action, item = picked

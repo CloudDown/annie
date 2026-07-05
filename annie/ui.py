@@ -169,7 +169,7 @@ HELP = f"""
 {stylize("Navigation", C.PALE_PINK, C.BOLD)}
   {stylize("①", C.PALE_PINK)} season / movie / ova
   {stylize("②", C.PALE_PINK)} episode (best torrent)
-  {stylize("Enter/→", C.GREEN)} select · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back / search · {stylize("Esc", C.YELLOW)} search
+  {stylize("Enter/→", C.GREEN)} select · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back · {stylize("Esc", C.YELLOW)} search / none
 
 {stylize("Shortcuts", C.PALE_PINK, C.BOLD)}
   frieren s2e10        stream directly
@@ -734,7 +734,7 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
         previews,
         lines,
         prompt="group> ",
-        header=_fzf_header("→ Enter · ← search · Esc"),
+        header=_fzf_header("→ Enter · ← group · Esc search"),
         expect="left,enter",
     )
     if picked is None:
@@ -745,7 +745,9 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
     return group_key
 
 
-def _pick_section_flat(sections: list[MediaSection]) -> MediaSection | None:
+def _pick_section_flat(
+    sections: list[MediaSection], *, back_label: str = "search"
+) -> MediaSection | None:
     indexed: dict[str, MediaSection] = {}
     previews: dict[str, str] = {}
     lines: list[str] = []
@@ -755,7 +757,7 @@ def _pick_section_flat(sections: list[MediaSection]) -> MediaSection | None:
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = _fzf_header("→ Enter · ← search · Esc")
+    header = _fzf_header(f"→ Enter · ← {back_label} · Esc search")
     picked = _fzf_choose(
         indexed,
         previews,
@@ -781,16 +783,26 @@ def pick_section(
         return sections[0]
 
     groups = _group_sections(sections)
-    active = [key for key in ("season", "movie", "other") if groups[key]]
-    if len(active) > 1 and not force_interactive:
-        group_key = pick_group(groups)
-        if group_key is None:
-            return None
-        sections = groups[group_key]
+    multi_group = sum(1 for key in ("season", "movie", "other") if groups[key]) > 1
+    pool = sections
+    interactive = force_interactive
 
-    if len(sections) == 1 and not force_interactive:
-        return sections[0]
-    return _pick_section_flat(sections)
+    while True:
+        if multi_group and not interactive:
+            group_key = pick_group(groups)
+            if group_key is None:
+                return None
+            pool = groups[group_key]
+
+        if len(pool) == 1 and not interactive:
+            return pool[0]
+
+        section = _pick_section_flat(pool, back_label="group" if multi_group else "search")
+        if section is not None:
+            return section
+        if multi_group and not interactive:
+            continue
+        return None
 
 
 def _episode_query(item: ResultItem) -> str:
@@ -896,7 +908,7 @@ def pick_subtitle_language() -> str | None | _BackToEpisode:
         previews,
         lines,
         prompt="langue> ",
-        header=_fzf_header("→ Enter · ← · Esc"),
+        header=_fzf_header("→ Enter · ← episodes · Esc = none"),
         expect="left,enter",
     )
     if picked is None:
@@ -922,7 +934,7 @@ def pick_catalog(
     if not sections:
         return None
 
-    if episode is not None:
+    if episode is not None and not require_episode_pick:
         for section in sections:
             if kind is not None and section.kind != kind:
                 continue
@@ -943,22 +955,35 @@ def pick_catalog(
         if matched:
             pool = matched
 
+    pinned_season = season
+    pinned_episode = episode
     force_section_pick = False
     while True:
-        if (
+        auto_pick_section = (
             not force_section_pick
             and len(pool) == 1
-            and (season is not None or kind is not None)
-        ):
+            and (
+                require_episode_pick
+                or (
+                    pinned_episode is None
+                    and (pinned_season is not None or kind is not None)
+                )
+            )
+        )
+        if auto_pick_section:
             section = pool[0]
         else:
-            force_section_pick = False
             section = pick_section(pool, force_interactive=force_section_pick)
+            force_section_pick = False
         if section is None:
             return None
 
-        if episode is not None and section.has_episodes:
-            item = section.episodes.get(episode)
+        if (
+            pinned_episode is not None
+            and not require_episode_pick
+            and section.has_episodes
+        ):
+            item = section.episodes.get(pinned_episode)
             if item is not None:
                 return "enter", item
 
@@ -975,6 +1000,10 @@ def pick_catalog(
         action, item = picked
         if action == "left":
             force_section_pick = True
+            pinned_episode = None
+            if pinned_season is not None:
+                pinned_season = None
+                pool = sections
             continue
         if item is None:
             return None
