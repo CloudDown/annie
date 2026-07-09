@@ -105,8 +105,8 @@ def _mpv_command(
                 "--msg-level=all=fatal",
             ]
         )
-    readahead_secs = 10 if streaming else 3
-    demuxer_max_bytes = "64M" if streaming else "32M"
+    readahead_secs = 15 if streaming else 3
+    demuxer_max_bytes = "96M" if streaming else "32M"
     cmd.extend(
         [
             "--cache=yes",
@@ -115,8 +115,8 @@ def _mpv_command(
             "--cache-pause-initial=yes",
             f"--demuxer-readahead-secs={readahead_secs}",
             f"--demuxer-max-bytes={demuxer_max_bytes}",
-            "--demuxer-lavf-analyzeduration=5",
-            "--demuxer-lavf-probesize=5242880",
+            "--demuxer-lavf-analyzeduration=8",
+            "--demuxer-lavf-probesize=10485760",
             f"--vo={vo}",
             f"--gpu-api={gpu_api}",
             f"--hwdec={hwdec}",

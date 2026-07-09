@@ -30,9 +30,9 @@ class BufferSettings:
     max_wait_sec: float = 5.0
     no_peers_sec: float = 45.0
     absolute_sec: float = 90.0
-    mkv_start_mib: int = 16
-    mkv_head_mib: int = 16
-    stream_margin_mib: int = 12
+    mkv_start_mib: int = 20
+    mkv_head_mib: int = 24
+    stream_margin_mib: int = 16
     mpv_retry_sec: float = 15.0
     mkv_playable_wait_sec: float = 8.0
 
@@ -126,10 +126,10 @@ class AnnieSettings:
             max_wait_sec=toml_util.float_val(buffer_table.get("max_wait_sec"), 5.0),
             no_peers_sec=toml_util.float_val(buffer_table.get("no_peers_sec"), 45.0),
             absolute_sec=toml_util.float_val(buffer_table.get("absolute_sec"), 90.0),
-            mkv_start_mib=toml_util.int_val(buffer_table.get("mkv_start_mib"), 16),
-            mkv_head_mib=toml_util.int_val(buffer_table.get("mkv_head_mib"), 16),
+            mkv_start_mib=toml_util.int_val(buffer_table.get("mkv_start_mib"), 20),
+            mkv_head_mib=toml_util.int_val(buffer_table.get("mkv_head_mib"), 24),
             stream_margin_mib=toml_util.int_val(
-                buffer_table.get("stream_margin_mib"), 12
+                buffer_table.get("stream_margin_mib"), 16
             ),
             mpv_retry_sec=toml_util.float_val(
                 buffer_table.get("mpv_retry_sec"), 15.0

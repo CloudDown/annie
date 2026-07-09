@@ -49,8 +49,12 @@ RECAP_MOVIE_PATTERNS = (
     re.compile(r"\bsummary\b", re.I),
 )
 _SEASON_TAG_RE = re.compile(r"\bS0?(\d{1,2})\b", re.I)
+# Pluriel « Seasons 1-4 » = plage de saisons.
+# Singulier « Season 1-2 » (sans espaces) seulement si hi ≤ 5 (packs courts).
+# « Season 3 - 04 » / « Season 1~13 » = épisode(s), pas plage de saisons.
 _SEASON_SPAN_IN_TITLE_RE = re.compile(
-    r"\bseasons?\s*(?P<lo>\d{1,2})\s*[-–—~]\s*(?P<hi>\d{1,2})\b",
+    r"\bseasons\s*(?P<lo>\d{1,2})\s*[-–—~]\s*(?P<hi>\d{1,2})\b"
+    r"|\bseason\s*(?P<lo2>\d{1,2})[-–—~](?P<hi2>[1-5])\b",
     re.I,
 )
 _S_SPAN_IN_TITLE_RE = re.compile(
@@ -191,7 +195,9 @@ def _explicit_seasons_in_title(title: str) -> set[int]:
             seasons.add(value)
     for pattern in (_SEASON_SPAN_IN_TITLE_RE, _S_SPAN_IN_TITLE_RE):
         for match in pattern.finditer(title):
-            lo, hi = int(match.group("lo")), int(match.group("hi"))
+            groups = match.groupdict()
+            lo = int(groups.get("lo") or groups.get("lo2") or 0)
+            hi = int(groups.get("hi") or groups.get("hi2") or 0)
             if lo >= 1 and hi >= lo:
                 seasons.update(range(lo, hi + 1))
     return seasons
@@ -214,10 +220,21 @@ def _magnet_reusable_across_seasons(title: str) -> bool:
 
 
 def _batch_range_is_season_span(body: str, match: re.Match[str]) -> bool:
-    """Évite de lire « Seasons 1-2 » comme épisodes 1-2 (pas « Season 1~13 »)."""
-    prefix = body[max(0, match.start() - 20) : match.start()]
+    """Évite de lire « Seasons 1-2 » / « Season 3 - 04 » comme plage d'épisodes."""
+    prefix = body[max(0, match.start() - 24) : match.start()]
     if re.search(r"seasons\s*$", prefix, re.I):
         return True
+    # « Season 3 - 04 » : le 1er nombre = n° de saison, plage courte → pas un batch.
+    # « Season 1~13 » / « Season 1-13 » : vraie plage d'épisodes (écart > 2).
+    if re.search(r"\bseason\s*$", prefix, re.I):
+        season = parse_season(body)
+        try:
+            start = int(match.group("a"))
+            end = int(match.group("b"))
+        except (IndexError, ValueError):
+            return False
+        if season is not None and start == season and (end - start) <= 2:
+            return True
     return bool(re.search(r"S0?\d+\s*[-–—~]\s*$", prefix, re.I))
 
 

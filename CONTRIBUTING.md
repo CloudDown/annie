@@ -66,7 +66,14 @@ packaging/
   aur/                PKGBUILD AUR (makepkg -si)
 ```
 
-## Tests
+## Tests vs scripts de validation
+
+| Outil | Réseau | Rôle |
+|-------|--------|------|
+| `make test` | Non | Régression offline (fixtures) — **obligatoire avant commit**, CI |
+| `make debug-rezero` | Non (+ live optionnel) | Régression catalogue Re:Zero |
+| `scripts/debug_franchise.py` | Oui | Zoom **un** anime : saisons MAL vs catalogue, épisodes manquants |
+| `scripts/validate_franchise.py` | Oui | Audit panel : couverture, seeders, qualité — **hors CI** |
 
 La suite unitaire est entièrement offline (pas d’appel Nyaa/MAL/OpenSubtitles) :
 
@@ -77,6 +84,15 @@ uv run python -m unittest discover -s tests -v
 ```
 
 Les cas reproductibles vivent dans `tests/fixtures/` (`parse_titles.json`, `catalog_re_zero.json`, `subtitle_queries.json`, etc.). Ajouter un cas dans la fixture puis lancer `make test`.
+
+Pour découvrir des bugs catalogue sur de vrais titres Nyaa/MAL (pas inventer des règles au cas par cas) :
+
+```bash
+uv run python scripts/debug_franchise.py "re zero"
+uv run python scripts/validate_franchise.py --limit 20
+```
+
+Corriger uniquement les **patterns répétés** du rapport, puis figer le cas en fixture offline si possible.
 
 ## CI
 

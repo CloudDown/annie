@@ -18,6 +18,16 @@ def read_json(path: Path, *, ttl: float) -> dict | list | None:
         return None
 
 
+def read_json_stale(path: Path) -> dict | list | None:
+    """Lit un JSON même si le TTL est dépassé (fallback hors-ligne)."""
+    try:
+        if not path.is_file():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def write_json(path: Path, payload: dict | list) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

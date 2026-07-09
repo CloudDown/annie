@@ -10,9 +10,10 @@ import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 
-from annie.cache import read_json, write_json
+from annie.cache import read_json, read_json_stale, write_json
 from annie.paths import cache_dir
 from annie.catalog import is_recap_movie
 from annie.parsing import normalize
@@ -37,7 +38,16 @@ def _mal_cache_ttl() -> int:
 
 SKIP_MAL_TYPES = frozenset({"Music", "PV", "CM", "Unknown"})
 WATCHABLE_TYPES = frozenset({"TV", "Movie", "OVA", "Special", "ONA", "TV Special"})
-MAIN_TV_RELATIONS = frozenset({"Root", "Sequel", "Prequel", "Parent story"})
+MAIN_TV_RELATIONS = frozenset(
+    {
+        "Root",
+        "Sequel",
+        "Prequel",
+        "Parent story",
+        # Films compilation / recut (ex. Gurren Lagann) → série TV.
+        "Alternative Version",
+    }
+)
 FRANCHISE_EXPAND_RELATIONS = frozenset(
     {
         "Sequel",
@@ -46,6 +56,7 @@ FRANCHISE_EXPAND_RELATIONS = frozenset(
         "Spin-off",
         "Parent story",
         "Alternative setting",
+        "Alternative Version",
         "Summary",
         "Adaptation",
         "Full story",
@@ -229,10 +240,22 @@ def _get(path: str, *, retries: int = 4) -> dict:
             if exc.code == 429 and attempt < retries - 1:
                 time.sleep(1.5 * (attempt + 1))
                 continue
+            stale = read_json_stale(_disk_cache_path(path))
+            if isinstance(stale, dict):
+                _response_cache[path] = stale
+                return stale
             raise RuntimeError(f"MAL API error ({exc.code})") from exc
         except urllib.error.URLError as exc:
+            stale = read_json_stale(_disk_cache_path(path))
+            if isinstance(stale, dict):
+                _response_cache[path] = stale
+                return stale
             raise RuntimeError(f"MAL API unreachable: {exc.reason}") from exc
     if last_error:
+        stale = read_json_stale(_disk_cache_path(path))
+        if isinstance(stale, dict):
+            _response_cache[path] = stale
+            return stale
         raise RuntimeError("MAL API error") from last_error
     raise RuntimeError("MAL API error")
 
@@ -321,7 +344,7 @@ def _parse_anime(
     )
 
 
-def search_anime(query: str, *, limit: int = 8) -> list[MalAnime]:
+def _search_anime_once(query: str, *, limit: int = 8) -> list[MalAnime]:
     params = urllib.parse.urlencode({"q": query, "limit": limit})
     payload = _get(f"/anime?{params}")
     results: list[MalAnime] = []
@@ -331,6 +354,72 @@ def search_anime(query: str, *, limit: int = 8) -> list[MalAnime]:
             continue
         results.append(anime)
     return results
+
+
+def _fallback_token(query: str) -> str | None:
+    """Token le plus long (≥ 4) pour une seule requête de secours."""
+    tokens = [token for token in normalize(query).split() if len(token) >= 4]
+    if not tokens:
+        return None
+    return max(tokens, key=len)
+
+
+def _fuzzy_title_ratio(query: str, title: str) -> float:
+    q = normalize(query)
+    t = normalize(title)
+    if not q or not t:
+        return 0.0
+    if q == t or q in t:
+        return 1.0
+    return SequenceMatcher(None, q, t).ratio()
+
+
+def _token_matches(token: str, haystack: str) -> bool:
+    """Sous-chaîne exacte ou quasi-typo générique (ratio ≥ 0.8)."""
+    if not token or len(token) < 2:
+        return False
+    if token in haystack:
+        return True
+    if len(token) < 4:
+        return False
+    for word in haystack.split():
+        if abs(len(word) - len(token)) > 2:
+            continue
+        if SequenceMatcher(None, token, word).ratio() >= 0.8:
+            return True
+    return False
+
+
+def search_anime(query: str, *, limit: int = 8) -> list[MalAnime]:
+    """Recherche MAL : query utilisateur, puis un fallback token si besoin."""
+    cleaned = normalize(query).strip() or query.strip()
+    merged: dict[int, MalAnime] = {}
+
+    try:
+        for anime in _search_anime_once(cleaned, limit=limit):
+            merged.setdefault(anime.mal_id, anime)
+    except RuntimeError:
+        pass
+
+    best_score = (
+        max((_score_candidate(anime, query) for anime in merged.values()), default=0)
+        if merged
+        else 0
+    )
+    fallback = _fallback_token(cleaned)
+    if fallback and fallback != cleaned and (not merged or best_score < 200):
+        try:
+            for anime in _search_anime_once(fallback, limit=limit):
+                merged.setdefault(anime.mal_id, anime)
+        except RuntimeError:
+            pass
+
+    ranked = sorted(
+        merged.values(),
+        key=lambda anime: _score_candidate(anime, query),
+        reverse=True,
+    )
+    return ranked[:limit]
 
 
 def fetch_anime_full(mal_id: int) -> MalAnime:
@@ -346,13 +435,25 @@ def _score_candidate(anime: MalAnime, query: str) -> int:
         normalize(anime.title_japanese or ""),
     ]
     score = 0
+    query_wants_movie = bool(re.search(r"\bmovie\b", query, re.I))
     for token in tokens:
-        if any(token in hay for hay in haystacks):
+        if any(_token_matches(token, hay) for hay in haystacks):
             score += 120
     if normalize(query) in haystacks[0] or normalize(query) in haystacks[1]:
         score += 200
+    else:
+        best_fuzzy = max(
+            (_fuzzy_title_ratio(query, hay) for hay in haystacks if hay),
+            default=0.0,
+        )
+        if best_fuzzy >= 0.85:
+            score += 180
+        elif best_fuzzy >= 0.72:
+            score += 100
     if anime.type == "TV":
-        score += 40
+        score += 80
+    elif anime.type == "Movie" and not query_wants_movie:
+        score -= 60
     if anime.episodes:
         score += min(anime.episodes, 30)
     if SPINOFF_MARKERS_RE.search(title) or SPINOFF_MARKERS_RE.search(anime.title):

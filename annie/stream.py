@@ -56,9 +56,12 @@ MKV_CLUSTER = b"\x1f\x43\xb6\x75"
 CACHE_DIR = cache_dir()
 START_MIN_MKV_BYTES = 2 * 1024 * 1024
 MKV_FRONTIER_PIECES = 64
-START_UNPAUSE_BONUS_BYTES = 2 * 1024 * 1024
-START_UNPAUSE_MAX_BONUS_BYTES = 6 * 1024 * 1024
-START_UNPAUSE_MAX_WAIT_SEC = 3.0
+START_UNPAUSE_BONUS_BYTES = 4 * 1024 * 1024
+START_UNPAUSE_MAX_BONUS_BYTES = 12 * 1024 * 1024
+START_UNPAUSE_MAX_WAIT_SEC = 6.0
+# Marge renforcée pendant les premières secondes de lecture (HEVC / BD).
+START_WARMUP_SEC = 12.0
+START_WARMUP_MARGIN_BYTES = 20 * 1024 * 1024
 START_MIN_MP4_BYTES = 256 * 1024
 START_MIN_OTHER_BYTES = 4 * 1024 * 1024
 MP4_TAIL_BYTES = 8 * 1024 * 1024
@@ -734,7 +737,16 @@ def wait_startable(
             has_transfer, peer_hint = _buffer_peer_state(
                 status, listed_seeders=listed_seeders
             )
-            can_start = has_transfer or ready >= int(file_size * 0.98)
+            # Tête déjà en cache (contigu OK) : lancer même sans peer actif —
+            # le buffer pendant la lecture gère le manque de données.
+            head_ready = contiguous >= target_bytes and _is_startable(
+                target, ready, file_size, handle=handle, file_index=file_index
+            )
+            can_start = (
+                has_transfer
+                or ready >= int(file_size * 0.98)
+                or head_ready
+            )
             startable = _is_startable(
                 target, ready, file_size, handle=handle, file_index=file_index
             )
@@ -871,9 +883,13 @@ def _playback_lead_required(
     *,
     download_rate: int = 0,
     consumption_rate: float = 0,
+    elapsed_sec: float = 0,
 ) -> int:
     """Bytes contigus requis pour tenir devant la position de lecture."""
     margin = _stream_margin_bytes()
+    if elapsed_sec < START_WARMUP_SEC:
+        # Début de lecture : marge plus large (HEVC / BD / Re:Zero).
+        margin = max(margin, START_WARMUP_MARGIN_BYTES)
     if consumption_rate > 0 and download_rate > 0:
         if consumption_rate > download_rate * 0.8:
             margin = max(margin, int(consumption_rate * 6))
@@ -884,7 +900,7 @@ def _playback_lead_required(
 
 def _initial_unpause_threshold(download_rate: int) -> int:
     """Seuil de reprise au lancement — remplit le buffer pendant que mpv est en pause."""
-    base = _playback_lead_required(0, download_rate=download_rate)
+    base = max(_stream_margin_bytes(), START_WARMUP_MARGIN_BYTES)
     bonus = min(
         START_UNPAUSE_MAX_BONUS_BYTES,
         max(START_UNPAUSE_BONUS_BYTES, int(download_rate * 3)),
@@ -982,6 +998,7 @@ def _play_while_downloading(
                     play_byte,
                     download_rate=download_rate,
                     consumption_rate=consumption_rate,
+                    elapsed_sec=now - playback_started_at,
                 )
                 at_start = play_byte <= 0 and (
                     time_pos is None

@@ -8,6 +8,7 @@ from annie.catalog import (
     _episode_belongs_to_release,
     _gap_search_queries,
     franchise_absolute_offsets,
+    is_franchise_multi_season_batch,
     is_spinoff,
     normalize_section_episodes,
     parse_batch_episode_range,
@@ -155,6 +156,23 @@ class BatchRangeTests(unittest.TestCase):
             "[LostYears] Re: ZERO - S03E08 (CR WEB-DL) | "
             "Re: Zero Kara Hajimeru Isekai Seikatsu Season 3 - 08"
         )
+        season, eps = parse_batch_episode_range(title)
+        self.assertEqual(eps, [])
+
+    def test_season_dash_episode_not_batch_range(self) -> None:
+        """« Season 3 - 04 » = S03E04, pas épisodes 3–4 ni pack multi-saisons."""
+        title = (
+            "[Chihiro] Re Zero kara Hajimeru Isekai Seikatsu Season 3 - 04 "
+            "[1080p HEVC AAC][38AEFA74].mkv"
+        )
+        season, eps = parse_batch_episode_range(title)
+        self.assertEqual(season, 3)
+        self.assertEqual(eps, [])
+        self.assertFalse(is_franchise_multi_season_batch(title))
+
+    def test_seasons_plural_span_still_multi(self) -> None:
+        title = "[Anime Time] Attack On Titan (Complete) (Seasons 1-4) [BD]"
+        self.assertTrue(is_franchise_multi_season_batch(title))
         season, eps = parse_batch_episode_range(title)
         self.assertEqual(eps, [])
 
