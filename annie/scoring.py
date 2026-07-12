@@ -150,27 +150,6 @@ def pick_best(
     return best.entry, best.parsed
 
 
-def catalog_episode_rank(item: ResultItem) -> tuple:
-    """Alias rétrocompat (tests)."""
-    return catalog_episode_pick_rank(item)
-
-
-def catalog_episode_score(item: ResultItem) -> float:
-    """Score scalaire pour affichage / tests."""
-    alive, batch_pack, seeds, quality, neg_variant, trusted, match = (
-        catalog_episode_pick_rank(item)
-    )
-    return float(
-        match * 1000
-        + int(batch_pack) * 200
-        + seeds * 30
-        + quality
-        + neg_variant * 500
-        + trusted * 60
-        + int(alive) * 100
-    )
-
-
 @dataclass(frozen=True)
 class EpisodeAssessment:
     season: int | None

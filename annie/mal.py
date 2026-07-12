@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -14,11 +13,11 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from annie.cache import read_json, read_json_stale, write_json
-from annie.paths import cache_dir
 from annie.catalog import is_recap_movie
+from annie.net import TokenBucket, fetch_json
 from annie.parsing import normalize
+from annie.paths import cache_dir
 from annie.types import MalRelease, MediaKind
-from annie.net import fetch_json
 
 JIKAN_BASE = "https://api.jikan.moe/v4"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
@@ -43,8 +42,8 @@ MAIN_TV_RELATIONS = frozenset(
         "Root",
         "Sequel",
         "Prequel",
-        "Parent story",
         # Films compilation / recut (ex. Gurren Lagann) → série TV.
+        # Uniquement si la racine n'est pas déjà une TV (voir _is_main_tv).
         "Alternative Version",
     }
 )
@@ -66,35 +65,44 @@ SPLIT_COUR_RE = re.compile(
     r"\b(?:part\s*2|2(?:nd)?\s*cour|second\s*cour|cour\s*2)\b", re.I
 )
 SPINOFF_MARKERS_RE = re.compile(
-    r"\b(nikki|diaries|picture drama|mini anime|chibi|break time|petit)\b",
+    r"\b(nikki|diaries|picture drama|mini anime|chibi|break time|petit|"
+    r"bakuen|gaiden|spin[- ]?off)\b",
+    re.I,
+)
+_EXPLOSION_SPINOFF_RE = re.compile(r"\bexplosion\b", re.I)
+# Suite / saison dans le titre alors que la query ne le demande pas.
+_SEQUEL_TITLE_RE = re.compile(
+    r"\b(?:"
+    r"season\s*[2-9]|[2-9](?:nd|rd|th)\s*season|final\s*season|"
+    r"after\s*story|aragoto|part\s*[2-9]|cour\s*[2-9]|"
+    r"2wei|3rei|movie|film|ova|special|recap|picture\s*drama"
+    r")\b"
+    r"|(?:^|[\s:/-])(?:ii|iii|iv|v)(?:$|[\s:/-])"
+    r"|(?:season\s+)?[2-9]\s*$"
+    r"|\s+[2-9stw]\s*$",
+    re.I,
+)
+_QUERY_WANTS_SEQUEL_RE = re.compile(
+    r"\b(?:"
+    r"season\s*[2-9]|[2-9](?:nd|rd|th)\s*season|final|"
+    r"after\s*story|aragoto|part\s*[2-9]|movie|ova|special"
+    r")\b"
+    r"|\s+[2-9]\s*$",
+    re.I,
+)
+# Sous-titre après « : » qui continue la série (pas un spin-off nommé).
+_COLON_CONTINUATION_RE = re.compile(
+    r"^\s*(?:"
+    r"season\s*\d+|\d+(?:nd|rd|th)?\s*season|final(?:\s*season)?|"
+    r"part\s*\d+|after\s*story|aragoto|shippuden|shippuuden|the\s+movie|"
+    r".+\b(?:war|arc|chapter|cour|saga)\b"
+    r")",
     re.I,
 )
 
 _response_cache: dict[str, dict] = {}
 
-
-class _TokenBucket:
-    def __init__(self, rate: float, burst: int) -> None:
-        self._rate = rate
-        self._burst = burst
-        self._tokens = float(burst)
-        self._updated_at = time.monotonic()
-        self._lock = threading.Lock()
-
-    def acquire(self) -> None:
-        with self._lock:
-            while True:
-                now = time.monotonic()
-                elapsed = now - self._updated_at
-                self._updated_at = now
-                self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
-                if self._tokens >= 1.0:
-                    self._tokens -= 1.0
-                    return
-                time.sleep((1.0 - self._tokens) / self._rate)
-
-
-_jikan_limiter = _TokenBucket(rate=4.0, burst=5)
+_jikan_limiter = TokenBucket(rate=4.0, burst=5)
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,8 @@ class MalAnime:
     aired_from: str | None
     is_recap: bool = False
     via_relation: str = "Root"
+    synonyms: tuple[str, ...] = ()
+    anilist_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -331,6 +341,11 @@ def _parse_anime(
     data: dict, *, is_recap: bool = False, via_relation: str = "Root"
 ) -> MalAnime:
     aired = data.get("aired") or {}
+    synonyms = tuple(
+        str(s).strip()
+        for s in (data.get("title_synonyms") or [])
+        if isinstance(s, str) and s.strip()
+    )
     return MalAnime(
         mal_id=int(data["mal_id"]),
         title=str(data.get("title") or ""),
@@ -341,6 +356,7 @@ def _parse_anime(
         aired_from=(aired.get("from") or "")[:10] or None,
         is_recap=is_recap,
         via_relation=via_relation,
+        synonyms=synonyms,
     )
 
 
@@ -369,25 +385,167 @@ def _fuzzy_title_ratio(query: str, title: str) -> float:
     t = normalize(title)
     if not q or not t:
         return 0.0
-    if q == t or q in t:
+    if q == t or _phrase_in(q, t):
         return 1.0
     return SequenceMatcher(None, q, t).ratio()
 
 
+def _phrase_in(phrase: str, haystack: str) -> bool:
+    """Contiguïté au niveau des mots (évite « oshi no ko » ⊂ « hoshi no ko »)."""
+    if not phrase or not haystack:
+        return False
+    if phrase == haystack:
+        return True
+    words = phrase.split()
+    hay = haystack.split()
+    if not words or len(words) > len(hay):
+        return False
+    n = len(words)
+    for index in range(len(hay) - n + 1):
+        if hay[index : index + n] == words:
+            return True
+    return False
+
+
 def _token_matches(token: str, haystack: str) -> bool:
-    """Sous-chaîne exacte ou quasi-typo générique (ratio ≥ 0.8)."""
+    """Mot entier exact, ou fuzzy / sous-chaîne pour tokens assez longs."""
     if not token or len(token) < 2:
         return False
-    if token in haystack:
+    words = haystack.split()
+    if token in words:
         return True
     if len(token) < 4:
         return False
-    for word in haystack.split():
+    for word in words:
         if abs(len(word) - len(token)) > 2:
             continue
-        if SequenceMatcher(None, token, word).ratio() >= 0.8:
+        if SequenceMatcher(None, token, word).ratio() >= 0.85:
             return True
+    # Sous-chaîne multi-caractères seulement si token long (évite oshi⊂hoshi).
+    if len(token) >= 5 and token in haystack:
+        return True
     return False
+
+
+def _significant_title_tokens(anime: MalAnime) -> set[str]:
+    title = normalize(anime.title_english or anime.title or "")
+    return {token for token in title.split() if len(token) >= 4}
+
+
+_WEAK_TITLE_TOKENS = frozenset(
+    {
+        "certain",
+        "story",
+        "season",
+        "anime",
+        "movie",
+        "special",
+        "from",
+        "with",
+        "this",
+        "that",
+        "world",
+        "another",
+        "first",
+        "second",
+        "third",
+        "final",
+    }
+)
+
+
+def _tv_title_coherent(root: MalAnime | None, anime: MalAnime) -> bool:
+    """Écarte les « sequels » AniList d'une autre série (ex. Chaos;Child, Index)."""
+    if root is None or anime.via_relation == "Root":
+        return True
+    root_title = normalize(root.title_english or root.title or "")
+    anime_title = normalize(anime.title_english or anime.title or "")
+    if not root_title or not anime_title:
+        return True
+    if _phrase_in(root_title, anime_title) or _phrase_in(anime_title, root_title):
+        return True
+    rt = _significant_title_tokens(root)
+    at = _significant_title_tokens(anime)
+    shared = rt & at
+    strong = {
+        token
+        for token in shared
+        if len(token) >= 5 and token not in _WEAK_TITLE_TOKENS
+    }
+    if len(strong) >= 1 or len(shared - _WEAK_TITLE_TOKENS) >= 2:
+        return True
+    if SequenceMatcher(None, root_title, anime_title).ratio() >= 0.62:
+        return True
+    if anime.via_relation in {"Sequel", "Prequel"}:
+        for token in rt:
+            if (
+                len(token) >= 5
+                and token not in _WEAK_TITLE_TOKENS
+                and token in anime_title
+            ):
+                return True
+    return False
+
+
+def _is_series_entry(anime: MalAnime) -> bool:
+    if anime.type == "TV":
+        return True
+    # ONA / OVA long-form (Edgerunners, Sakamoto Days, Hellsing Ultimate…).
+    if anime.type in {"ONA", "OVA"} and (anime.episodes or 0) >= 3:
+        return True
+    return False
+
+
+def _is_named_spinoff_branch(root: MalAnime | None, anime: MalAnime) -> bool:
+    """« My Hero Academia: Vigilantes » ≠ suite de la série principale."""
+    if root is None or anime.mal_id == root.mal_id or anime.via_relation == "Root":
+        return False
+    title = anime.title_english or anime.title or ""
+    root_title = root.title_english or root.title or ""
+    # Exige « : » + espace (sous-titre EN), pas Re:Zero / Code:Breaker.
+    if ": " not in title:
+        return False
+    prefix, suffix = title.split(": ", 1)
+    prefix_n = normalize(prefix)
+    root_n = normalize(root_title)
+    root_base = normalize(root_title.split(":", 1)[0])
+    if not (
+        prefix_n == root_base
+        or _phrase_in(prefix_n, root_n)
+        or _phrase_in(root_base, prefix_n)
+    ):
+        return False
+    if _COLON_CONTINUATION_RE.match(suffix.strip()):
+        return False
+    return True
+
+
+def _is_main_tv(anime: MalAnime, *, root: MalAnime | None) -> bool:
+    if not _is_series_entry(anime) or anime.is_recap or not anime.episodes:
+        return False
+    rel = anime.via_relation
+    if rel not in MAIN_TV_RELATIONS:
+        return False
+    if _is_named_spinoff_branch(root, anime):
+        return False
+    if rel == "Alternative Version":
+        # TV↔TV retellings (FMA 2003 vs Brotherhood) : pas deux saisons.
+        # Générations d'une franchise (Love Live) : titres assez différents → OK.
+        if root is not None and _is_series_entry(root) and anime.mal_id != root.mal_id:
+            # OVA/ONA racine (Hellsing Ultimate) : ne pas remonter la TV originale.
+            if root.type in {"OVA", "ONA"} and anime.type == "TV":
+                return False
+            root_title = normalize(root.title_english or root.title or "")
+            anime_title = normalize(anime.title_english or anime.title or "")
+            similarity = SequenceMatcher(None, root_title, anime_title).ratio()
+            if similarity >= 0.72:
+                return False
+            if not _tv_title_coherent(root, anime):
+                return False
+            return True
+    if not _tv_title_coherent(root, anime):
+        return False
+    return True
 
 
 def search_anime(query: str, *, limit: int = 8) -> list[MalAnime]:
@@ -433,14 +591,35 @@ def _score_candidate(anime: MalAnime, query: str) -> int:
         normalize(anime.title),
         normalize(anime.title_english or ""),
         normalize(anime.title_japanese or ""),
+        *[normalize(syn) for syn in anime.synonyms if syn],
     ]
     score = 0
     query_wants_movie = bool(re.search(r"\bmovie\b", query, re.I))
+    query_wants_sequel = bool(_QUERY_WANTS_SEQUEL_RE.search(query))
+    query_wants_special = bool(re.search(r"\b(?:ova|special)\b", query, re.I))
     for token in tokens:
         if any(_token_matches(token, hay) for hay in haystacks):
             score += 120
-    if normalize(query) in haystacks[0] or normalize(query) in haystacks[1]:
+    qn = normalize(query)
+    strong_title_hit = bool(
+        qn and any(_phrase_in(qn, hay) or qn == hay for hay in haystacks if hay)
+    )
+    if qn and strong_title_hit:
         score += 200
+        # Titre ≈ query (peu de mots en plus) : favorise la saison 1 / entry root.
+        best_hay = min(
+            (hay for hay in haystacks if hay and (_phrase_in(qn, hay) or qn == hay)),
+            key=len,
+            default="",
+        )
+        if best_hay:
+            q_words = set(qn.split())
+            extra_words = [
+                word
+                for word in best_hay.split()
+                if word not in q_words and not word.isdigit()
+            ]
+            score -= min(160, len(extra_words) * 55)
     else:
         best_fuzzy = max(
             (_fuzzy_title_ratio(query, hay) for hay in haystacks if hay),
@@ -448,34 +627,92 @@ def _score_candidate(anime: MalAnime, query: str) -> int:
         )
         if best_fuzzy >= 0.85:
             score += 180
+            strong_title_hit = True
         elif best_fuzzy >= 0.72:
             score += 100
     if anime.type == "TV":
         score += 80
+    elif anime.type == "ONA" and (anime.episodes or 0) >= 3:
+        # Séries ONA (Edgerunners, Sakamoto Days…) ≈ TV.
+        score += 80
     elif anime.type == "Movie" and not query_wants_movie:
         score -= 60
+    elif anime.type == "Special" and not query_wants_special:
+        score -= 220
+    elif anime.type == "OVA" and not query_wants_special:
+        score -= 120
     if anime.episodes:
-        score += min(anime.episodes, 30)
+        score += min(anime.episodes, 40)
+        # Remakes longs (HxH 2011) : seulement si le titre matche vraiment.
+        if anime.episodes >= 100 and strong_title_hit:
+            score += 80
     if SPINOFF_MARKERS_RE.search(title) or SPINOFF_MARKERS_RE.search(anime.title):
         score -= 400
-    if re.search(
+    if _EXPLOSION_SPINOFF_RE.search(title) and not _EXPLOSION_SPINOFF_RE.search(
+        query
+    ):
+        score -= 400
+    if not query_wants_sequel and _SEQUEL_TITLE_RE.search(title):
+        score -= 160
+    elif re.search(
         r"\bseason\s*[2-9]|\b[2-9](?:nd|rd|th)\s*season|\bpart\s*[2-9]\b"
         r"|\b(?:ii|iii|iv|v)\b|(?:season\s+)?[2-9]\s*$",
         title,
         re.I,
     ):
         score -= 100
+    # Léger bonus d'ancienneté seulement pour départager S1 vs suite proche.
+    if anime.aired_from and len(anime.aired_from) >= 4 and not query_wants_sequel:
+        try:
+            year = int(anime.aired_from[:4])
+            if 1960 <= year <= 2100 and not _SEQUEL_TITLE_RE.search(title):
+                score += max(0, min(20, (2015 - year) // 5))
+        except ValueError:
+            pass
     return score
+
+
+def score_candidate(anime: MalAnime, query: str) -> int:
+    return _score_candidate(anime, query)
+
+
+def ranked_candidates(
+    candidates: list[MalAnime], query: str
+) -> list[tuple[int, MalAnime]]:
+    ranked = sorted(
+        ((_score_candidate(anime, query), anime) for anime in candidates),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    return ranked
+
+
+def is_ambiguous_pick(candidates: list[MalAnime], query: str) -> bool:
+    """Vrai si le top-2 est proche ou le meilleur fuzzy est faible."""
+    if len(candidates) < 2:
+        return False
+    ranked = ranked_candidates(candidates, query)
+    top_score, top = ranked[0]
+    second_score = ranked[1][0]
+    if top_score - second_score < 100:
+        return True
+    haystacks = [
+        normalize(top.title),
+        normalize(top.title_english or ""),
+        normalize(top.title_japanese or ""),
+        *[normalize(syn) for syn in top.synonyms if syn],
+    ]
+    best_fuzzy = max(
+        (_fuzzy_title_ratio(query, hay) for hay in haystacks if hay),
+        default=0.0,
+    )
+    return best_fuzzy < 0.82 and top_score < 380
 
 
 def pick_candidate(candidates: list[MalAnime], query: str) -> MalAnime | None:
     if not candidates:
         return None
-    ranked = sorted(
-        enumerate(candidates),
-        key=lambda item: (_score_candidate(item[1], query), -item[0]),
-        reverse=True,
-    )
+    ranked = ranked_candidates(candidates, query)
     return ranked[0][1]
 
 
@@ -503,6 +740,8 @@ def _merge_split_cours_tv(tv: list[MalAnime]) -> list[tuple[MalAnime, MalAnime |
                     aired_from=cur.aired_from,
                     is_recap=cur.is_recap,
                     via_relation=cur.via_relation,
+                    synonyms=tuple(dict.fromkeys([*cur.synonyms, *nxt.synonyms])),
+                    anilist_id=cur.anilist_id,
                 )
                 out.append((merged, nxt))
                 i += 2
@@ -689,7 +928,12 @@ def nyaa_queries_for(
                 if batch_variant not in season_variants:
                     season_variants.append(batch_variant)
 
-    for value in (anime.title_english, anime.title, anime.title_japanese):
+    for value in (
+        anime.title_english,
+        anime.title,
+        anime.title_japanese,
+        *anime.synonyms,
+    ):
         if not value:
             continue
         if value not in queries:
@@ -704,7 +948,35 @@ def nyaa_queries_for(
             queries.insert(insert_at, variant)
             insert_at += 1
 
-    return queries[:10]
+    return queries[:14]
+
+
+def _short_title_for_label(anime: MalAnime) -> str:
+    raw = (anime.title_english or anime.title or "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"\s*[\[(].*$", "", raw).strip()
+    if ": " in raw:
+        # Garder le titre principal si le sous-titre est long.
+        head, tail = raw.split(": ", 1)
+        if len(tail) > 28 and len(head) >= 3:
+            raw = head
+    if len(raw) > 36:
+        return raw[:33] + "…"
+    return raw
+
+
+def _season_release_label(index: int, anime: MalAnime) -> str:
+    parts = [f"Season {index:02d}"]
+    year = (anime.aired_from or "")[:4]
+    if year.isdigit():
+        parts.append(year)
+    if anime.episodes:
+        parts.append(f"{anime.episodes} ep")
+    short = _short_title_for_label(anime)
+    if short:
+        parts.append(short)
+    return " · ".join(parts)
 
 
 def franchise_to_releases(
@@ -727,10 +999,7 @@ def franchise_to_releases(
         [
             anime
             for anime in entries
-            if anime.type == "TV"
-            and anime.via_relation in MAIN_TV_RELATIONS
-            and not anime.is_recap
-            and anime.episodes
+            if _is_main_tv(anime, root=root)
         ],
         key=lambda anime: anime.aired_from or "9999",
     )
@@ -740,7 +1009,11 @@ def franchise_to_releases(
         key=lambda anime: anime.aired_from or "9999",
     )
     extras = sorted(
-        [anime for anime in entries if anime.type not in {"TV", "Movie"}],
+        [
+            anime
+            for anime in entries
+            if anime.type not in {"TV", "Movie"} and not _is_main_tv(anime, root=root)
+        ],
         key=lambda anime: anime.aired_from or "9999",
     )
 
@@ -762,7 +1035,7 @@ def franchise_to_releases(
         releases.append(
             MalRelease(
                 mal_id=anime.mal_id,
-                label=f"Season {index:02d}",
+                label=_season_release_label(index, anime),
                 kind=MediaKind.EPISODE,
                 season=index,
                 episode_count=anime.episodes,

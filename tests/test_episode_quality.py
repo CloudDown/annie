@@ -6,7 +6,7 @@ import unittest
 
 from annie.catalog import build_catalog_from_releases
 from annie.scoring import rank_entry
-from tests.quality_helpers import (
+from annie.scoring import (
     MIN_SEEDERS_STRICT,
     assess_episode_item,
     assess_tv_catalog,

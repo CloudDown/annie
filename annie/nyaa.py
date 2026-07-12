@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import html
 import re
-import threading
 import time
 import urllib.error
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
 from annie.cache import read_json, write_json
+from annie.net import TokenBucket, fetch_text
 from annie.paths import cache_dir
-from annie.net import fetch_text
 
 NYAA_BASE = "https://nyaa.si"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
@@ -25,7 +23,7 @@ DISK_CACHE_DIR = cache_dir() / "nyaa"
 DISK_CACHE_TTL = 45 * 60
 
 _search_cache: dict[tuple[str, str, str, str], tuple[float, list["NyaaEntry"]]] = {}
-_nyaa_limiter: _TokenBucket | None = None
+_nyaa_limiter: TokenBucket | None = None
 
 ROW_RE = re.compile(
     r'<tr class="(?:default|success|danger|warning)">(.*?)</tr>',
@@ -39,27 +37,6 @@ SIZE_RE = re.compile(r'<td class="text-center">([^<]+)</td>')
 NUMERIC_CELL_RE = re.compile(r'<td class="text-center">\s*(\d+)\s*</td>')
 
 
-class _TokenBucket:
-    def __init__(self, rate: float, burst: int) -> None:
-        self._rate = rate
-        self._burst = burst
-        self._tokens = float(burst)
-        self._updated_at = time.monotonic()
-        self._lock = threading.Lock()
-
-    def acquire(self) -> None:
-        with self._lock:
-            while True:
-                now = time.monotonic()
-                elapsed = now - self._updated_at
-                self._updated_at = now
-                self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
-                if self._tokens >= 1.0:
-                    self._tokens -= 1.0
-                    return
-                time.sleep((1.0 - self._tokens) / self._rate)
-
-
 def _nyaa_cfg():
     from annie.config import AnnieConfig
 
@@ -70,11 +47,11 @@ def _disk_cache_ttl() -> int:
     return _nyaa_cfg().cache_ttl
 
 
-def _get_limiter() -> _TokenBucket:
+def _get_limiter() -> TokenBucket:
     global _nyaa_limiter
     if _nyaa_limiter is None:
         cfg = _nyaa_cfg()
-        _nyaa_limiter = _TokenBucket(rate=cfg.rate, burst=cfg.rate_burst)
+        _nyaa_limiter = TokenBucket(rate=cfg.rate, burst=cfg.rate_burst)
     return _nyaa_limiter
 
 
@@ -259,48 +236,3 @@ def search(
             merged.append(entry)
 
     return _store_entries(cache_key, merged)
-
-
-def prefetch(
-    queries: list[str],
-    *,
-    category: str = "0_0",
-    filter_code: str = "0",
-    pool=None,
-) -> None:
-    """Précharge des requêtes Nyaa uniques (no-op si déjà en cache)."""
-    cfg = _nyaa_cfg()
-    pages = cfg.search_pages
-    parallel = cfg.parallel
-    unique = [
-        q
-        for q in dict.fromkeys(queries)
-        if q
-        and _cached_entries(_cache_key(q, category, filter_code, pages))
-        is None
-    ]
-    if not unique:
-        return
-
-    if pool is None:
-        with ThreadPoolExecutor(max_workers=parallel) as local_pool:
-            futures = [
-                local_pool.submit(
-                    search,
-                    q,
-                    category=category,
-                    filter_code=filter_code,
-                    pages=pages,
-                )
-                for q in unique
-            ]
-            wait(futures)
-        return
-
-    futures = [
-        pool.submit(
-            search, q, category=category, filter_code=filter_code, pages=pages
-        )
-        for q in unique
-    ]
-    wait(futures)

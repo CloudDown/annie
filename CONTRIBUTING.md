@@ -40,30 +40,35 @@ make clean          # supprime venv & artefacts
 annie.py              Lanceur (active .venv si présent)
 annie/
   cli.py              Commandes & boucle interactive
+  metadata.py         Façade AniList / MAL
+  anilist.py          Client AniList GraphQL
   mal.py              Franchise MAL / Jikan
   config.py           AnnieConfig (~/.config/annie/config.toml)
+  settings.py         Streaming, buffer, torrent, profils lecteur
   types.py            Types catalogue (MediaSection, MalRelease, …)
   parsing.py          Parsing titres Nyaa
   scoring.py          Scoring des releases
-  catalog.py          Construction catalogue aligné MAL
-  settings.py         Options streaming (sections [streaming], [buffer], … dans config.toml)
+  catalog.py          Construction catalogue
+  season_coherence.py Cohérence intra-saison
   nyaa.py             Client Nyaa & cache
   stream.py           libtorrent + lecteurs
-  subtitles.py        OpenSubtitles.com (recherche + téléchargement)
+  player.py           Commandes mpv/vlc/ffplay
+  subtitles.py        OpenSubtitles.com
   ui.py               fzf & interface terminal
+  net.py              HTTP + rate limit
   cache.py            Cache disque JSON
-  preview.py          Aperçus terminal
+  paths.py            Chemins multi-OS
+  preview.py          Aperçus fzf
+  watch_history.py    Historique de visionnage
 tests/
   helpers.py          Factories & chargement fixtures
-  fixtures/           Cas JSON reproductibles (Re:Zero, filenames, …)
-  test_parsing.py     Parsing, filtre saison, normalisation
-  test_catalog.py     Catalogue offline (régression Re:Zero)
-  test_scoring.py     Scoring / pick_best
-  test_stream.py      Matching fichiers batch
-  test_subtitles.py   Parsing API OpenSubtitles
-  test_fixtures.py    Pilotage par fixtures parse_titles.json
+  fixtures/           Cas JSON reproductibles
+  test_*.py           Suite unitaire offline
+scripts/              Outils debug / validation (réseau)
 packaging/
-  aur/                PKGBUILD AUR (makepkg -si)
+  aur/                PKGBUILD AUR
+  debian/             build .deb
+  windows/            install.ps1
 ```
 
 ## Tests vs scripts de validation

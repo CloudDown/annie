@@ -504,7 +504,9 @@ def format_torrent_line(
 
 
 def format_section_line(section: MediaSection) -> str:
-    label = _clip(section.label, 28 if _compact_ui() else 40)
+    # Labels enrichis « Season 02 · 2019 · … » : clip plus large.
+    label_width = 52 if " · " in section.label else (28 if _compact_ui() else 40)
+    label = _clip(section.label, label_width)
     if section.has_episodes:
         count = len(section.episodes)
         if section.expected_episodes:
@@ -706,6 +708,58 @@ def _group_sections(sections: list[MediaSection]) -> dict[str, list[MediaSection
     for section in sections:
         groups[_bucket_section(section)].append(section)
     return groups
+
+
+def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
+    """fzf : confirmer quel anime correspond à la recherche."""
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    from annie.mal import MalAnime, ranked_candidates
+
+    ranked = ranked_candidates(candidates, query) if query else [
+        (0, anime) for anime in candidates
+    ]
+    indexed: dict[str, MalAnime] = {}
+    previews: dict[str, str] = {}
+    lines: list[str] = []
+    for index, (_score, anime) in enumerate(ranked):
+        key = f"a{index:03d}"
+        indexed[key] = anime
+        year = (anime.aired_from or "")[:4] or "?"
+        eps = f"{anime.episodes} ep" if anime.episodes else "? ep"
+        romaji = anime.title or "—"
+        english = anime.title_english or ""
+        line_title = english or romaji
+        if english and romaji and english != romaji:
+            detail = f"{anime.type} · {year} · {eps} · {romaji}"
+        else:
+            detail = f"{anime.type} · {year} · {eps}"
+        previews[key] = stylize(
+            f"{line_title}\n{romaji}\n{english or '—'}\n"
+            f"{anime.type} · {year} · {eps}\n"
+            f"MAL {anime.mal_id}"
+            + (f" · AniList {anime.anilist_id}" if anime.anilist_id else ""),
+            C.META,
+        )
+        lines.append(
+            f"{key}{SEP}{stylize(line_title, C.LIST, C.BOLD)}  "
+            f"{stylize(detail, C.META)}"
+        )
+
+    picked = _fzf_choose(
+        indexed,
+        previews,
+        lines,
+        prompt="anime> ",
+        header=_fzf_header("→ Enter · Esc cancel"),
+        expect="enter",
+    )
+    if picked is None:
+        return None
+    return picked[1]
 
 
 def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:

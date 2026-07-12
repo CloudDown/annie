@@ -19,18 +19,16 @@ dist/
 # Local agent context (not part of the app)
 AGENTS.md
 
-# Développement local (non versionné)
-scripts/
-tests/
+# Artefacts de validation / debug (scripts eux-mêmes restent versionnables)
+scripts/results/
 
 # Artefacts makepkg (AUR)
 packaging/aur/pkg/
 packaging/aur/src/
 *.pkg.tar.zst
 
-# Développement local (expérimentations, non versionné)
+# Développement local (expérimentations)
 dev/
-dev/results/
 
 # Config utilisateur locale (pas le template annie/templates/)
 /config.toml

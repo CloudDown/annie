@@ -20,13 +20,7 @@ from annie.catalog import (
 from annie.parsing import minimal_label
 from annie.scoring import pick_best, rank_entry
 from annie.types import MediaKind, MediaSection, ResultItem, WatchTarget
-from annie.mal import (
-    collect_franchise,
-    franchise_to_releases,
-    pick_candidate,
-    relation_nyaa_hints,
-    search_anime,
-)
+from annie import metadata as meta
 from annie.nyaa import search
 from annie.ui import (
     BackToEpisode,
@@ -39,6 +33,7 @@ from annie.ui import (
     fzf_available,
     fzf_install_hint,
     is_play_completed,
+    pick_anime_candidate,
     pick_catalog,
     pick_episode,
     pick_subtitle_language,
@@ -210,17 +205,29 @@ def gather_catalog(
     fill_gaps = overrides.get("fill_gaps", config.catalog.fill_gaps_on_search)
     target_season = overrides.get("target_season", options.get("season"))
     target_kind = overrides.get("target_kind", kind_from_options(options))
+    confirm_anime = overrides.get("confirm_anime")
+    if confirm_anime is None:
+        confirm_anime = bool(sys.stdin.isatty() and fzf_available())
 
-    if config.mal.enabled:
+    if meta.metadata_enabled(config):
         try:
             with ThreadPoolExecutor(max_workers=config.ui.mal_pool_workers) as pool:
-                candidates_future = pool.submit(search_anime, query)
+                candidates_future = pool.submit(meta.search_anime, query, config=config)
                 pool.submit(
                     _warm_nyaa, query, category=category, filter_code=filter_code
                 )
 
                 candidates = candidates_future.result()
-                chosen = pick_candidate(candidates, query) if candidates else None
+                chosen = None
+                if candidates:
+                    if (
+                        confirm_anime
+                        and config.metadata.confirm_ambiguous
+                        and meta.is_ambiguous_pick(candidates, query)
+                    ):
+                        chosen = pick_anime_candidate(candidates, query)
+                    if chosen is None:
+                        chosen = meta.pick_candidate(candidates, query)
                 if chosen is not None:
                     options["mal_titles"] = tuple(
                         title
@@ -228,6 +235,7 @@ def gather_catalog(
                             chosen.title_english,
                             chosen.title,
                             chosen.title_japanese,
+                            *chosen.synonyms[:4],
                         )
                         if title
                     )
@@ -236,6 +244,7 @@ def gather_catalog(
                             chosen.title_english or "",
                             chosen.title,
                             chosen.title_japanese or "",
+                            *chosen.synonyms[:6],
                         ]
                     ):
                         if warm_q:
@@ -246,8 +255,12 @@ def gather_catalog(
                                 filter_code=filter_code,
                             )
 
+                    from_anilist = chosen.anilist_id is not None
+
                     def on_root(root_data: dict) -> None:
-                        for hint in relation_nyaa_hints(root_data):
+                        for hint in meta.relation_nyaa_hints(
+                            root_data, from_anilist=from_anilist
+                        ):
                             pool.submit(
                                 _warm_nyaa,
                                 hint,
@@ -255,18 +268,15 @@ def gather_catalog(
                                 filter_code=filter_code,
                             )
 
-                    franchise = pool.submit(
-                        collect_franchise,
-                        chosen.mal_id,
+                    releases = pool.submit(
+                        meta.releases_for_anime,
+                        chosen,
+                        query=query,
+                        skip_recap=config.skip_recap_movies,
                         on_root=on_root,
                         pool=pool,
+                        config=config,
                     ).result()
-                    releases = franchise_to_releases(
-                        franchise,
-                        skip_recap=config.skip_recap_movies,
-                        root_id=chosen.mal_id,
-                        user_query=query,
-                    )
                     if releases:
                         releases = scope_releases_for_target(
                             releases,
@@ -296,7 +306,7 @@ def gather_catalog(
         except Exception as exc:
             print(
                 stylize(
-                    f"annie: catalogue MAL indisponible ({exc}), fallback Nyaa",
+                    f"annie: métadonnées indisponibles ({exc}), fallback Nyaa",
                     C.MUTED,
                 ),
                 file=sys.stderr,

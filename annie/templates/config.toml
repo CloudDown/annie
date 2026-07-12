@@ -33,9 +33,17 @@ timeout = 30.0             # timeout HTTP (secondes)
 retries = 4
 
 [mal]
-enabled = true             # false = Nyaa seul, sans catalogue MAL/Jikan
+enabled = true             # Jikan/MAL (fallback ou provider=mal)
 parallel = 10
 cache_ttl_hours = 168      # cache Jikan (7 jours)
+
+[metadata]
+provider = "anilist"       # anilist | mal
+enabled = true             # false = Nyaa seul
+fallback_mal = true        # si AniList échoue → MAL/Jikan
+confirm_ambiguous = true   # fzf « quel anime ? » si scores proches
+parallel = 8
+cache_ttl_hours = 168
 
 [catalog]
 skip_recap_movies = false

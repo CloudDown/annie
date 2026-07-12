@@ -8,9 +8,8 @@ from annie.catalog import (
     apply_coherent_season_picks,
     build_catalog_from_releases,
 )
-from annie.scoring import rank_entry
+from annie.scoring import assess_tv_catalog, rank_entry
 from annie.season_coherence import assess_season_coherence
-from tests.quality_helpers import assess_tv_catalog
 from annie.types import MediaKind, MediaSection, ResultItem, WatchTarget
 from tests.helpers import entries_from_fixture, load_fixture, mal_release, nyaa_entry
 

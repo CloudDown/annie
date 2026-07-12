@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from annie.scoring import pick_best, rank_entry
-from tests.quality_helpers import catalog_episode_rank, catalog_episode_score
+from annie.scoring import catalog_episode_pick_rank, pick_best, rank_entry
 from annie.types import MediaKind, ResultItem, WatchTarget
 from tests.helpers import nyaa_entry
 
@@ -51,10 +50,8 @@ class CatalogEpisodeScoreTests(unittest.TestCase):
         dc_item = ResultItem(entry=dc, parsed=dc_rank[1], score=dc_rank[0])
 
         self.assertGreater(
-            catalog_episode_rank(batch_item), catalog_episode_rank(dc_item)
-        )
-        self.assertGreater(
-            catalog_episode_score(batch_item), catalog_episode_score(dc_item)
+            catalog_episode_pick_rank(batch_item),
+            catalog_episode_pick_rank(dc_item),
         )
 
 

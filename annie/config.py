@@ -36,6 +36,23 @@ class NyaaConfig:
 
 
 @dataclass
+class MetadataConfig:
+    """Source métadonnées franchise (saisons / titres / synonymes)."""
+
+    enabled: bool = True
+    provider: str = "anilist"  # anilist | mal
+    fallback_mal: bool = True
+    fallback_anilist: bool = False
+    confirm_ambiguous: bool = True
+    parallel: int = 8
+    cache_ttl_hours: int = 168
+
+    @property
+    def cache_ttl(self) -> int:
+        return max(1, self.cache_ttl_hours) * 3600
+
+
+@dataclass
 class MalConfig:
     enabled: bool = True
     parallel: int = 10
@@ -92,6 +109,7 @@ class AnnieConfig:
     player: str = "auto"
     nyaa: NyaaConfig = field(default_factory=NyaaConfig)
     mal: MalConfig = field(default_factory=MalConfig)
+    metadata: MetadataConfig = field(default_factory=MetadataConfig)
     catalog: CatalogConfig = field(default_factory=CatalogConfig)
     subtitles: SubtitlesConfig = field(default_factory=SubtitlesConfig)
     ui: UiConfig = field(default_factory=UiConfig)
@@ -142,6 +160,7 @@ class AnnieConfig:
         player_table = toml_util.table(data, "player")
         nyaa_table = toml_util.table(data, "nyaa")
         mal_table = toml_util.table(data, "mal")
+        metadata_table = toml_util.table(data, "metadata")
         catalog_table = toml_util.table(data, "catalog")
         subtitles_table = toml_util.table(data, "subtitles")
         ui_table = toml_util.table(data, "ui")
@@ -182,6 +201,32 @@ class AnnieConfig:
             enabled=toml_util.bool_val(mal_table.get("enabled"), True),
             parallel=toml_util.int_val(mal_table.get("parallel"), 10),
             cache_ttl_hours=toml_util.int_val(mal_table.get("cache_ttl_hours"), 168),
+        )
+
+        provider = toml_util.str_val(
+            os.environ.get("ANNIE_METADATA_PROVIDER")
+            or metadata_table.get("provider"),
+            "anilist",
+        ).lower()
+        if provider not in {"anilist", "mal"}:
+            provider = "anilist"
+        meta_enabled = metadata_table.get("enabled")
+        if meta_enabled is None:
+            meta_enabled = mal.enabled
+        metadata = MetadataConfig(
+            enabled=toml_util.bool_val(meta_enabled, True),
+            provider=provider,
+            fallback_mal=toml_util.bool_val(metadata_table.get("fallback_mal"), True),
+            fallback_anilist=toml_util.bool_val(
+                metadata_table.get("fallback_anilist"), False
+            ),
+            confirm_ambiguous=toml_util.bool_val(
+                metadata_table.get("confirm_ambiguous"), True
+            ),
+            parallel=toml_util.int_val(metadata_table.get("parallel"), 8),
+            cache_ttl_hours=toml_util.int_val(
+                metadata_table.get("cache_ttl_hours"), mal.cache_ttl_hours
+            ),
         )
 
         skip_recap = data.get("skip_recap_movies")
@@ -292,6 +337,7 @@ class AnnieConfig:
             player=player,
             nyaa=nyaa,
             mal=mal,
+            metadata=metadata,
             catalog=catalog,
             subtitles=subtitles,
             ui=ui,
