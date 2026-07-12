@@ -580,10 +580,6 @@ def search_anime(query: str, *, limit: int = 8) -> list[MalAnime]:
     return ranked[:limit]
 
 
-def fetch_anime_full(mal_id: int) -> MalAnime:
-    return _parse_anime(_fetch_anime_full(mal_id))
-
-
 def _score_candidate(anime: MalAnime, query: str) -> int:
     tokens = [token for token in normalize(query).split() if len(token) > 1]
     title = anime.title_english or anime.title or ""
@@ -670,10 +666,6 @@ def _score_candidate(anime: MalAnime, query: str) -> int:
         except ValueError:
             pass
     return score
-
-
-def score_candidate(anime: MalAnime, query: str) -> int:
-    return _score_candidate(anime, query)
 
 
 def ranked_candidates(

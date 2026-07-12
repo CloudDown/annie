@@ -76,7 +76,7 @@ packaging/
 | Outil | Réseau | Rôle |
 |-------|--------|------|
 | `make test` | Non | Régression offline (fixtures) — **obligatoire avant commit**, CI |
-| `make debug-rezero` | Non (+ live optionnel) | Régression catalogue Re:Zero |
+| `make debug-rezero` | Non | Régression catalogue Re:Zero via `scripts/debug_catalog.py --offline` |
 | `scripts/debug_franchise.py` | Oui | Zoom **un** anime : saisons MAL vs catalogue, épisodes manquants |
 | `scripts/validate_franchise.py` | Oui | Audit panel : couverture, seeders, qualité — **hors CI** |
 

@@ -34,10 +34,6 @@ def player_binary(player: str) -> str:
     return find_program(player) or player
 
 
-def available_players() -> list[str]:
-    return [name for name in PLAYER_NAMES if find_program(name)]
-
-
 def resolve_player(requested: str | None = None) -> str:
     if requested and requested != "auto":
         exe = find_program(requested)

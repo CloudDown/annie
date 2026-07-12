@@ -929,9 +929,3 @@ def match_episode_filename(
     if re.search(rf"[Ss]\d+[Ee]0?{episode}\b", stem, re.I):
         return True
     return _match_dash_episode(stem, episode)
-
-
-def episode_file_query(episode: int, *, season: int | None = None) -> str:
-    if season is not None:
-        return rf"[Ss]0?{season}[Ee]0?{episode}\b"
-    return rf"(?:[Ss]\d+[Ee]0?{episode}\b|[Ee]0?{episode}\b|[\s\-_]0?{episode}(?:v\d+)?(?=\.mkv|\.mp4))"

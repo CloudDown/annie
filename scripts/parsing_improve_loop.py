@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import ROOT, print  # noqa: E402
 
-from annie.media import AnnieConfig
+from annie.config import AnnieConfig
 from annie.mal import TopAnimeEntry, fetch_top_anime
 from annie.parsing import is_non_anime_extra
 

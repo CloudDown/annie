@@ -71,7 +71,7 @@ def catalog_episode_pick_rank(item: ResultItem) -> tuple:
     )
 
 
-def filter_entry(
+def _filter_entry(
     entry: NyaaEntry,
     target: WatchTarget,
     *,
@@ -103,7 +103,7 @@ def rank_entry(
     match_queries: list[str] | None = None,
 ) -> tuple[float, ParsedTitle] | None:
     """Retourne (match_score, parsed) si le torrent passe les filtres."""
-    filtered = filter_entry(entry, target, match_queries=match_queries)
+    filtered = _filter_entry(entry, target, match_queries=match_queries)
     if filtered is None:
         return None
     match_score, parsed = filtered
@@ -130,7 +130,7 @@ def pick_best(
     queries = match_queries
     candidates: list[ResultItem] = []
     for entry in entries:
-        filtered = filter_entry(entry, target, match_queries=queries)
+        filtered = _filter_entry(entry, target, match_queries=queries)
         if filtered is None:
             continue
         match_score, parsed = filtered

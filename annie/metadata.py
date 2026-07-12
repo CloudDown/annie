@@ -27,7 +27,6 @@ __all__ = [
     "pick_candidate",
     "relation_nyaa_hints",
     "releases_for_anime",
-    "resolve_anime",
     "search_anime",
 ]
 
@@ -98,29 +97,6 @@ def relation_nyaa_hints(root_data: dict, *, from_anilist: bool) -> list[str]:
     if from_anilist:
         return anilist.relation_nyaa_hints(root_data)
     return mal_relation_hints(root_data)
-
-
-def resolve_anime(
-    query: str,
-    *,
-    config: AnnieConfig | None = None,
-    confirm: bool = False,
-    confirm_fn: Callable[[list[MalAnime], str], MalAnime | None] | None = None,
-) -> MalAnime | None:
-    cfg = config or AnnieConfig.load()
-    candidates = search_anime(query, config=cfg)
-    if not candidates:
-        return None
-    if (
-        confirm
-        and cfg.metadata.confirm_ambiguous
-        and is_ambiguous_pick(candidates, query)
-        and confirm_fn is not None
-    ):
-        picked = confirm_fn(candidates, query)
-        if picked is not None:
-            return picked
-    return pick_candidate(candidates, query)
 
 
 def releases_for_anime(

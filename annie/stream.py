@@ -24,9 +24,7 @@ from annie.paths import (
     windows_extended_path,
 )
 from annie.parsing import _filename_for_episode_match, match_episode_filename
-from annie.player import (  # noqa: F401  (ré-exports publics)
-    available_players,
-    player_binary,
+from annie.player import (  # noqa: F401 — resolve_player ré-exporté (install Windows)
     player_command,
     player_popen as _player_popen,
     resolve_player,

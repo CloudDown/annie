@@ -37,7 +37,7 @@ test-offline: install
 		-v
 
 debug-rezero: install
-	$(UV) run python dev/debug_rezero.py
+	$(UV) run python scripts/debug_catalog.py --offline
 
 clean:
 	rm -rf .venv build dist *.egg-info annie.egg-info

@@ -66,10 +66,6 @@ def stylize(text: str, *codes: str) -> str:
     return f"{''.join(codes)}{text}{C.RESET}"
 
 
-def banner_line(text: str, color: str) -> str:
-    return stylize(text, color, C.BOLD)
-
-
 BUFFER_BAR_WIDTH = 24
 
 

@@ -30,13 +30,6 @@ from annie.types import (
     WatchTarget,
 )
 
-MAX_FRANCHISE_QUERIES = 20
-FRANCHISE_SEARCH_PAGES = 2
-PRIMARY_SEARCH_PAGES = 2
-GAP_SEARCH_PAGES = 1
-GAP_MAX_MISSING = 6
-GAP_MAX_QUERIES = 10
-
 
 def _catalog_cfg():
     from annie.config import AnnieConfig

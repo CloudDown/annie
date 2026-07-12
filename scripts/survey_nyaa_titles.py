@@ -27,7 +27,7 @@ from annie.catalog import (
     parse_batch_episode_range,
 )
 from annie.mal import TopAnimeEntry, fetch_top_anime, nyaa_queries_for, search_anime
-from annie.media import AnnieConfig
+from annie.config import AnnieConfig
 from annie.nyaa import NyaaEntry, search
 from annie.parsing import SEASON_PACK_RE, is_non_anime_extra, minimal_label, parse_title
 from annie.types import MediaKind

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import print  # noqa: E402
 
 from annie.catalog import build_catalog, build_catalog_from_releases
-from annie.media import AnnieConfig
+from annie.config import AnnieConfig
 from annie.types import MediaKind
 from tests.helpers import entries_from_fixture, load_fixture, mal_release
 
@@ -91,7 +91,7 @@ def run_live(query: str, *, use_mal: bool) -> int:
     if use_mal:
         from annie.cli import gather_catalog
 
-        config = AnnieConfig()
+        config = AnnieConfig.load()
         sections, _ = gather_catalog(query, config)
         print(f"Catalogue MAL+Nyaa: {query}")
     else:
