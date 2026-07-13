@@ -223,13 +223,86 @@ def _write_previews(previews: dict[str, str]) -> None:
     tmp.replace(PREVIEW_FILE)
 
 
-def clear_terminal() -> None:
+def _tty_streams() -> list[Any]:
+    """Flux réellement attachés au terminal (stdout peut être pipé après fzf)."""
+    streams: list[Any] = []
+    if sys.platform != "win32":
+        try:
+            streams.append(
+                open("/dev/tty", "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+            )
+        except OSError:
+            pass
     if sys.stdout.isatty():
-        sys.stdout.write("\033[2J\033[H")
-        sys.stdout.flush()
+        streams.append(sys.stdout)
+    return streams
+
+
+def _write_tty(seq: str) -> bool:
+    streams = _tty_streams()
+    if not streams:
+        return False
+    owned = [s for s in streams if s is not sys.stdout]
+    try:
+        for stream in streams:
+            try:
+                stream.write(seq)
+                stream.flush()
+            except OSError:
+                pass
+        return True
+    finally:
+        for stream in owned:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+
+_playback_alt_screen = False
+
+
+def clear_terminal() -> None:
+    """Efface l'écran visible + scrollback (via /dev/tty si possible)."""
+    # H = curseur home, 2J = écran, 3J = scrollback, r = reset scroll region
+    # (après fzf --height, une région de scroll peut laisser l'ASCII au-dessus).
+    if not _write_tty("\033[r\033[H\033[2J\033[3J"):
+        return
+    clear_bin = shutil.which("clear")
+    if clear_bin and sys.platform != "win32":
+        try:
+            with open("/dev/tty", "w", encoding="utf-8", errors="replace") as tty:
+                subprocess.run(
+                    [clear_bin],
+                    check=False,
+                    stdin=subprocess.DEVNULL,
+                    stdout=tty,
+                    stderr=subprocess.DEVNULL,
+                )
+        except OSError:
+            subprocess.run([clear_bin], check=False)
+
+
+def begin_playback_ui() -> None:
+    """Écran propre pour la lecture : buffer alternatif (l'ASCII reste sous fzf)."""
+    global _playback_alt_screen
+    clear_terminal()
+    # 1049h = alternate screen (comme less/vim) — ignore le scrollback principal.
+    if _write_tty("\033[?1049h\033[H\033[2J"):
+        _playback_alt_screen = True
+
+
+def end_playback_ui() -> None:
+    """Quitte le buffer alternatif après lecture."""
+    global _playback_alt_screen
+    if not _playback_alt_screen:
+        return
+    _write_tty("\033[?1049l")
+    _playback_alt_screen = False
 
 
 def print_banner() -> None:
+    end_playback_ui()
     clear_terminal()
     print()
     for line in BANNER_ART:
@@ -526,7 +599,7 @@ def format_torrent_line(
         season=item.parsed.season or section.season,
         episode=item.parsed.episode,
     ):
-        return f"{stylize('●', C.GREEN)} {label}"
+        return f"{label} {stylize('●', C.RED)}"
     return label
 
 
@@ -569,7 +642,7 @@ def format_preview_item(
             episode=parsed.episode,
         )
     ):
-        title = f"{title} {stylize('· vu', C.GREEN)}"
+        title = f"{title} {stylize('· vu', C.RED)}"
     seeds = item.entry.seeders
     seed_line = stylize(
         f"{seeds} seeders · {item.entry.leechers} leechers · {item.entry.size}",

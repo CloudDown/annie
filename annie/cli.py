@@ -26,6 +26,8 @@ from annie.ui import (
     BackToEpisode,
     BACK_TO_EPISODE,
     C,
+    begin_playback_ui,
+    clear_terminal,
     copy_magnet,
     EXIT_CANCELLED,
     PLAY_COMPLETED,
@@ -364,6 +366,7 @@ def resolve_anime_for_query(
 
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
     del seeders, release_group
+    begin_playback_ui()
     print(stylize(f"◆ {label}", C.YELLOW, C.BOLD), flush=True)
 
 
@@ -398,7 +401,25 @@ def _next_episode_item(
     episode = item.parsed.episode
     if episode is None:
         return None
-    return section.episodes.get(episode + 1)
+    for ep in sorted(section.episodes):
+        if ep > episode:
+            return section.episodes[ep]
+    return None
+
+
+def _same_magnet_binge_chain(
+    section: MediaSection, item: ResultItem
+) -> list[ResultItem]:
+    """Épisodes suivants du même torrent (enchaînement sans relancer mpv)."""
+    chain: list[ResultItem] = []
+    current = item
+    while True:
+        nxt = _next_episode_item(section, current)
+        if nxt is None or nxt.entry.magnet != item.entry.magnet:
+            break
+        chain.append(nxt)
+        current = nxt
+    return chain
 
 
 def _resolve_subtitle_lang(
@@ -431,6 +452,8 @@ def play_item(
     series_query: str | None = None,
     mal_titles: tuple[str, ...] = (),
     interactive_subs: bool = False,
+    binge_items: list[ResultItem] | None = None,
+    on_episode_done=None,
 ) -> int:
     file_query = None
     season = item.parsed.season
@@ -454,7 +477,6 @@ def play_item(
         )
 
     label = minimal_label(item.parsed)
-    print_status_line(label, item.entry.seeders, item.parsed.release_group)
     from annie.stream import play
 
     return play(
@@ -470,6 +492,12 @@ def play_item(
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
         listed_seeders=item.entry.seeders,
+        on_ui_start=lambda: print_status_line(
+            label, item.entry.seeders, item.parsed.release_group
+        ),
+        binge_items=binge_items,
+        on_episode_done=on_episode_done,
+        current_item=item,
     )
 
 
@@ -671,7 +699,6 @@ def run_watch(
     batch_episode = episode if parsed.kind == MediaKind.BATCH else parsed.episode
     if batch_episode is not None:
         file_query = None
-    print_status_line(label, entry.seeders, parsed.release_group)
     from annie.stream import play
 
     lang = _resolve_subtitle_lang(config, cli_lang=subtitle_lang)
@@ -696,6 +723,7 @@ def run_watch(
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
         listed_seeders=entry.seeders,
+        on_ui_start=lambda: print_status_line(label, entry.seeders, parsed.release_group),
     )
 
 
@@ -824,7 +852,21 @@ def interactive_loop(config: AnnieConfig) -> int:
             code = 0
             active_section = _find_section_for_episode(catalog, item)
             while True:
+                binge_chain: list[ResultItem] = []
                 try:
+                    section = active_section or _find_section_for_episode(
+                        catalog, item
+                    )
+                    binge_chain = (
+                        _same_magnet_binge_chain(section, item)
+                        if section is not None
+                        else []
+                    )
+
+                    def _mark_done(done_item: ResultItem, *, _sec=section) -> None:
+                        if _sec is not None:
+                            watch_history.mark_item(_sec, done_item)
+
                     code = play_item(
                         item,
                         config,
@@ -834,6 +876,8 @@ def interactive_loop(config: AnnieConfig) -> int:
                         subtitle_lang=session_sub_lang
                         if isinstance(session_sub_lang, str)
                         else None,
+                        binge_items=binge_chain or None,
+                        on_episode_done=_mark_done if section is not None else None,
                     )
                 except KeyboardInterrupt:
                     code = EXIT_CANCELLED
@@ -871,14 +915,21 @@ def interactive_loop(config: AnnieConfig) -> int:
                     section = active_section or _find_section_for_episode(
                         catalog, item
                     )
-                    if section is not None:
-                        watch_history.mark_item(section, item)
+                    # Dernier épisode joué dans cette session mpv (chaîne same-magnet).
+                    last = (
+                        binge_chain[-1]
+                        if section is not None and binge_chain
+                        else item
+                    )
+                    item = last
+                    active_section = section
                     next_item = (
-                        _next_episode_item(section, item) if section is not None else None
+                        _next_episode_item(section, last)
+                        if section is not None
+                        else None
                     )
                     if next_item is not None:
                         item = next_item
-                        active_section = section
                         continue
                     break
 

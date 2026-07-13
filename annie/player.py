@@ -69,6 +69,7 @@ def _mpv_command(
     sub_file: Path | None,
     profile: str,
     streaming: bool = False,
+    keep_open: bool = False,
 ) -> list[str]:
     mpv = _settings().player.mpv
     cmd = [player_binary("mpv")]
@@ -88,9 +89,10 @@ def _mpv_command(
         vo = "gpu"
     if mpv.force_window:
         cmd.append("--force-window=immediate")
+    # keep-open=yes pendant un binge (loadfile IPC) pour ne pas fermer mpv à l'EOF.
     cmd.extend(
         [
-            "--keep-open=no",
+            "--keep-open=yes" if keep_open else "--keep-open=no",
             "--no-terminal",
         ]
     )
@@ -165,6 +167,7 @@ def player_command(
     sub_file: Path | None = None,
     mpv_profile: str = "default",
     streaming: bool = False,
+    keep_open: bool = False,
 ) -> list[str]:
     target = windows_extended_path(path.resolve())
     if player == "mpv":
@@ -174,6 +177,7 @@ def player_command(
             sub_file=sub_file,
             profile=mpv_profile,
             streaming=streaming,
+            keep_open=keep_open,
         )
     if player == "vlc":
         return _vlc_command(target)

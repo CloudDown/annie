@@ -27,6 +27,7 @@ python scripts/debug_parse.py --fixture parse_titles
 
 | Script | Réseau | Description |
 |--------|--------|-------------|
+| `debug_clear.py` | Non | Vérifie `clear_terminal()` (écran net avant bloc lecture) |
 | `debug_parse.py` | Non | Affiche `parse_title` + batch range pour un titre |
 | `debug_match.py` | Non | Teste `match_episode_filename` (batch SubsPlease, etc.) |
 | `debug_subtitles.py` | Optionnel | Variantes de titre + probe OpenSubtitles par épisode |

@@ -8,8 +8,10 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from pathlib import Path
 
 import libtorrent as lt
@@ -34,12 +36,16 @@ from annie.ui import (
     PLAY_COMPLETED,
     PLAY_INCOMPLETE,
     BufferStatusDisplay,
+    begin_playback_ui,
+    clear_terminal,
+    end_playback_ui,
     format_buffer_forced_start,
     format_buffer_lines,
     format_buffer_local_file,
     format_buffer_quick_start,
     format_buffer_ready,
     format_stream_fatal,
+    is_play_completed,
     is_user_cancel,
     log_buffer_pause,
     log_buffer_resume,
@@ -57,6 +63,9 @@ MKV_FRONTIER_PIECES = 64
 START_UNPAUSE_BONUS_BYTES = 4 * 1024 * 1024
 START_UNPAUSE_MAX_BONUS_BYTES = 12 * 1024 * 1024
 START_UNPAUSE_MAX_WAIT_SEC = 6.0
+# Prefetch binge : démarrer le prochain fichier avant la fin de l'épisode.
+BINGE_PREFETCH_PROGRESS = 0.90
+BINGE_SWITCH_PROGRESS = 0.97
 # Marge renforcée pendant les premières secondes de lecture (HEVC / BD).
 START_WARMUP_SEC = 12.0
 START_WARMUP_MARGIN_BYTES = 20 * 1024 * 1024
@@ -421,6 +430,66 @@ def _prioritize_file_head(
         handle.piece_priority(piece, 7)
         try:
             handle.set_piece_deadline(piece, i * 20)
+        except AttributeError:
+            pass
+
+
+def _file_priorities(handle: lt.torrent_handle, file_count: int) -> list[int]:
+    try:
+        raw = handle.get_file_priorities()
+    except AttributeError:
+        try:
+            raw = handle.file_priorities()
+        except Exception:
+            raw = [0] * file_count
+    priorities = [int(p) for p in raw]
+    if len(priorities) < file_count:
+        priorities.extend([0] * (file_count - len(priorities)))
+    return priorities
+
+
+def _prefetch_binge_file(
+    handle: lt.torrent_handle,
+    next_index: int,
+    file_count: int,
+    *,
+    target: Path | None = None,
+    file_size: int = 0,
+) -> None:
+    """Démarre le téléchargement de la tête du prochain épisode (sans couper le courant)."""
+    priorities = _file_priorities(handle, file_count)
+    priorities[next_index] = max(priorities[next_index], 5)
+    handle.prioritize_files(priorities)
+    nbytes = max(_mkv_head_bytes(), _mkv_start_bytes())
+    piece_range = _piece_range_for_file_bytes(handle, next_index, 0, nbytes)
+    if piece_range is not None:
+        first_piece, last_piece = piece_range
+        # Priorité 6 : sous la frontière de lecture courante (7).
+        end = min(last_piece, first_piece + 64)
+        for i, piece in enumerate(range(first_piece, end + 1)):
+            handle.piece_priority(piece, 6)
+            try:
+                handle.set_piece_deadline(piece, 100 + i * 30)
+            except AttributeError:
+                pass
+    if target is not None and target.suffix.lower() in {".mp4", ".m4v", ".mov"}:
+        _prioritize_mp4_tail(handle, next_index, file_size)
+
+
+def _reboost_prefetch_head(handle: lt.torrent_handle, next_index: int) -> None:
+    """Rappelle la priorité sur la tête préchargée (concurrence avec la lecture courante)."""
+    nbytes = max(_mkv_head_bytes(), _mkv_start_bytes())
+    piece_range = _piece_range_for_file_bytes(handle, next_index, 0, nbytes)
+    if piece_range is None:
+        return
+    first_piece, last_piece = piece_range
+    end = min(last_piece, first_piece + 64)
+    for i, piece in enumerate(range(first_piece, end + 1)):
+        if handle.have_piece(piece):
+            continue
+        handle.piece_priority(piece, 6)
+        try:
+            handle.set_piece_deadline(piece, 100 + i * 30)
         except AttributeError:
             pass
 
@@ -915,12 +984,7 @@ def _wait_mpv_ipc(ipc_path: Path, *, timeout_sec: float = 5.0) -> bool:
     return mpv_ipc_is_ready(ipc_path)
 
 
-def _mpv_playback_completed(ipc_path: Path) -> bool:
-    eof = _mpv_ipc_request(ipc_path, ["get_property", "eof-reached"])
-    if eof is True:
-        return True
-    time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
-    duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
+def _mpv_near_end(time_pos: object, duration: object) -> bool:
     try:
         pos = float(time_pos)  # type: ignore[arg-type]
         total = float(duration)  # type: ignore[arg-type]
@@ -932,16 +996,53 @@ def _mpv_playback_completed(ipc_path: Path) -> bool:
     return remaining <= max(8.0, total * 0.03)
 
 
+def _mpv_playback_completed(ipc_path: Path) -> bool:
+    eof = _mpv_ipc_request(ipc_path, ["get_property", "eof-reached"])
+    if eof is True:
+        return True
+    time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
+    duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
+    return _mpv_near_end(time_pos, duration)
+
+
 def _normalize_playback_code(
-    exit_code: int, *, ipc_path: Path | None, ipc_was_ready: bool
+    exit_code: int,
+    *,
+    ipc_path: Path | None,
+    ipc_was_ready: bool,
+    saw_near_end: bool = False,
+    max_progress: float = 0.0,
 ) -> int:
     if exit_code == EXIT_CANCELLED or is_user_cancel(exit_code):
         return EXIT_CANCELLED
     if exit_code != 0:
         return exit_code
+    # mpv ferme l'IPC avant qu'on puisse lire eof — se fier au suivi pendant la lecture.
+    if saw_near_end or max_progress >= 0.90:
+        return PLAY_COMPLETED
     if ipc_path is not None and ipc_was_ready:
         return PLAY_COMPLETED if _mpv_playback_completed(ipc_path) else PLAY_INCOMPLETE
     return PLAY_COMPLETED
+
+
+def _mpv_loadfile(
+    ipc_path: Path,
+    path: Path,
+    *,
+    sub_file: Path | None = None,
+) -> bool:
+    """Charge un nouveau fichier dans mpv sans fermer la fenêtre."""
+    target = windows_extended_path(path.resolve())
+    result = _mpv_ipc_request(ipc_path, ["loadfile", target, "replace"])
+    if result is None and not _wait_mpv_ipc(ipc_path, timeout_sec=0.5):
+        return False
+    if sub_file is not None and path_exists(sub_file):
+        _mpv_ipc_request(
+            ipc_path,
+            ["sub-add", windows_extended_path(sub_file.resolve()), "select"],
+        )
+    _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
+    return True
 
 
 def _play_while_downloading(
@@ -956,6 +1057,13 @@ def _play_while_downloading(
     seed_while_watching: bool = False,
     show_download_progress: bool = True,
     listed_seeders: int | None = None,
+    on_eof_next: Callable[
+        [], tuple[int, Path, int, Path | None, object] | None
+    ]
+    | None = None,
+    on_prefetch_next: Callable[[], int | None] | None = None,
+    on_episode_done: Callable[[object], None] | None = None,
+    playback_item: object | None = None,
 ) -> int:
     ipc_available = ipc_path is not None and _wait_mpv_ipc(ipc_path)
     paused_for_buffer = False
@@ -965,6 +1073,12 @@ def _play_while_downloading(
     prev_play_byte = 0
     prev_tick = playback_started_at
     consumption_rate = 0.0
+    saw_near_end = False
+    max_progress = 0.0
+    eof_handled = False
+    current_item = playback_item
+    prefetch_index: int | None = None
+    last_prefetch_boost = 0.0
 
     if ipc_available and ipc_path is not None:
         _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
@@ -987,6 +1101,69 @@ def _play_while_downloading(
             if ipc_available and ipc_path is not None:
                 time_pos = _mpv_ipc_request(ipc_path, ["get_property", "time-pos"])
                 duration = _mpv_ipc_request(ipc_path, ["get_property", "duration"])
+                eof = _mpv_ipc_request(ipc_path, ["get_property", "eof-reached"])
+                try:
+                    if duration is not None and time_pos is not None:
+                        total = float(duration)  # type: ignore[arg-type]
+                        pos = float(time_pos)  # type: ignore[arg-type]
+                        if total > 0:
+                            max_progress = max(max_progress, pos / total)
+                except (TypeError, ValueError):
+                    pass
+                if eof is True or _mpv_near_end(time_pos, duration):
+                    saw_near_end = True
+
+                # Dès 90 % : précharger la tête du prochain épisode.
+                if (
+                    prefetch_index is None
+                    and on_prefetch_next is not None
+                    and max_progress >= BINGE_PREFETCH_PROGRESS
+                ):
+                    prefetch_index = on_prefetch_next()
+                    last_prefetch_boost = now
+                elif (
+                    prefetch_index is not None
+                    and now - last_prefetch_boost >= 1.0
+                    and max_progress < BINGE_SWITCH_PROGRESS
+                ):
+                    _reboost_prefetch_head(handle, prefetch_index)
+                    last_prefetch_boost = now
+
+                # Enchaînement binge : charger le prochain fichier sans fermer mpv.
+                if (
+                    saw_near_end
+                    and not eof_handled
+                    and on_eof_next is not None
+                    and (eof is True or max_progress >= BINGE_SWITCH_PROGRESS)
+                ):
+                    eof_handled = True
+                    if display is not None:
+                        display.finish("")
+                    nxt = on_eof_next()
+                    if nxt is not None:
+                        next_index, next_path, next_size, next_sub, next_item = nxt
+                        if _mpv_loadfile(ipc_path, next_path, sub_file=next_sub):
+                            if on_episode_done is not None and current_item is not None:
+                                on_episode_done(current_item)
+                            current_item = next_item
+                            file_index = next_index
+                            target = next_path
+                            file_size = next_size
+                            playback_started_at = time.monotonic()
+                            prev_play_byte = 0
+                            consumption_rate = 0.0
+                            saw_near_end = False
+                            max_progress = 0.0
+                            eof_handled = False
+                            paused_for_buffer = False
+                            prefetch_index = None
+                            last_prefetch_boost = 0.0
+                            prev_tick = time.monotonic()
+                            continue
+                    # Pas de suivant (ou loadfile échoué) : fermer mpv.
+                    _mpv_ipc_request(ipc_path, ["quit"])
+                    break
+
                 play_byte = _estimate_play_byte(time_pos, duration, file_size)
                 if play_byte > prev_play_byte:
                     consumption_rate = max(
@@ -1010,8 +1187,6 @@ def _play_while_downloading(
                 if need_pause and not paused_for_buffer:
                     _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
                     paused_for_buffer = True
-                    # Pas de print séparé si les barres sont actives : ça désynchronise
-                    # BufferStatusDisplay et laisse un doublon « contigu ».
                     if display is None:
                         log_buffer_pause()
                 elif paused_for_buffer and contiguous >= required:
@@ -1057,9 +1232,20 @@ def _play_while_downloading(
     if display is not None:
         display.finish("")
     exit_code = proc.wait()
-    return _normalize_playback_code(
-        exit_code, ipc_path=ipc_path, ipc_was_ready=ipc_available
+    code = _normalize_playback_code(
+        exit_code,
+        ipc_path=ipc_path,
+        ipc_was_ready=ipc_available,
+        saw_near_end=saw_near_end,
+        max_progress=max_progress,
     )
+    if (
+        is_play_completed(code)
+        and on_episode_done is not None
+        and current_item is not None
+    ):
+        on_episode_done(current_item)
+    return code
 
 
 def _wait_mkv_playable(
@@ -1093,6 +1279,14 @@ def _launch_and_stream(
     retry: bool = True,
     sub_file: Path | None = None,
     listed_seeders: int | None = None,
+    on_eof_next: Callable[
+        [], tuple[int, Path, int, Path | None, object] | None
+    ]
+    | None = None,
+    on_prefetch_next: Callable[[], int | None] | None = None,
+    on_episode_done: Callable[[object], None] | None = None,
+    playback_item: object | None = None,
+    keep_open: bool = False,
 ) -> int:
     buf = _buffer_cfg()
     wait_startable(
@@ -1140,6 +1334,7 @@ def _launch_and_stream(
                     sub_file=active_sub,
                     mpv_profile=mpv_profile,
                     streaming=pass_ipc is not None,
+                    keep_open=keep_open and player_name == "mpv",
                 )
             )
             return _play_while_downloading(
@@ -1153,6 +1348,10 @@ def _launch_and_stream(
                 seed_while_watching=seed_while_watching,
                 show_download_progress=show_progress,
                 listed_seeders=listed_seeders,
+                on_eof_next=on_eof_next if player_name == "mpv" else None,
+                on_prefetch_next=on_prefetch_next if player_name == "mpv" else None,
+                on_episode_done=on_episode_done,
+                playback_item=playback_item,
             )
         finally:
             if pass_ipc is not None and sys.platform != "win32" and pass_ipc.exists():
@@ -1200,6 +1399,10 @@ def play(
     subtitle_lang: str | None = None,
     subtitle_query=None,
     listed_seeders: int | None = None,
+    on_ui_start: Callable[[], None] | None = None,
+    binge_items: list | None = None,
+    on_episode_done: Callable[[object], None] | None = None,
+    current_item: object | None = None,
 ) -> int:
     session = make_session(seed_while_watching=seed_while_watching)
     handle: lt.torrent_handle | None = None
@@ -1210,6 +1413,8 @@ def play(
         with ThreadPoolExecutor(max_workers=2) as pool:
             player_future = pool.submit(resolve_player, player)
             sub_future = None
+            sub_file: Path | None = None
+            sub_status: tuple[str, str, str] | None = None
             if subtitle_lang and subtitle_query is not None:
                 from annie.subtitles import (
                     _opensubtitles_config_hint,
@@ -1220,7 +1425,7 @@ def play(
                 if subtitles_api_available():
                     sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
                 else:
-                    stream_log_err("sous-titres", _opensubtitles_config_hint())
+                    sub_status = ("warn", "sous-titres", _opensubtitles_config_hint())
 
             if source.startswith("magnet:?"):
                 save_path = magnet_save_path(source)
@@ -1253,7 +1458,6 @@ def play(
                 file_size=file_size,
             )
             player_name = player_future.result()
-            sub_file: Path | None = None
             if sub_future is not None:
                 from annie.config import AnnieConfig
 
@@ -1261,52 +1465,275 @@ def play(
                 try:
                     sub_file = sub_future.result(timeout=sub_timeout)
                     if sub_file is not None:
-                        stream_log("sous-titres", sub_file.name, tone="accent")
+                        sub_status = ("ok", "sous-titres", sub_file.name)
                     else:
-                        from annie.subtitles import SubtitlesError, no_subtitles_message
+                        from annie.subtitles import no_subtitles_message
 
                         detail = (
                             no_subtitles_message(subtitle_query, subtitle_lang)
                             if subtitle_query and subtitle_lang
                             else "aucun trouvé"
                         )
-                        stream_log_err("sous-titres", detail, tone="warn")
+                        sub_status = ("warn", "sous-titres", detail)
                 except Exception as exc:
                     from annie.subtitles import SubtitlesError
 
                     if isinstance(exc, SubtitlesError):
-                        stream_log_err("sous-titres", str(exc))
+                        sub_status = ("err", "sous-titres", str(exc))
                     else:
-                        stream_log_err("sous-titres", f"indisponibles ({exc})")
+                        sub_status = ("err", "sous-titres", f"indisponibles ({exc})")
 
-        log_playback_start(target.name, player_name)
-        if seed_while_watching:
-            stream_log("seed", "actif pendant la lecture", tone="muted")
-            _enable_watch_seed(session, handle, file_index)
+        # Clear + ligne ◆ juste avant le bloc lecture (pas pendant le fetch metadata).
+        if on_ui_start is not None:
+            on_ui_start()
+        else:
+            begin_playback_ui()
 
-        code = 1
         try:
-            code = _launch_and_stream(
-                handle,
-                file_index,
-                target,
-                file_size,
-                player_name,
-                session=session,
-                seed_while_watching=seed_while_watching,
-                sub_file=sub_file,
-                listed_seeders=listed_seeders,
-            )
-            if code not in (PLAY_COMPLETED, PLAY_INCOMPLETE) and not is_user_cancel(code):
-                stream_log_err(player_name, f"code {code}")
-        finally:
-            if seed_while_watching:
-                _disable_watch_seed(session)
-            if handle is not None:
-                session.remove_torrent(handle, 0 if keep else 1)
+            if sub_status is not None:
+                kind, tag, detail = sub_status
+                if kind == "ok":
+                    stream_log(tag, detail, tone="accent")
+                else:
+                    stream_log_err(
+                        tag, detail, tone="warn" if kind == "warn" else "err"
+                    )
 
-        return code
+            log_playback_start(target.name, player_name)
+            if seed_while_watching:
+                stream_log("seed", "actif pendant la lecture", tone="muted")
+                _enable_watch_seed(session, handle, file_index)
+
+            binge_queue = list(binge_items or [])
+            # Cache rempli dès 90 % : index/chemin + sous-titres en arrière-plan.
+            prefetch_box: dict[str, object | None] = {
+                "item": None,
+                "index": None,
+                "path": None,
+                "size": None,
+                "sub": None,
+                "sub_pending": False,
+                "sub_done": False,
+            }
+
+            def _resolve_binge_file(nxt: object) -> tuple[int, Path, int] | None:
+                nxt_parsed = getattr(nxt, "parsed", None)
+                nxt_ep = getattr(nxt_parsed, "episode", None)
+                nxt_season = getattr(nxt_parsed, "season", None)
+                nxt_source = getattr(nxt_parsed, "source_episode", None)
+                assert handle is not None
+                info_now = handle.torrent_file()
+                if info_now is None:
+                    return None
+                files_now = torrent_files(info_now)
+                try:
+                    next_index, next_rel, next_size = pick_file(
+                        files_now,
+                        None,
+                        None,
+                        episode=nxt_ep,
+                        season=nxt_season,
+                        source_episode=nxt_source,
+                    )
+                except SystemExit:
+                    return None
+                next_path = (save_path / next_rel).resolve()
+                ensure_directory(next_path.parent)
+                return next_index, next_path, next_size
+
+            def _start_sub_prefetch(nxt: object) -> None:
+                if not subtitle_lang or prefetch_box.get("sub_pending"):
+                    return
+                prefetch_box["sub_pending"] = True
+                prefetch_box["sub_done"] = False
+                prefetch_box["sub"] = None
+
+                def _worker() -> None:
+                    try:
+                        from annie.subtitles import build_query, fetch_best
+
+                        mal_titles = ()
+                        series_title = None
+                        if subtitle_query is not None:
+                            series_title = getattr(
+                                subtitle_query, "series_title", None
+                            )
+                            mal_titles = (
+                                getattr(subtitle_query, "mal_titles", ()) or ()
+                            )
+                        q = build_query(
+                            nxt, series_title=series_title, mal_titles=mal_titles
+                        )
+                        prefetch_box["sub"] = fetch_best(q, subtitle_lang)
+                    except Exception:
+                        prefetch_box["sub"] = None
+                    finally:
+                        prefetch_box["sub_done"] = True
+
+                threading.Thread(target=_worker, daemon=True).start()
+
+            def _on_prefetch_next() -> int | None:
+                if not binge_queue:
+                    return None
+                nxt = binge_queue[0]
+                resolved = _resolve_binge_file(nxt)
+                if resolved is None:
+                    return None
+                next_index, next_path, next_size = resolved
+                assert handle is not None
+                info_now = handle.torrent_file()
+                if info_now is None:
+                    return None
+                _prefetch_binge_file(
+                    handle,
+                    next_index,
+                    info_now.files().num_files(),
+                    target=next_path,
+                    file_size=next_size,
+                )
+                prefetch_box["item"] = nxt
+                prefetch_box["index"] = next_index
+                prefetch_box["path"] = next_path
+                prefetch_box["size"] = next_size
+                _start_sub_prefetch(nxt)
+                stream_log("prefetch", next_path.name, tone="muted")
+                return next_index
+
+            def _on_eof_next() -> tuple[int, Path, int, Path | None, object] | None:
+                if not binge_queue:
+                    return None
+                nxt = binge_queue.pop(0)
+                assert handle is not None
+                info_now = handle.torrent_file()
+                if info_now is None:
+                    return None
+
+                if (
+                    prefetch_box.get("item") is nxt
+                    and prefetch_box.get("index") is not None
+                ):
+                    next_index = int(prefetch_box["index"])  # type: ignore[arg-type]
+                    next_path = prefetch_box["path"]  # type: ignore[assignment]
+                    next_size = int(prefetch_box["size"])  # type: ignore[arg-type]
+                    assert isinstance(next_path, Path)
+                else:
+                    resolved = _resolve_binge_file(nxt)
+                    if resolved is None:
+                        return None
+                    next_index, next_path, next_size = resolved
+
+                configure_stream(
+                    handle,
+                    next_index,
+                    info_now.files().num_files(),
+                    target=next_path,
+                    file_size=next_size,
+                )
+                wait_startable(
+                    handle,
+                    next_index,
+                    next_path,
+                    next_size,
+                    listed_seeders=listed_seeders,
+                )
+
+                next_sub: Path | None = None
+                if subtitle_lang:
+                    if (
+                        prefetch_box.get("item") is nxt
+                        and prefetch_box.get("sub_pending")
+                    ):
+                        deadline = time.monotonic() + 2.0
+                        while (
+                            not prefetch_box.get("sub_done")
+                            and time.monotonic() < deadline
+                        ):
+                            time.sleep(0.05)
+                    if (
+                        prefetch_box.get("item") is nxt
+                        and prefetch_box.get("sub_done")
+                    ):
+                        cached = prefetch_box.get("sub")
+                        next_sub = cached if isinstance(cached, Path) else None
+                    else:
+                        try:
+                            from annie.subtitles import build_query, fetch_best
+
+                            mal_titles = ()
+                            series_title = None
+                            if subtitle_query is not None:
+                                series_title = getattr(
+                                    subtitle_query, "series_title", None
+                                )
+                                mal_titles = (
+                                    getattr(subtitle_query, "mal_titles", ()) or ()
+                                )
+                            q = build_query(
+                                nxt,
+                                series_title=series_title,
+                                mal_titles=mal_titles,
+                            )
+                            next_sub = fetch_best(q, subtitle_lang)
+                        except Exception:
+                            next_sub = None
+
+                prefetch_box["item"] = None
+                prefetch_box["index"] = None
+                prefetch_box["path"] = None
+                prefetch_box["size"] = None
+                prefetch_box["sub"] = None
+                prefetch_box["sub_pending"] = False
+                prefetch_box["sub_done"] = False
+
+                clear_terminal()
+                try:
+                    from annie.parsing import minimal_label
+                    from annie.ui import C, stylize
+
+                    print(
+                        stylize(f"◆ {minimal_label(nxt.parsed)}", C.YELLOW, C.BOLD),
+                        flush=True,
+                    )
+                except Exception:
+                    print(f"◆ {next_path.name}", flush=True)
+                if next_sub is not None:
+                    stream_log("sous-titres", next_sub.name, tone="accent")
+                log_playback_start(next_path.name, player_name)
+                return next_index, next_path, next_size, next_sub, nxt
+
+            code = 1
+            try:
+                code = _launch_and_stream(
+                    handle,
+                    file_index,
+                    target,
+                    file_size,
+                    player_name,
+                    session=session,
+                    seed_while_watching=seed_while_watching,
+                    sub_file=sub_file,
+                    listed_seeders=listed_seeders,
+                    on_eof_next=_on_eof_next if binge_queue else None,
+                    on_prefetch_next=_on_prefetch_next if binge_queue else None,
+                    on_episode_done=on_episode_done,
+                    playback_item=current_item,
+                    keep_open=bool(binge_queue),
+                )
+                if code not in (PLAY_COMPLETED, PLAY_INCOMPLETE) and not is_user_cancel(
+                    code
+                ):
+                    stream_log_err(player_name, f"code {code}")
+            finally:
+                if seed_while_watching:
+                    _disable_watch_seed(session)
+                if handle is not None:
+                    session.remove_torrent(handle, 0 if keep else 1)
+
+            return code
+        finally:
+            end_playback_ui()
     except KeyboardInterrupt:
+        end_playback_ui()
         if handle is not None:
             try:
                 session.remove_torrent(handle, 0 if keep else 1)
