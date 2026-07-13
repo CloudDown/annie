@@ -121,19 +121,29 @@ class BufferStatusDisplay:
         self._line_count = 0
 
     def update(self, text: str) -> None:
-        line_count = text.count("\n") + 1
+        lines = text.split("\n")
+        line_count = len(lines)
         if self._line_count:
             sys.stdout.write(f"\033[{self._line_count}A")
-        for line in text.split("\n"):
+        # Efface toute ligne orpheline si le bloc a rétréci.
+        clear_extra = max(0, self._line_count - line_count)
+        for line in lines:
             sys.stdout.write(f"\033[K{line}\n")
+        for _ in range(clear_extra):
+            sys.stdout.write("\033[K\n")
+        if clear_extra:
+            sys.stdout.write(f"\033[{clear_extra}A")
         sys.stdout.flush()
         self._line_count = line_count
 
     def finish(self, message: str) -> None:
         if self._line_count:
             sys.stdout.write(f"\033[{self._line_count}A\033[J")
-        print(message, flush=True)
-        self._line_count = 0
+            self._line_count = 0
+        if message:
+            print(message, flush=True)
+        else:
+            sys.stdout.flush()
 
 
 # fzf chrome — explicit selection bg so light terminals stay readable

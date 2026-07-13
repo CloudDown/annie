@@ -1010,11 +1010,15 @@ def _play_while_downloading(
                 if need_pause and not paused_for_buffer:
                     _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
                     paused_for_buffer = True
-                    log_buffer_pause()
+                    # Pas de print séparé si les barres sont actives : ça désynchronise
+                    # BufferStatusDisplay et laisse un doublon « contigu ».
+                    if display is None:
+                        log_buffer_pause()
                 elif paused_for_buffer and contiguous >= required:
                     _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
                     paused_for_buffer = False
-                    log_buffer_resume()
+                    if display is None:
+                        log_buffer_resume()
 
                 prev_play_byte = play_byte
 
