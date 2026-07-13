@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
@@ -326,6 +327,22 @@ def log_buffer_resume() -> None:
 
 _T = TypeVar("_T")
 _SEARCH_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+# Mis à False pendant fzf pour ne pas écraser l'UI interactive.
+_spinner_active = threading.Event()
+_spinner_active.set()
+
+
+@contextmanager
+def pause_search_spinner():
+    """Coupe le spinner Searching pendant un fzf (sinon lignes « Searching » au-dessus)."""
+    was_set = _spinner_active.is_set()
+    _spinner_active.clear()
+    try:
+        print("\r\033[K", end="", flush=True)
+        yield
+    finally:
+        if was_set:
+            _spinner_active.set()
 
 
 def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
@@ -348,11 +365,16 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
         finally:
             done.set()
 
+    _spinner_active.set()
     threading.Thread(target=worker, daemon=True).start()
 
     frame = 0
     try:
         while not done.is_set():
+            if not _spinner_active.is_set():
+                print("\r\033[K", end="", flush=True)
+                done.wait(0.05)
+                continue
             spin = _SEARCH_SPINNER[frame % len(_SEARCH_SPINNER)]
             line = f"{_s('Searching · ', C.MAGENTA)}{_s(spin, C.MAGENTA)}"
             print(f"\r{line}", end="", flush=True)
@@ -613,17 +635,18 @@ def _run_fzf(
         command.extend(["--expect", expect])
 
     text_in = "\n".join(lines or [])
-    proc = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        stdout_bytes, _ = proc.communicate(input=text_in.encode("utf-8"))
-    except KeyboardInterrupt:
-        _stop_subprocess(proc)
-        return EXIT_CANCELLED, ""
+    with pause_search_spinner():
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            stdout_bytes, _ = proc.communicate(input=text_in.encode("utf-8"))
+        except KeyboardInterrupt:
+            _stop_subprocess(proc)
+            return EXIT_CANCELLED, ""
 
     stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
     return proc.returncode or 0, stdout

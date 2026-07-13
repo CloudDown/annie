@@ -208,26 +208,35 @@ def gather_catalog(
     confirm_anime = overrides.get("confirm_anime")
     if confirm_anime is None:
         confirm_anime = bool(sys.stdin.isatty() and fzf_available())
+    preselected = overrides.get("preselected")
 
     if meta.metadata_enabled(config):
         try:
             with ThreadPoolExecutor(max_workers=config.ui.mal_pool_workers) as pool:
-                candidates_future = pool.submit(meta.search_anime, query, config=config)
-                pool.submit(
-                    _warm_nyaa, query, category=category, filter_code=filter_code
-                )
+                if preselected is not None:
+                    chosen = preselected
+                    pool.submit(
+                        _warm_nyaa, query, category=category, filter_code=filter_code
+                    )
+                else:
+                    candidates_future = pool.submit(
+                        meta.search_anime, query, config=config
+                    )
+                    pool.submit(
+                        _warm_nyaa, query, category=category, filter_code=filter_code
+                    )
 
-                candidates = candidates_future.result()
-                chosen = None
-                if candidates:
-                    if (
-                        confirm_anime
-                        and config.metadata.confirm_ambiguous
-                        and meta.is_ambiguous_pick(candidates, query)
-                    ):
-                        chosen = pick_anime_candidate(candidates, query)
-                    if chosen is None:
-                        chosen = meta.pick_candidate(candidates, query)
+                    candidates = candidates_future.result()
+                    chosen = None
+                    if candidates:
+                        if (
+                            confirm_anime
+                            and config.metadata.confirm_ambiguous
+                            and meta.is_ambiguous_pick(candidates, query)
+                        ):
+                            chosen = pick_anime_candidate(candidates, query)
+                        if chosen is None:
+                            chosen = meta.pick_candidate(candidates, query)
                 if chosen is not None:
                     options["mal_titles"] = tuple(
                         title
@@ -327,6 +336,30 @@ def gather_catalog(
         skip_recap_movies=config.skip_recap_movies,
     )
     return catalog, options
+
+
+def resolve_anime_for_query(
+    query: str, config: AnnieConfig
+):
+    """Recherche + confirmation fzf sur le thread principal (hors spinner)."""
+    if not meta.metadata_enabled(config):
+        return None
+    try:
+        candidates = meta.search_anime(query, config=config)
+    except Exception:
+        return None
+    if not candidates:
+        return None
+    if (
+        config.metadata.confirm_ambiguous
+        and sys.stdin.isatty()
+        and fzf_available()
+        and meta.is_ambiguous_pick(candidates, query)
+    ):
+        picked = pick_anime_candidate(candidates, query)
+        if picked is not None:
+            return picked
+    return meta.pick_candidate(candidates, query)
 
 
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
@@ -699,6 +732,9 @@ def interactive_loop(config: AnnieConfig) -> int:
 
         try:
             query, options = parse_inline_target(raw_query)
+            # Confirmation anime sur le thread principal (Evangelion, etc.) —
+            # jamais sous le spinner, sinon « Searching » s'affiche par-dessus fzf.
+            preselected = resolve_anime_for_query(query, config)
             catalog, options = run_search_spinner(
                 query,
                 lambda: gather_catalog(
@@ -706,6 +742,8 @@ def interactive_loop(config: AnnieConfig) -> int:
                     config,
                     target_season=options.get("season"),
                     target_kind=kind_from_options(options),
+                    confirm_anime=False,
+                    preselected=preselected,
                 ),
             )
         except KeyboardInterrupt:
