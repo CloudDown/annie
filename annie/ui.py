@@ -102,7 +102,6 @@ def format_buffer_lines(
     else:
         meta = f"{stylize(peer_hint, C.MUTED)}{hint}"
     lines = [
-        _s("buffer", C.MUTED),
         (
             f"{stylize('contigu', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
             f"{_mib_label(contiguous, target_bytes)}"
@@ -825,8 +824,17 @@ def _pick_section_flat(
 
 
 def pick_section(
-    sections: list[MediaSection], *, force_interactive: bool = False
+    sections: list[MediaSection],
+    *,
+    force_interactive: bool = False,
+    resume_from: MediaSection | None = None,
 ) -> MediaSection | None:
+    """Choisit une section (groupe → liste).
+
+    ``force_interactive`` : afficher fzf même pour une seule section (retour ←).
+    ``resume_from`` : au retour depuis les épisodes, rouvrir le même groupe
+    (Seasons / Movies / Other) pour que la liste soit identique à l'aller.
+    """
     if not sections:
         return None
     if len(sections) == 1 and not force_interactive:
@@ -834,23 +842,38 @@ def pick_section(
 
     groups = _group_sections(sections)
     multi_group = sum(1 for key in ("season", "movie", "other") if groups[key]) > 1
-    pool = sections
-    interactive = force_interactive
+    current_group: str | None = None
+    if resume_from is not None and multi_group:
+        bucket = _bucket_section(resume_from)
+        if groups.get(bucket):
+            current_group = bucket
 
     while True:
-        if multi_group and not interactive:
+        if multi_group and current_group is None:
             group_key = pick_group(groups)
             if group_key is None:
                 return None
-            pool = groups[group_key]
+            current_group = group_key
 
-        if len(pool) == 1 and not interactive:
+        pool = (
+            groups[current_group]
+            if multi_group and current_group is not None
+            else sections
+        )
+
+        if len(pool) == 1 and not force_interactive:
             return pool[0]
 
-        section = _pick_section_flat(pool, back_label="group" if multi_group else "search")
+        section = _pick_section_flat(
+            pool, back_label="group" if multi_group else "search"
+        )
         if section is not None:
             return section
-        if multi_group and not interactive:
+
+        # ← depuis la liste de sections → remonter au choix de groupe.
+        if multi_group:
+            current_group = None
+            force_interactive = False
             continue
         return None
 
@@ -1008,6 +1031,7 @@ def pick_catalog(
     pinned_season = season
     pinned_episode = episode
     force_section_pick = False
+    last_section: MediaSection | None = None
     while True:
         auto_pick_section = (
             not force_section_pick
@@ -1023,10 +1047,15 @@ def pick_catalog(
         if auto_pick_section:
             section = pool[0]
         else:
-            section = pick_section(pool, force_interactive=force_section_pick)
+            section = pick_section(
+                pool,
+                force_interactive=force_section_pick,
+                resume_from=last_section if force_section_pick else None,
+            )
             force_section_pick = False
         if section is None:
             return None
+        last_section = section
 
         if (
             pinned_episode is not None
