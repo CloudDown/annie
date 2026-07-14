@@ -183,6 +183,23 @@ MOVIE_PATTERNS = (
     re.compile(r"\binfinity castle\b", re.I),
     re.compile(r"\blegend of (?:hei|luo xiaohei)\b", re.I),
 )
+# Packs « S1+S2+Movie » / intégrale : ce sont des BATCH, pas des films seuls.
+FRANCHISE_MOVIE_PACK_RE = re.compile(
+    r"(?ix)"
+    r"(?:"
+    r"\bS\d{1,2}\s*\+\s*S?\d{1,2}\b"
+    r"|\bSeasons?\s*\d{1,2}\s*[-–—+&/]\s*(?:Seasons?\s*)?\d{1,2}\b"
+    r"|\bSeason\s*\d{1,2}\s*\+\s*Season\b"
+    r"|\bSeasons?\s*\d{1,2}\b.+\+\s*(?:Movie|Film|OVA|Special)s?\b"
+    r"|\bTV\s*\+\s*(?:MOVIE|Movies|Film)s?\b"
+    r"|\+\s*(?:OVA|OVAs|Specials?)\s*\+\s*(?:Movie|Film)s?\b"
+    r"|\bS\d{1,2}\b.+\+\s*(?:Movie|Film|Special)s?\b"
+    r"|\bINTEGRALE\b.+\b(?:Film|Movie)\b"
+    r"|\b(?:Film|Movie)\b.+\bINTEGRALE\b"
+    r"|\+\s*(?:Movie|Film)s?\s*\+\s*(?:Special|OVA)s?\b"
+    r"|\+\s*(?:Special|OVA)s?\s*\+\s*(?:Movie|Film)s?\b"
+    r")"
+)
 BRACKET_EP_RANGE_RE = re.compile(r"\[\d{1,3}\s*[-–—]\s*\d{1,3}\]")
 MANGA_VOLUME_IN_TITLE_RE = re.compile(
     r"\bv(?:ol(?:ume)?\.?\s*)?\d{1,2}\s*[-–—]\s*v?\d{1,2}\b",
@@ -390,6 +407,23 @@ def is_non_anime_extra(title: str) -> bool:
     return bool(NON_ANIME_EXTRA_RE.search(title) or NON_ANIME_EXTRA_RE2.search(title))
 
 
+def is_franchise_pack_with_movie(body: str) -> bool:
+    """Pack saison(s) + film / intégrale → BATCH, pas MOVIE standalone."""
+    if not matches_any(MOVIE_PATTERNS, body):
+        return False
+    if FRANCHISE_MOVIE_PACK_RE.search(body):
+        return True
+    season_hits = len(re.findall(r"\bS(?:eason)?\s*\d{1,2}\b", body, re.I))
+    if season_hits >= 2:
+        return True
+    # « S1 + Mugen Train Movie », « Season 01 + Movie + Special »
+    has_season = bool(
+        re.search(r"\b(?:S\d{1,2}|Seasons?\s*\d{1,2})\b", body, re.I)
+    )
+    has_joiner = bool(re.search(r"[+&]|\band\b", body, re.I))
+    return has_season and has_joiner
+
+
 def is_season_pack(body: str, season: int | None, episode: int | None) -> bool:
     """Pack saison BD/WEB sans numéro d'épisode explicite."""
     if episode is not None:
@@ -505,6 +539,9 @@ def series_key(body: str, display_name: str) -> str:
 def detect_kind(
     body: str, season: int | None, episode: int | None, arc: str | None
 ) -> MediaKind:
+    # Packs S1+S2+Movie avant le match naïf « movie » dans le titre.
+    if is_franchise_pack_with_movie(body):
+        return MediaKind.BATCH
     if matches_any(MOVIE_PATTERNS, body) or is_standalone_film(body, episode):
         return MediaKind.MOVIE
     if matches_any(BATCH_PATTERNS, body) or is_season_pack(body, season, episode):
@@ -613,7 +650,11 @@ def parse_title(title: str) -> ParsedTitle:
     ):
         kind = MediaKind.BATCH
     elif matches_any(MOVIE_PATTERNS, body) and not BRACKET_EP_RANGE_RE.search(body):
-        kind = MediaKind.MOVIE
+        if is_franchise_pack_with_movie(body):
+            kind = MediaKind.BATCH
+            season = parse_season(body) or 1
+        else:
+            kind = MediaKind.MOVIE
     elif is_standalone_film(body, None):
         kind = MediaKind.MOVIE
     elif matches_any(BATCH_PATTERNS, body) or AFTER_STORY_BATCH_RE.search(body):

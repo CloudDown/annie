@@ -142,6 +142,29 @@ class ParseTitleTests(unittest.TestCase):
         self.assertEqual(p.kind, MediaKind.BATCH)
 
 
+class MovieVsPackTests(unittest.TestCase):
+    def test_franchise_pack_with_movie_is_batch(self) -> None:
+        titles = [
+            "[Cerberus] Konosuba S1 + S2 + OVA + Kurenai Densetsu Movie [BD]",
+            "[Tenrai] KonoSuba S1+S2+OVAs+Movie [BD][1080p]",
+            "[Anime Time] Konosuba S01+02+OVA+Movie [Dual Audio]",
+            "KonoSuba - INTEGRALE S01 / S02 / Film",
+        ]
+        for title in titles:
+            with self.subTest(title=title):
+                self.assertEqual(parse_title(title).kind, MediaKind.BATCH)
+
+    def test_standalone_movie_stays_movie(self) -> None:
+        titles = [
+            "[EMBER] KONOSUBA Legend of Crimson - Movie (2019) [BDRip]",
+            "[Group] Demon Slayer - Mugen Train Movie [1080p]",
+            "[Erai-raws] Evangelion 1.0 You Are (Not) Alone - Movie [1080p].mkv",
+        ]
+        for title in titles:
+            with self.subTest(title=title):
+                self.assertEqual(parse_title(title).kind, MediaKind.MOVIE)
+
+
 class BatchRangeTests(unittest.TestCase):
     def test_second_season_batch(self) -> None:
         title = (

@@ -18,7 +18,7 @@ from annie.catalog import (
     resolve_catalog_target,
     scope_releases_for_target,
 )
-from annie.types import MediaKind, MediaSection
+from annie.types import MalRelease, MediaKind, MediaSection
 from tests.helpers import entries_from_fixture, load_fixture, mal_release, nyaa_entry, result_item
 
 
@@ -412,6 +412,228 @@ class BatchSourceEpisodeTests(unittest.TestCase):
         ep12 = item_for_episode(batch, 12)
         self.assertEqual(ep12.parsed.episode, 12)
         self.assertIsNone(ep12.parsed.source_episode)
+
+
+class MovieSectionFilterTests(unittest.TestCase):
+    def test_movie_noise_rejects_season_packs(self) -> None:
+        from annie.catalog import is_movie_noise, _movie_belongs_to_release
+
+        pack = (
+            "[Cerberus] Konosuba S1 + S2 + OVA + Kurenai Densetsu Movie [BD]"
+        )
+        self.assertTrue(is_movie_noise(pack))
+        release = MalRelease(
+            mal_id=1,
+            label="Legend of Crimson",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=["KonoSuba Legend of Crimson", "Kurenai Densetsu"],
+            sort_key=(15, "legend"),
+        )
+        item = result_item(pack, score=10.0)
+        self.assertFalse(_movie_belongs_to_release(item, release))
+
+    def test_standalone_movie_belongs(self) -> None:
+        from annie.catalog import _movie_belongs_to_release
+
+        title = "[EMBER] KONOSUBA Legend of Crimson - Movie (2019) [BDRip]"
+        release = MalRelease(
+            mal_id=1,
+            label="Legend of Crimson",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=[
+                "konosuba",
+                "KonoSuba Legend of Crimson",
+                "Kurenai Densetsu",
+            ],
+            sort_key=(15, "legend"),
+        )
+        item = result_item(title, score=10.0)
+        self.assertTrue(_movie_belongs_to_release(item, release))
+
+    def test_rejects_spinoff_movie(self) -> None:
+        from annie.catalog import _movie_belongs_to_release
+
+        release = MalRelease(
+            mal_id=1,
+            label="Legend of Crimson",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=[
+                "KonoSuba",
+                "KonoSuba: God's Blessing on This Wonderful World!",
+                "KonoSuba Legend of Crimson",
+                "Kurenai Densetsu",
+            ],
+            sort_key=(15, "legend"),
+        )
+        spinoff = result_item(
+            "[Judas] KonoSuba An Explosion on This Wonderful World Movie [BD]",
+            score=40.0,
+            kind=MediaKind.MOVIE,
+        )
+        self.assertFalse(_movie_belongs_to_release(spinoff, release))
+
+    def test_rejects_light_novel_pack(self) -> None:
+        from annie.catalog import _movie_belongs_to_release, is_movie_noise
+
+        release = MalRelease(
+            mal_id=1,
+            label="KONOSUBA -God's blessing on this wonderful world!- Legend of Crimson",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=[
+                "konosuba",
+                "KonoSuba Legend of Crimson",
+                "Konosuba Movie",
+            ],
+            sort_key=(15, "legend"),
+        )
+        ln = result_item(
+            "Konosuba - God's Blessing on This Wonderful World! [Yen Press] [LuCaZ]",
+            score=5.0,
+        )
+        self.assertTrue(is_movie_noise(ln.entry.title))
+        self.assertFalse(_movie_belongs_to_release(ln, release))
+
+    def test_rejects_wrong_sao_movie(self) -> None:
+        from annie.catalog import _movie_belongs_to_release
+
+        release = MalRelease(
+            mal_id=3,
+            label="Ordinal Scale",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=[
+                "sword art online",
+                "Sword Art Online the Movie: Ordinal Scale",
+                "Sword Art Online the Movie",
+                "SAO THE MOVIE",
+            ],
+            sort_key=(15, "ordinal"),
+        )
+        wrong = result_item(
+            "[Anime Time] Gekijouban Sword Art Online: Progressive - Scherzo [BD]",
+            score=40.0,
+            kind=MediaKind.MOVIE,
+        )
+        good = result_item(
+            "[Judas] Sword Art Online the Movie Ordinal Scale [BD 1080p]",
+            score=50.0,
+            kind=MediaKind.MOVIE,
+        )
+        self.assertFalse(_movie_belongs_to_release(wrong, release))
+        self.assertTrue(_movie_belongs_to_release(good, release))
+
+    def test_rejects_wrong_franchise_movie(self) -> None:
+        from annie.catalog import _movie_belongs_to_release
+
+        release = MalRelease(
+            mal_id=2,
+            label="Violet Evergarden the Movie",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=[
+                "Violet Evergarden",
+                "Violet Evergarden the Movie",
+            ],
+            sort_key=(15, "violet"),
+        )
+        slime = result_item(
+            "[EMBER] That Time I Got Reincarnated as a Slime the Movie [BD]",
+            score=50.0,
+            kind=MediaKind.MOVIE,
+        )
+        self.assertFalse(_movie_belongs_to_release(slime, release))
+
+    def test_season_movie_pack_fills_season(self) -> None:
+        from annie.catalog import _batch_episodes_for_release
+
+        release = MalRelease(
+            mal_id=10,
+            label="Season 01",
+            kind=MediaKind.EPISODE,
+            season=1,
+            episode_count=10,
+            nyaa_queries=["konosuba"],
+            sort_key=(1, "s1"),
+            absolute_episode_offset=0,
+        )
+        item = result_item(
+            "[Cerberus] Konosuba S1 + S2 + OVA + Kurenai Densetsu Movie [BD]",
+            score=20.0,
+            kind=MediaKind.BATCH,
+        )
+        pairs = _batch_episodes_for_release(item, release)
+        self.assertEqual(
+            [(rel, abs_) for rel, abs_ in pairs],
+            [(i, i) for i in range(1, 11)],
+        )
+
+    def test_pick_movie_section_does_not_fallback_to_tv(self) -> None:
+        from annie.catalog import _pick_section_for_release
+
+        tv = MediaSection(
+            key="s1",
+            label="Season 01",
+            kind=MediaKind.EPISODE,
+            season=1,
+        )
+        tv.episodes[1] = result_item(
+            "[SubsPlease] Konosuba - 01 (1080p).mkv", score=10.0
+        )
+        release = MalRelease(
+            mal_id=99,
+            label="Legend of Crimson",
+            kind=MediaKind.MOVIE,
+            season=None,
+            episode_count=1,
+            nyaa_queries=["KonoSuba Legend of Crimson"],
+            sort_key=(15, "legend"),
+        )
+        picked = _pick_section_for_release([tv], release)
+        self.assertIsNotNone(picked)
+        assert picked is not None
+        self.assertEqual(picked.kind, MediaKind.MOVIE)
+        self.assertEqual(picked.singles, [])
+        self.assertEqual(picked.episodes, {})
+
+    def test_movie_section_keeps_only_best_torrent(self) -> None:
+        from annie.catalog import _keep_best_movie_only
+
+        section = MediaSection(
+            key="mal:1",
+            label="Saga of Tanya the Evil The Movie",
+            kind=MediaKind.MOVIE,
+            season=None,
+        )
+        weak = result_item(
+            "[X] Youjo Senki Movie 720p short 11min",
+            score=10.0,
+            kind=MediaKind.MOVIE,
+        )
+        weak = replace(
+            weak, entry=nyaa_entry(weak.entry.title, seeders=2)
+        )
+        strong = result_item(
+            "[Judas] Saga of Tanya the Evil The Movie [1080p BD][HEVC]",
+            score=50.0,
+            kind=MediaKind.MOVIE,
+        )
+        strong = replace(
+            strong, entry=nyaa_entry(strong.entry.title, seeders=200)
+        )
+        section.singles = [weak, strong]
+        _keep_best_movie_only(section)
+        self.assertEqual(len(section.singles), 1)
+        self.assertEqual(section.singles[0].entry.magnet, strong.entry.magnet)
 
 
 if __name__ == "__main__":

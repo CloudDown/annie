@@ -12,10 +12,12 @@ from annie.parsing import (
     VIDEO_EXT_RE,
     _token_matches,
     best_series_match_score,
+    is_franchise_pack_with_movie,
     is_manga,
     minimal_label,
     normalize,
     parse_season,
+    parse_title,
     query_tokens,
     strip_release_group,
 )
@@ -444,8 +446,18 @@ def _filter_section_for_release(
         )
     }
     section.singles = [
-        item for item in section.singles if not is_spinoff(item.entry.title)
+        item
+        for item in section.singles
+        if not is_spinoff(item.entry.title)
+        and (
+            release.kind != MediaKind.MOVIE
+            or _movie_belongs_to_release(item, release)
+        )
     ]
+    if release.kind == MediaKind.MOVIE:
+        # Une section film ne doit jamais garder des épisodes de saison.
+        section.episodes = {}
+        _keep_best_movie_only(section)
 
 
 def _better_episode_pick(new: ResultItem, current: ResultItem | None) -> bool:
@@ -454,18 +466,34 @@ def _better_episode_pick(new: ResultItem, current: ResultItem | None) -> bool:
     return catalog_episode_pick_rank(new) > catalog_episode_pick_rank(current)
 
 
+def _season_movie_pack_covers_release(title: str, release: MalRelease) -> bool:
+    """Pack « Season N + Movie » : couvre les épisodes de la saison N."""
+    if release.kind != MediaKind.EPISODE or release.season is None:
+        return False
+    if not is_franchise_pack_with_movie(title):
+        return False
+    explicit = _explicit_seasons_in_title(title)
+    if explicit:
+        return release.season in explicit
+    inferred = parse_season(_batch_title_body(title))
+    if inferred is not None:
+        return inferred == release.season
+    # Pack franchise multi sans numéro clair : utile pour S1.
+    return release.season == 1
+
+
 def _franchise_batch_covers_full_season(
     title: str, episodes: list[int], expected: int
 ) -> bool:
     """Pack multi-saisons : « Season 1-4 » est parsé 1~4, pas les 51 épisodes."""
-    if not is_franchise_multi_season_batch(title):
+    if is_franchise_multi_season_batch(title):
+        if not episodes:
+            return True
+        if max(episodes) <= 2:
+            return True
+        if expected and len(episodes) < expected * 0.5:
+            return True
         return False
-    if not episodes:
-        return True
-    if max(episodes) <= 2:
-        return True
-    if expected and len(episodes) < expected * 0.5:
-        return True
     return False
 
 
@@ -497,7 +525,12 @@ SE_BATCH_RANGE_RE = re.compile(
     re.I,
 )
 MOVIE_NOISE_RE = re.compile(
-    r"\b(?:ost|soundtrack|discography|\bcd\b|\bmp3\b)\b",
+    r"\b(?:ost|o\.?\s?s\.?\s?t\.?|soundtrack|discography|\bcd\b|\bmp3\b|"
+    r"original\s+sound(?:track)?|groundwork|lossless\s+flac|\bflac\b|"
+    r"short|preview|teaser|trailer|\bpv\b|\bcm\b|digest|"
+    r"yen\s*press|light\s*novels?|\bmanga\b|\bportable\b|"
+    r"realta\s*nua|ultimate\s+edition|visual\s+novel|\bvn\b|"
+    r"audiobook|unabridged|\bebook\b|\bepub\b|\bpdft?\b)\b",
     re.I,
 )
 MOVIE_PACK_RE = re.compile(
@@ -505,18 +538,318 @@ MOVIE_PACK_RE = re.compile(
     re.I,
 )
 MOVIE_NUM_RE = re.compile(r"\bmovie\s*(\d+)\b", re.I)
+# Épisode TV explicite : ne doit pas atterrir dans une section film.
+_TV_EPISODE_IN_TITLE_RE = re.compile(
+    r"(?ix)"
+    r"(?:"
+    r"\bS\d{1,2}E\d{1,3}\b"
+    r"|\bSeason\s*\d{1,2}\s*Episode\s*\d{1,3}\b"
+    r"|\bEpisode\s+\d{1,3}\b"
+    r")"
+)
 
 
 def is_movie_noise(title: str) -> bool:
+    if is_franchise_pack_with_movie(title):
+        return True
     if MOVIE_PACK_RE.search(title):
         return True
+    if re.search(r"\.(?:ass|srt|ssa|sub|flac|mp3|m4a)\b", title, re.I):
+        return True
+    if re.search(r"\bcollection\s+\d+\s+movies?\b", title, re.I):
+        return True
     if VIDEO_EXT_RE.search(title):
+        # Fichier vidéo : encore filtrer OST / artbook collés au titre.
+        if MOVIE_NOISE_RE.search(title):
+            return True
         return False
     if MOVIE_NOISE_RE.search(title):
         return True
     if re.search(r"\b(?:ost|soundtrack)\b", title, re.I):
         return True
     return False
+
+
+def _looks_like_tv_episode_title(title: str) -> bool:
+    """Titre d'épisode / saison TV, pas un film standalone."""
+    if is_franchise_pack_with_movie(title):
+        return True
+    parsed = parse_title(title)
+    if parsed.kind == MediaKind.BATCH:
+        return True
+    movie_marker = re.search(
+        r"\b(?:gekijouban|the\s+movie|movie\s*\d+|film)\b", title, re.I
+    )
+    if parsed.kind == MediaKind.EPISODE and parsed.episode is not None:
+        return not movie_marker
+    if _TV_EPISODE_IN_TITLE_RE.search(title) and not movie_marker:
+        return True
+    return False
+
+
+_MOVIE_STOP_TOKENS = frozenset(
+    {
+        "the",
+        "of",
+        "you",
+        "are",
+        "can",
+        "not",
+        "a",
+        "an",
+        "to",
+        "and",
+        "or",
+        "movie",
+        "film",
+        "edition",
+        "anime",
+        "season",
+        "does",
+        "dream",
+    }
+)
+
+
+def _movie_specific_queries(release: MalRelease) -> list[str]:
+    """Requêtes discriminantes pour un film (ignore la racine franchise trop large)."""
+    queries = [q for q in (release.nyaa_queries or []) if q and str(q).strip()]
+    if release.label:
+        queries.append(release.label)
+    movieish = re.compile(
+        r"\b(?:\d\.\d|movie|gekijouban|film|crimson|thrice|end of|alone|advance|redo|"
+        r"legend|kurenai|densetsu|mugen|train|eternity|ordinal|scale|"
+        r"heaven'?s?\s*feel|presage|butterfly|spring\s*song)\b",
+        re.I,
+    )
+    generic_movie = re.compile(
+        r"^(?P<head>.+?)\s+(?:the\s+)?movies?\s*$",
+        re.I,
+    )
+    focus_tokens = {
+        t
+        for t in query_tokens(_movie_label_focus(release.label or ""))
+        if t not in _MOVIE_STOP_TOKENS and len(t) >= 3
+    }
+    specific: list[str] = []
+    for query in dict.fromkeys(queries):
+        if movieish.search(query):
+            # « Sword Art Online the Movie » sans sous-titre = trop large.
+            if generic_movie.match(query.strip()) and release.label:
+                label_tokens = set(query_tokens(release.label))
+                if label_tokens - set(query_tokens(query)):
+                    continue
+            specific.append(query)
+            continue
+        if release.label and query.strip().lower() == release.label.strip().lower():
+            specific.append(query)
+            continue
+        # Synonyme JP / alt title qui porte les ancres du film.
+        q_tokens = set(query_tokens(query))
+        if focus_tokens and focus_tokens & q_tokens and len(q_tokens) >= 3:
+            specific.append(query)
+    if not specific and release.label:
+        specific.append(release.label)
+    return specific or queries[:1]
+
+
+def _movie_franchise_roots(release: MalRelease) -> list[str]:
+    """Jetons franchise qui doivent apparaître dans le torrent film."""
+    roots: list[str] = []
+    movieish = re.compile(
+        r"\b(?:\d\.\d|movie|gekijouban|film|crimson|thrice|end of|alone|legend)\b",
+        re.I,
+    )
+    primary = (release.nyaa_queries or [None])[0] or ""
+    primary_tokens = set(query_tokens(primary))
+    for query in release.nyaa_queries or []:
+        raw = query_tokens(query)
+        tokens = [
+            t
+            for t in raw
+            if t not in _MOVIE_STOP_TOKENS and len(t) >= 4
+        ]
+        if not tokens:
+            continue
+        if not re.search(r"[A-Za-z]", tokens[0]):
+            continue
+        if len(raw) > 3 or movieish.search(query):
+            # « KonoSuba Legend of Crimson » → konosuba si déjà racine primaire.
+            if tokens[0] in primary_tokens or tokens[0] in set(
+                query_tokens(release.label or "")
+            ):
+                roots.append(tokens[0])
+            continue
+        # Requête courte hors franchise (« Unanswered//butterfly ») → ignorer.
+        if (
+            query != primary
+            and primary_tokens
+            and not (set(tokens) & primary_tokens)
+        ):
+            continue
+        roots.append(tokens[0])
+        if len(tokens) >= 2 and re.search(r"[A-Za-z]", tokens[1]):
+            roots.append(tokens[1])
+    return list(dict.fromkeys(roots))
+
+
+def _movie_label_focus(label: str) -> str:
+    """Sous-titre film (après « - » / « of a … ») pour ancrer le matching."""
+    focus = label.strip()
+    for sep in ("!- ", "! - ", " – ", " — ", " - ", ": "):
+        if sep in focus:
+            tail = focus.rsplit(sep, 1)[-1].strip()
+            if len(query_tokens(tail)) >= 1:
+                focus = tail
+                break
+    # « Rascal Does Not Dream of a Dear Friend » → « Dear Friend »
+    # « Aria of a Starless Night » → « Aria Starless Night ».
+    of_a = re.search(r"\bof\s+(?:an?\s+)(.+)$", focus, re.I)
+    if of_a:
+        head = focus[: of_a.start()].strip()
+        head_tokens = query_tokens(head)
+        tail = of_a.group(1).strip()
+        if len(query_tokens(tail)) >= 1:
+            if len(head_tokens) >= 3:
+                last = head_tokens[-1]
+                series_tail = _MOVIE_STOP_TOKENS | {
+                    "progressive",
+                    "online",
+                    "movie",
+                    "edition",
+                    "order",
+                    "grand",
+                    "fate",
+                    "sword",
+                    "art",
+                }
+                if last in series_tail:
+                    return tail
+                return f"{last} {tail}".strip()
+            if len(head_tokens) == 1:
+                return f"{head_tokens[0]} {tail}".strip()
+    return focus
+
+
+def _movie_label_anchors(label: str, release: MalRelease) -> list[str]:
+    """Jetons discriminants du label film (ex. 1.0, alone, crimson, end)."""
+    franchise_tokens: set[str] = set(_movie_franchise_roots(release))
+    for query in release.nyaa_queries or []:
+        tokens = query_tokens(query)
+        # Uniquement les racines courtes (pas le titre complet du film).
+        if len(tokens) <= 3 and not re.search(
+            r"\b(?:\d\.\d|movie|gekijouban|film)\b", query, re.I
+        ):
+            franchise_tokens.update(
+                t for t in tokens if t not in _MOVIE_STOP_TOKENS
+            )
+
+    focus = _movie_label_focus(label)
+    anchors = re.findall(r"\b\d+\.\d+\+?\d*\b", label)
+    # Indices film : 0, 1, 2… (pas des années / résolutions)
+    for match in re.finditer(r"(?<![\w.])(\d{1,2})(?![\w.])", focus):
+        anchors.append(match.group(1))
+    # Romains standalone majuscules (I, II, III…) — évite « and » / « doll ».
+    for match in re.finditer(r"(?<![\w])([IVXLC]{1,4})(?![\w])", focus):
+        anchors.append(match.group(1).lower())
+    for token in query_tokens(focus):
+        if token in _MOVIE_STOP_TOKENS or token in franchise_tokens:
+            continue
+        if len(token) >= 3:
+            anchors.append(token)
+    # Si le focus n'a rien donné, retomber sur le label entier.
+    if not anchors:
+        for token in query_tokens(label):
+            if token in _MOVIE_STOP_TOKENS or token in franchise_tokens:
+                continue
+            if len(token) >= 3:
+                anchors.append(token)
+    return list(dict.fromkeys(anchors))
+
+
+def _title_has_movie_anchors(title: str, anchors: list[str]) -> bool:
+    if not anchors:
+        return True
+    hay = normalize(f"{title} {parse_title(title).display_name}")
+    version_anchors = [
+        a for a in anchors if re.match(r"^(?:\d+\.\d+|\d{1,2}|[ivxlcdm]{1,4})$", a, re.I)
+    ]
+    word_anchors = [a for a in anchors if a not in version_anchors]
+    if version_anchors:
+        def _version_hit(anchor: str) -> bool:
+            if re.match(r"^\d+\.\d+", anchor):
+                return anchor.lower() in hay or _token_matches(anchor, hay)
+            # « 0 » / « II » : jeton isolé, pas un sous-chaîne d'année.
+            return bool(
+                re.search(rf"(?<![\d.]){re.escape(anchor)}(?![\d.])", hay, re.I)
+            )
+
+        if not any(_version_hit(a) for a in version_anchors):
+            return False
+    if not word_anchors:
+        return True
+    hits = sum(
+        1 for a in word_anchors if a.lower() in hay or _token_matches(a, hay)
+    )
+    # 1 ancre → 1 ; 2+ → au moins 2 (évite Paladin via seul « Agateram »).
+    need = 1 if len(word_anchors) == 1 else min(2, len(word_anchors))
+    return hits >= need
+
+
+def _movie_belongs_to_release(item: ResultItem, release: MalRelease) -> bool:
+    title = item.entry.title
+    if is_movie_noise(title) or _looks_like_tv_episode_title(title):
+        return False
+    # Saison TV explicite sans film standalone → pas un movie release.
+    if re.search(r"\bS\d{1,2}\b|\bSeasons?\s*\d", title, re.I) and not re.search(
+        r"\b(?:gekijouban|the\s+movie|movie\s*\d+)\b", title, re.I
+    ):
+        return False
+    parsed = item.parsed
+    if parsed.kind not in {MediaKind.MOVIE, MediaKind.UNKNOWN}:
+        if parse_title(title).kind != MediaKind.MOVIE:
+            return False
+    roots = _movie_franchise_roots(release)
+    if roots:
+        hay = normalize(f"{title} {parsed.display_name} {parsed.series}")
+        if not any(_token_matches(root, hay) for root in roots):
+            return False
+    queries = _movie_specific_queries(release)
+    if queries:
+        score = best_series_match_score(parsed, queries)
+        if score < 300:
+            return False
+    anchors = _movie_label_anchors(release.label or "", release)
+    if anchors and not _title_has_movie_anchors(title, anchors):
+        return False
+    # Label générique (= nom franchise) : le torrent doit porter les jetons
+    # discriminants des queries non-franchise (ex. unanswered / butterfly).
+    root_set = set(roots)
+    label_tokens = {
+        t
+        for t in query_tokens(release.label or "")
+        if t not in _MOVIE_STOP_TOKENS
+    }
+    label_is_franchise = bool(label_tokens) and label_tokens <= (
+        root_set | {t for t in label_tokens if len(t) < 4}
+    )
+    if label_is_franchise or (
+        anchors and not any(a not in root_set and len(a) >= 4 for a in anchors)
+    ):
+        distinctive: set[str] = set()
+        for q in release.nyaa_queries or []:
+            for t in query_tokens(q):
+                if (
+                    t not in root_set
+                    and t not in _MOVIE_STOP_TOKENS
+                    and len(t) >= 4
+                ):
+                    distinctive.add(t)
+        if distinctive:
+            hay = normalize(f"{title} {parsed.display_name} {parsed.series}")
+            if not any(_token_matches(tok, hay) for tok in distinctive):
+                return False
+    return True
 
 
 def movie_canonical_key(title: str, parsed: ParsedTitle) -> str:
@@ -589,10 +922,18 @@ def upsert_movie(section: MediaSection, item: ResultItem) -> None:
     key = movie_canonical_key(item.entry.title, item.parsed)
     for index, current in enumerate(section.singles):
         if movie_canonical_key(current.entry.title, current.parsed) == key:
-            if item.score > current.score:
+            if catalog_episode_pick_rank(item) > catalog_episode_pick_rank(current):
                 section.singles[index] = item
             return
     section.singles.append(item)
+
+
+def _keep_best_movie_only(section: MediaSection) -> None:
+    """Un film MAL = un seul torrent (meilleur seeders / qualité)."""
+    if len(section.singles) <= 1:
+        return
+    best = max(section.singles, key=catalog_episode_pick_rank)
+    section.singles = [best]
 
 
 def apply_batch_episodes(
@@ -637,7 +978,9 @@ def _batch_episodes_for_release(
             seen.add(relative)
             pairs.append((relative, raw))
 
-    if _franchise_batch_covers_full_season(title, episodes, expected):
+    if _franchise_batch_covers_full_season(
+        title, episodes, expected
+    ) or _season_movie_pack_covers_release(title, release):
         for relative in range(1, expected + 1):
             add(relative, absolute_offset + relative)
         return pairs
@@ -854,14 +1197,20 @@ def _pick_section_for_release(
         return _empty_section_for_release(release)
 
     if release.kind == MediaKind.MOVIE:
-        movie_sections = [
-            section for section in parts if section.kind == MediaKind.MOVIE
-        ]
-        if movie_sections:
-            return max(movie_sections, key=lambda section: len(section.singles))
-        singles = [section for section in parts if section.singles]
-        if singles:
-            return max(singles, key=lambda section: len(section.singles))
+        # Ne jamais récupérer une section TV/batch en secours (sinon « Movies »
+        # affiche des épisodes de saison). Construire une section film filtrée.
+        merged = _empty_section_for_release(release)
+        for part in parts:
+            for item in list(part.singles):
+                if not _movie_belongs_to_release(item, release):
+                    continue
+                upsert_movie(merged, item)
+            for item in part.episodes.values():
+                if not _movie_belongs_to_release(item, release):
+                    continue
+                upsert_movie(merged, item)
+        _keep_best_movie_only(merged)
+        return merged
 
     if release.kind in {MediaKind.OVA, MediaKind.SPECIAL}:
         for section in parts:
