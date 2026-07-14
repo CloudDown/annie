@@ -25,7 +25,12 @@ from annie.paths import (
     path_open,
     windows_extended_path,
 )
-from annie.parsing import _filename_for_episode_match, match_episode_filename
+from annie.parsing import (
+    _filename_for_episode_match,
+    best_series_match_score,
+    match_episode_filename,
+    parse_title,
+)
 from annie.player import (  # noqa: F401 — resolve_player ré-exporté (install Windows)
     player_command,
     player_popen as _player_popen,
@@ -60,15 +65,15 @@ MKV_CLUSTER = b"\x1f\x43\xb6\x75"
 CACHE_DIR = cache_dir()
 START_MIN_MKV_BYTES = 2 * 1024 * 1024
 MKV_FRONTIER_PIECES = 64
-START_UNPAUSE_BONUS_BYTES = 4 * 1024 * 1024
-START_UNPAUSE_MAX_BONUS_BYTES = 12 * 1024 * 1024
-START_UNPAUSE_MAX_WAIT_SEC = 6.0
+START_UNPAUSE_BONUS_BYTES = 8 * 1024 * 1024
+START_UNPAUSE_MAX_BONUS_BYTES = 20 * 1024 * 1024
+START_UNPAUSE_MAX_WAIT_SEC = 12.0
 # Prefetch binge : démarrer le prochain fichier avant la fin de l'épisode.
 BINGE_PREFETCH_PROGRESS = 0.90
 BINGE_SWITCH_PROGRESS = 0.97
 # Marge renforcée pendant les premières secondes de lecture (HEVC / BD).
-START_WARMUP_SEC = 12.0
-START_WARMUP_MARGIN_BYTES = 20 * 1024 * 1024
+START_WARMUP_SEC = 20.0
+START_WARMUP_MARGIN_BYTES = 40 * 1024 * 1024
 START_MIN_MP4_BYTES = 256 * 1024
 START_MIN_OTHER_BYTES = 4 * 1024 * 1024
 MP4_TAIL_BYTES = 8 * 1024 * 1024
@@ -290,6 +295,24 @@ def human_size(num: int) -> str:
     return f"{size:.1f} GiB"
 
 
+def _pick_best_series_match(matches, match_queries: list[str]):
+    """Among episode matches, keep the unique best series score if decisive."""
+    queries = [q for q in match_queries if q and q.strip()]
+    if not queries or len(matches) < 2:
+        return None
+    scored: list[tuple[int, object]] = []
+    for item in matches:
+        parsed = parse_title(Path(item[1]).name)
+        scored.append((best_series_match_score(parsed, queries), item))
+    best_score = max(score for score, _ in scored)
+    if best_score < 0:
+        return None
+    winners = [item for score, item in scored if score == best_score]
+    if len(winners) == 1:
+        return winners[0]
+    return None
+
+
 def pick_file(
     files,
     index,
@@ -298,6 +321,7 @@ def pick_file(
     episode: int | None = None,
     season: int | None = None,
     source_episode: int | None = None,
+    match_queries: list[str] | None = None,
 ):
     if not files:
         die("no video files in torrent")
@@ -321,6 +345,9 @@ def pick_file(
             if len(matches) == 1:
                 return matches[0]
             if matches:
+                picked = _pick_best_series_match(matches, match_queries or [])
+                if picked is not None:
+                    return picked
                 die(
                     " multiple files match:\n"
                     + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches)
@@ -338,6 +365,9 @@ def pick_file(
         if len(matches) == 1:
             return matches[0]
         if matches:
+            picked = _pick_best_series_match(matches, match_queries or [])
+            if picked is not None:
+                return picked
             die(
                 " multiple files match:\n"
                 + "\n".join(f"  [{i}] {Path(n).name}" for i, n, _ in matches)
@@ -825,7 +855,7 @@ def wait_startable(
                 display.finish(format_buffer_ready(contiguous // 1024 // 1024))
                 return contiguous, "ready"
 
-            if soft_timeout and startable and can_start:
+            if soft_timeout and startable and can_start and contiguous >= target_bytes:
                 display.finish(format_buffer_quick_start(contiguous // 1024 // 1024))
                 return contiguous, "quick"
 
@@ -1395,6 +1425,7 @@ def play(
     episode: int | None = None,
     season: int | None = None,
     source_episode: int | None = None,
+    match_queries: list[str] | None = None,
     seed_while_watching: bool = True,
     subtitle_lang: str | None = None,
     subtitle_query=None,
@@ -1447,6 +1478,7 @@ def play(
                 episode=episode,
                 season=season,
                 source_episode=source_episode,
+                match_queries=match_queries,
             )
             target = (save_path / rel_path).resolve()
             ensure_directory(target.parent)
@@ -1534,6 +1566,7 @@ def play(
                         episode=nxt_ep,
                         season=nxt_season,
                         source_episode=nxt_source,
+                        match_queries=match_queries,
                     )
                 except SystemExit:
                     return None

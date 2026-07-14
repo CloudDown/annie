@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -263,33 +264,21 @@ _playback_alt_screen = False
 
 
 def clear_terminal() -> None:
-    """Efface l'écran visible + scrollback (via /dev/tty si possible)."""
-    # H = curseur home, 2J = écran, 3J = scrollback, r = reset scroll region
-    # (après fzf --height, une région de scroll peut laisser l'ASCII au-dessus).
-    if not _write_tty("\033[r\033[H\033[2J\033[3J"):
-        return
-    clear_bin = shutil.which("clear")
-    if clear_bin and sys.platform != "win32":
-        try:
-            with open("/dev/tty", "w", encoding="utf-8", errors="replace") as tty:
-                subprocess.run(
-                    [clear_bin],
-                    check=False,
-                    stdin=subprocess.DEVNULL,
-                    stdout=tty,
-                    stderr=subprocess.DEVNULL,
-                )
-        except OSError:
-            subprocess.run([clear_bin], check=False)
+    """Efface l'écran comme la commande shell ``clear``."""
+    if sys.platform == "win32":
+        os.system("cls")
+    else:
+        os.system("clear")
 
 
 def begin_playback_ui() -> None:
-    """Écran propre pour la lecture : buffer alternatif (l'ASCII reste sous fzf)."""
+    """Écran propre pour la lecture."""
     global _playback_alt_screen
     clear_terminal()
-    # 1049h = alternate screen (comme less/vim) — ignore le scrollback principal.
-    if _write_tty("\033[?1049h\033[H\033[2J"):
+    # Buffer alternatif si le terminal le supporte (évite de remonter l'ASCII).
+    if _write_tty("\033[?1049h"):
         _playback_alt_screen = True
+        clear_terminal()
 
 
 def end_playback_ui() -> None:

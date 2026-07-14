@@ -103,8 +103,8 @@ def _mpv_command(
                 "--msg-level=all=fatal",
             ]
         )
-    readahead_secs = 15 if streaming else 3
-    demuxer_max_bytes = "96M" if streaming else "32M"
+    readahead_secs = 5 if streaming else 3
+    demuxer_max_bytes = "48M" if streaming else "32M"
     cmd.extend(
         [
             "--cache=yes",

@@ -451,6 +451,7 @@ def play_item(
     subtitle_lang: str | None = None,
     series_query: str | None = None,
     mal_titles: tuple[str, ...] = (),
+    match_queries: list[str] | None = None,
     interactive_subs: bool = False,
     binge_items: list[ResultItem] | None = None,
     on_episode_done=None,
@@ -476,6 +477,18 @@ def play_item(
             mal_titles=mal_titles,
         )
 
+    file_match_queries = list(
+        dict.fromkeys(
+            q
+            for q in [
+                *(match_queries or ()),
+                series_query or "",
+                *mal_titles,
+            ]
+            if q and str(q).strip()
+        )
+    )
+
     label = minimal_label(item.parsed)
     from annie.stream import play
 
@@ -488,6 +501,7 @@ def play_item(
         episode=episode,
         season=season,
         source_episode=item.parsed.source_episode,
+        match_queries=file_match_queries or None,
         seed_while_watching=AnnieSettings.load().seed_while_watching,
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
@@ -531,6 +545,7 @@ def try_direct_play(
                 movie_number=movie_number,
             )
             if item is not None:
+                section = _find_section_for_item(catalog, item)
                 return play_item(
                     item,
                     config,
@@ -538,6 +553,9 @@ def try_direct_play(
                     player=player,
                     series_query=raw_query,
                     mal_titles=tuple(catalog_options.get("mal_titles", ())),
+                    match_queries=(
+                        list(section.nyaa_queries) if section is not None else None
+                    ),
                     interactive_subs=True,
                 )
         except Exception:
@@ -670,6 +688,7 @@ def run_watch(
                 kind=kind_from_options(options),
             )
             if item is not None:
+                section = _find_section_for_item(catalog, item)
                 return play_item(
                     item,
                     config,
@@ -678,6 +697,9 @@ def run_watch(
                     subtitle_lang=subtitle_lang,
                     series_query=raw_query,
                     mal_titles=tuple(catalog_options.get("mal_titles", ())),
+                    match_queries=(
+                        list(section.nyaa_queries) if section is not None else None
+                    ),
                 )
         except Exception:
             pass
@@ -872,6 +894,9 @@ def interactive_loop(config: AnnieConfig) -> int:
                         config,
                         series_query=raw_query,
                         mal_titles=tuple(options.get("mal_titles", ())),
+                        match_queries=(
+                            list(section.nyaa_queries) if section is not None else None
+                        ),
                         interactive_subs=False,
                         subtitle_lang=session_sub_lang
                         if isinstance(session_sub_lang, str)

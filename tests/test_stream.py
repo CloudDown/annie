@@ -153,6 +153,53 @@ class PickFileTests(unittest.TestCase):
         )
         self.assertEqual(picked[0], 1)
 
+    def test_disambiguates_franchise_batch_by_series(self) -> None:
+        files = [
+            (
+                10,
+                "[Sokudo] DanMachi Sword Oratoria - S01E02 [1080p BD][AV1][dual audio].mkv",
+                100,
+            ),
+            (
+                85,
+                "[Sokudo] Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka - S01E02 [1080p BD][AV1][dual audio].mkv",
+                100,
+            ),
+        ]
+        main_queries = [
+            "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka",
+            "danmachi",
+            "Is It Wrong to Try to Pick Up Girls in a Dungeon",
+        ]
+        picked = pick_file(
+            files, None, None, episode=2, season=1, match_queries=main_queries
+        )
+        self.assertEqual(picked[0], 85)
+
+        ora_queries = ["DanMachi Sword Oratoria", "Sword Oratoria"]
+        picked_ora = pick_file(
+            files, None, None, episode=2, season=1, match_queries=ora_queries
+        )
+        self.assertEqual(picked_ora[0], 10)
+
+    def test_ambiguous_franchise_batch_without_queries_still_fails(self) -> None:
+        files = [
+            (
+                10,
+                "[Sokudo] DanMachi Sword Oratoria - S01E02 [1080p BD][AV1].mkv",
+                100,
+            ),
+            (
+                85,
+                "[Sokudo] Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka - S01E02 [1080p BD][AV1].mkv",
+                100,
+            ),
+        ]
+        stderr = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(stderr):
+            pick_file(files, None, None, episode=2, season=1)
+        self.assertIn("multiple files match", stderr.getvalue())
+
 
 class FixtureFilenameTests(unittest.TestCase):
     def test_fixture_cases(self) -> None:
