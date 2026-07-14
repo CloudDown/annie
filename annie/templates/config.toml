@@ -88,12 +88,12 @@ upload_limit_kib = 512
 
 [buffer]
 # Si artefacts / skips en début d'épisode : monter mkv_start_mib / stream_margin_mib.
-max_wait_sec = 15.0          # attente buffer « idéal »
+max_wait_sec = 25.0          # attente buffer « idéal »
 no_peers_sec = 45.0          # timeout si aucun peer connecté
 absolute_sec = 90.0          # timeout absolu avant abandon
-mkv_start_mib = 40           # Mo contigus requis pour démarrer un MKV
-mkv_head_mib = 48            # priorité téléchargement tête de fichier
-stream_margin_mib = 32       # marge lecture / téléchargement (pause mpv)
+mkv_start_mib = 80           # Mo contigus requis pour démarrer un MKV
+mkv_head_mib = 96            # priorité téléchargement tête de fichier
+stream_margin_mib = 64       # marge lecture / téléchargement (pause mpv)
 mpv_retry_sec = 15.0         # réessai si mpv échoue au démarrage
 mkv_playable_wait_sec = 8.0
 

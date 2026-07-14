@@ -65,15 +65,15 @@ MKV_CLUSTER = b"\x1f\x43\xb6\x75"
 CACHE_DIR = cache_dir()
 START_MIN_MKV_BYTES = 2 * 1024 * 1024
 MKV_FRONTIER_PIECES = 64
-START_UNPAUSE_BONUS_BYTES = 8 * 1024 * 1024
-START_UNPAUSE_MAX_BONUS_BYTES = 20 * 1024 * 1024
-START_UNPAUSE_MAX_WAIT_SEC = 12.0
-# Prefetch binge : démarrer le prochain fichier avant la fin de l'épisode.
-BINGE_PREFETCH_PROGRESS = 0.90
+START_UNPAUSE_BONUS_BYTES = 12 * 1024 * 1024
+START_UNPAUSE_MAX_BONUS_BYTES = 32 * 1024 * 1024
+START_UNPAUSE_MAX_WAIT_SEC = 15.0
+# Prefetch binge : tête contiguë du prochain épisode dès 70 %.
+BINGE_PREFETCH_PROGRESS = 0.70
 BINGE_SWITCH_PROGRESS = 0.97
 # Marge renforcée pendant les premières secondes de lecture (HEVC / BD).
-START_WARMUP_SEC = 20.0
-START_WARMUP_MARGIN_BYTES = 40 * 1024 * 1024
+START_WARMUP_SEC = 30.0
+START_WARMUP_MARGIN_BYTES = 80 * 1024 * 1024
 START_MIN_MP4_BYTES = 256 * 1024
 START_MIN_OTHER_BYTES = 4 * 1024 * 1024
 MP4_TAIL_BYTES = 8 * 1024 * 1024
@@ -478,6 +478,49 @@ def _file_priorities(handle: lt.torrent_handle, file_count: int) -> list[int]:
     return priorities
 
 
+def _prefetch_head_nbytes() -> int:
+    return max(_mkv_head_bytes(), _mkv_start_bytes())
+
+
+def _prioritize_prefetch_head(
+    handle: lt.torrent_handle, file_index: int, nbytes: int
+) -> None:
+    """Tête de n+1 en prio 6 (sous la lecture courante en 7)."""
+    piece_range = _piece_range_for_file_bytes(handle, file_index, 0, nbytes)
+    if piece_range is None:
+        return
+    first_piece, last_piece = piece_range
+    for i, piece in enumerate(
+        range(first_piece, min(first_piece + 32, last_piece + 1))
+    ):
+        handle.piece_priority(piece, 6)
+        try:
+            handle.set_piece_deadline(piece, 80 + i * 20)
+        except AttributeError:
+            pass
+
+
+def _enforce_prefetch_sequential_frontier(
+    handle: lt.torrent_handle, file_index: int
+) -> None:
+    """Télécharge n+1 entier en contigu (fenêtre séquentielle, prio 6)."""
+    first_piece, last_piece = _file_piece_bounds(handle, file_index)
+    frontier = _frontier_piece(handle, file_index)
+    if frontier is None:
+        return
+    window = MKV_FRONTIER_PIECES
+    window_end = min(last_piece, frontier + window - 1)
+    for piece in range(first_piece, last_piece + 1):
+        if frontier <= piece <= window_end:
+            handle.piece_priority(piece, 6)
+            try:
+                handle.set_piece_deadline(piece, 80 + (piece - frontier) * 20)
+            except AttributeError:
+                pass
+        elif piece > window_end:
+            handle.piece_priority(piece, 0)
+
+
 def _prefetch_binge_file(
     handle: lt.torrent_handle,
     next_index: int,
@@ -486,42 +529,20 @@ def _prefetch_binge_file(
     target: Path | None = None,
     file_size: int = 0,
 ) -> None:
-    """Démarre le téléchargement de la tête du prochain épisode (sans couper le courant)."""
+    """Précharge n+1 comme un épisode normal : fichier entier, contigu, en avance."""
     priorities = _file_priorities(handle, file_count)
     priorities[next_index] = max(priorities[next_index], 5)
     handle.prioritize_files(priorities)
-    nbytes = max(_mkv_head_bytes(), _mkv_start_bytes())
-    piece_range = _piece_range_for_file_bytes(handle, next_index, 0, nbytes)
-    if piece_range is not None:
-        first_piece, last_piece = piece_range
-        # Priorité 6 : sous la frontière de lecture courante (7).
-        end = min(last_piece, first_piece + 64)
-        for i, piece in enumerate(range(first_piece, end + 1)):
-            handle.piece_priority(piece, 6)
-            try:
-                handle.set_piece_deadline(piece, 100 + i * 30)
-            except AttributeError:
-                pass
+    # Même schéma que configure_stream, en prio inférieure à la lecture courante.
+    _prioritize_prefetch_head(handle, next_index, _prefetch_head_nbytes())
+    _enforce_prefetch_sequential_frontier(handle, next_index)
     if target is not None and target.suffix.lower() in {".mp4", ".m4v", ".mov"}:
         _prioritize_mp4_tail(handle, next_index, file_size)
 
 
 def _reboost_prefetch_head(handle: lt.torrent_handle, next_index: int) -> None:
-    """Rappelle la priorité sur la tête préchargée (concurrence avec la lecture courante)."""
-    nbytes = max(_mkv_head_bytes(), _mkv_start_bytes())
-    piece_range = _piece_range_for_file_bytes(handle, next_index, 0, nbytes)
-    if piece_range is None:
-        return
-    first_piece, last_piece = piece_range
-    end = min(last_piece, first_piece + 64)
-    for i, piece in enumerate(range(first_piece, end + 1)):
-        if handle.have_piece(piece):
-            continue
-        handle.piece_priority(piece, 6)
-        try:
-            handle.set_piece_deadline(piece, 100 + i * 30)
-        except AttributeError:
-            pass
+    """Maintient le téléchargement contigu du fichier n+1 préchargé."""
+    _enforce_prefetch_sequential_frontier(handle, next_index)
 
 
 def configure_stream(
@@ -1143,7 +1164,7 @@ def _play_while_downloading(
                 if eof is True or _mpv_near_end(time_pos, duration):
                     saw_near_end = True
 
-                # Dès 90 % : précharger la tête du prochain épisode.
+                # Dès 70 % : précharger n+1 entier en contigu (comme un épisode normal).
                 if (
                     prefetch_index is None
                     and on_prefetch_next is not None
@@ -1537,7 +1558,7 @@ def play(
                 _enable_watch_seed(session, handle, file_index)
 
             binge_queue = list(binge_items or [])
-            # Cache rempli dès 90 % : index/chemin + sous-titres en arrière-plan.
+            # Prefetch dès 70 % : fichier n+1 entier (contigu) + sous-titres.
             prefetch_box: dict[str, object | None] = {
                 "item": None,
                 "index": None,

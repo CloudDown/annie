@@ -20,7 +20,12 @@ from tests.helpers import load_fixture
 if HAS_LT:
     from annie.stream import pick_file
 
-from annie.stream import _buffer_peer_state, _peer_wait_deadlines
+from annie.stream import (
+    BINGE_PREFETCH_PROGRESS,
+    BINGE_SWITCH_PROGRESS,
+    _buffer_peer_state,
+    _peer_wait_deadlines,
+)
 from annie.settings import BufferSettings
 
 
@@ -86,6 +91,21 @@ class PeerWaitDeadlineTests(unittest.TestCase):
         no_peers, absolute = _peer_wait_deadlines(buf, 100.0)
         self.assertEqual(no_peers, 145.0)
         self.assertEqual(absolute, 190.0)
+
+
+class BufferDefaultTests(unittest.TestCase):
+    def test_buffer_defaults_are_conservative(self) -> None:
+        buf = BufferSettings()
+        self.assertGreaterEqual(buf.mkv_start_mib, 80)
+        self.assertGreaterEqual(buf.mkv_head_mib, buf.mkv_start_mib)
+        self.assertGreaterEqual(buf.stream_margin_mib, 64)
+        self.assertGreaterEqual(buf.max_wait_sec, 25.0)
+
+
+class BingePrefetchTests(unittest.TestCase):
+    def test_prefetch_starts_at_seventy_percent(self) -> None:
+        self.assertEqual(BINGE_PREFETCH_PROGRESS, 0.70)
+        self.assertGreater(BINGE_SWITCH_PROGRESS, BINGE_PREFETCH_PROGRESS)
 
 
 @unittest.skipUnless(HAS_LT, "libtorrent requis pour pick_file")
