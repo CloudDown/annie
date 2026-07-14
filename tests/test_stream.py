@@ -153,6 +153,31 @@ class PickFileTests(unittest.TestCase):
         )
         self.assertEqual(picked[0], 1)
 
+    def test_tanya_end_suffix_picks_episode_12_not_3(self) -> None:
+        # Régression : batch Erai « - 12 END » + source_episode contaminé → E03.
+        files = [
+            (
+                i,
+                f"[Erai-raws] Youjo Senki - 01 ~ 12 [1080p]/"
+                f"[Erai-raws] Youjo Senki - {ep}{' END' if ep == 12 else ''} "
+                f"[1080p][Multiple Subtitle].mkv",
+                100,
+            )
+            for i, ep in enumerate(
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], start=0
+            )
+        ]
+        picked = pick_file(
+            files, None, None, episode=12, season=1, source_episode=None
+        )
+        self.assertEqual(picked[0], 11)
+        self.assertIn("12 END", picked[1])
+        # Même avec un source_episode erroné, E12 doit gagner s'il matche.
+        picked_safe = pick_file(
+            files, None, None, episode=12, season=1, source_episode=3
+        )
+        self.assertEqual(picked_safe[0], 11)
+
     def test_disambiguates_franchise_batch_by_series(self) -> None:
         files = [
             (

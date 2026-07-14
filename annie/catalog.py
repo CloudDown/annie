@@ -565,7 +565,14 @@ def item_for_episode(item: ResultItem, episode: int) -> ResultItem:
     parsed = item.parsed
     if parsed.episode == episode and parsed.kind == MediaKind.EPISODE:
         return item
-    source = parsed.source_episode or parsed.episode
+    # Batch déjà étendu (E3, E12, …) : ne pas réutiliser parsed.episode comme
+    # source_episode — sinon pick_file tombe sur le mauvais fichier (Tanya E12→E03).
+    # La numérotation absolue (Re:Zero « - 67 ») est posée plus tard via
+    # _remap_item_for_release / source_episode déjà présent.
+    if parsed.kind == MediaKind.BATCH:
+        source = parsed.source_episode
+    else:
+        source = parsed.source_episode or parsed.episode
     new_parsed = replace(
         parsed,
         episode=episode,
@@ -875,21 +882,34 @@ def _batch_candidates(section: MediaSection) -> list[ResultItem]:
 
     seen: set[str] = set()
     candidates: list[ResultItem] = []
+
+    def _add(item: ResultItem) -> None:
+        if item.entry.magnet in seen:
+            return
+        title_kind = parse_title(item.entry.title).kind
+        if item.parsed.kind != MediaKind.BATCH and title_kind != MediaKind.BATCH:
+            return
+        seen.add(item.entry.magnet)
+        # Repartir d'un parse propre pour ne pas propager un épisode déjà remappé.
+        if item.parsed.episode is not None or item.parsed.source_episode is not None:
+            base = parse_title(item.entry.title)
+            item = ResultItem(
+                entry=item.entry,
+                parsed=replace(
+                    item.parsed,
+                    kind=MediaKind.BATCH,
+                    episode=base.episode,
+                    source_episode=base.source_episode,
+                    season=item.parsed.season or base.season,
+                ),
+                score=item.score,
+            )
+        candidates.append(item)
+
     for item in section.singles:
-        if item.entry.magnet in seen:
-            continue
-        if (
-            item.parsed.kind == MediaKind.BATCH
-            or parse_title(item.entry.title).kind == MediaKind.BATCH
-        ):
-            seen.add(item.entry.magnet)
-            candidates.append(item)
+        _add(item)
     for item in section.episodes.values():
-        if item.entry.magnet in seen:
-            continue
-        if parse_title(item.entry.title).kind == MediaKind.BATCH:
-            seen.add(item.entry.magnet)
-            candidates.append(item)
+        _add(item)
     return candidates
 
 

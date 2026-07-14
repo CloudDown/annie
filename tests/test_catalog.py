@@ -393,5 +393,26 @@ class FranchiseBatchPickTests(unittest.TestCase):
         self.assertEqual(section.episodes[5].entry.seeders, 300)
 
 
+class BatchSourceEpisodeTests(unittest.TestCase):
+    def test_item_for_episode_does_not_leak_sibling_episode_as_source(self) -> None:
+        # apply_coherent_season_picks peut repasser un item déjà à E03 ;
+        # E12 ne doit pas hériter de source_episode=3.
+        title = "[Erai-raws] Youjo Senki - 01 ~ 12 [1080p][Multiple Subtitle]"
+        batch = result_item(title, score=100.0)
+        batch = replace(
+            batch,
+            parsed=replace(
+                batch.parsed,
+                kind=MediaKind.BATCH,
+                season=1,
+                episode=3,
+                source_episode=None,
+            ),
+        )
+        ep12 = item_for_episode(batch, 12)
+        self.assertEqual(ep12.parsed.episode, 12)
+        self.assertIsNone(ep12.parsed.source_episode)
+
+
 if __name__ == "__main__":
     unittest.main()

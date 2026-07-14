@@ -287,6 +287,24 @@ class EpisodeFilenameTests(unittest.TestCase):
         name = "[SubsPlease] Re Zero - 09 (1080p) [ABCD1234].mkv"
         self.assertFalse(match_episode_filename(name, 8, season=1))
 
+    def test_erai_end_suffix_matches_episode(self) -> None:
+        name = (
+            "[Erai-raws] Youjo Senki - 12 END [1080p][Multiple Subtitle].mkv"
+        )
+        self.assertTrue(match_episode_filename(name, 12, season=1))
+        self.assertFalse(match_episode_filename(name, 2, season=1))
+
+    def test_dash_episode_digit_boundaries(self) -> None:
+        self.assertFalse(
+            match_episode_filename("[G] Show - 13 [1080p].mkv", 3, season=1)
+        )
+        self.assertFalse(
+            match_episode_filename("[G] Show - 12 [1080p].mkv", 1, season=1)
+        )
+        self.assertTrue(
+            match_episode_filename("[G] Show - 03 [1080p].mkv", 3, season=1)
+        )
+
 
 class GapQueryTests(unittest.TestCase):
     def test_includes_absolute_numbers(self) -> None:

@@ -895,10 +895,14 @@ def _match_dash_episode(stem: str, episode: int) -> bool:
     quality = r"(?:\s*\([^)]+\))?"
     crc = r"(?:\s*\[[A-Fa-f0-9]+\])?"
     ext = r"\s*\.(?:mkv|mp4|avi|webm|m4v|mov)\b"
+    # END / Final entre le numéro et les tags (ex. Erai-raws « - 12 END [1080p] »).
+    marker = r"(?:\s+(?:END|FINAL|FINALE))?"
+    # Bornes chiffres : ne pas matcher 2 dans « - 12 » ni 3 dans « - 13 ».
+    ep = rf"(?<!\d)0?{episode}(?!\d)(?:v\d+)?"
     patterns = (
-        rf"[\s\-—–_]0?{episode}(?:v\d+)?{quality}?\s*\[",
-        rf"[\s\-—–_]0?{episode}(?:v\d+)?{quality}?{crc}?{ext}",
-        rf"[\s\-—–_]0?{episode}(?:v\d+)?{ext}",
+        rf"[\s\-—–_]{ep}{marker}{quality}?\s*\[",
+        rf"[\s\-—–_]{ep}{marker}{quality}?{crc}?{ext}",
+        rf"[\s\-—–_]{ep}{marker}{ext}",
     )
     return any(re.search(pattern, stem, re.I) for pattern in patterns)
 
