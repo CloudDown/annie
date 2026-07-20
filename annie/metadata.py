@@ -1,11 +1,11 @@
-"""Façade métadonnées : AniList (défaut) ou MAL/Jikan + confirmation."""
+"""Façade métadonnées : AniList/MAL + structure AllAnime (ani-cli)."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from annie import anilist
+from annie import allanime, anilist
 from annie.config import AnnieConfig
 from annie.mal import (
     MalAnime,
@@ -99,6 +99,28 @@ def relation_nyaa_hints(root_data: dict, *, from_anilist: bool) -> list[str]:
     return mal_relation_hints(root_data)
 
 
+def _franchise_releases(
+    chosen: MalAnime,
+    *,
+    query: str,
+    skip_recap: bool,
+    on_root: Callable[[dict], None] | None,
+    pool: ThreadPoolExecutor | None,
+    config: AnnieConfig,
+) -> list[MalRelease]:
+    franchise = collect_franchise(
+        chosen, on_root=on_root, pool=pool, config=config
+    )
+    if not franchise:
+        return []
+    return franchise_to_releases(
+        franchise,
+        skip_recap=skip_recap,
+        root_id=chosen.mal_id,
+        user_query=query,
+    )
+
+
 def releases_for_anime(
     chosen: MalAnime,
     *,
@@ -108,12 +130,37 @@ def releases_for_anime(
     pool: ThreadPoolExecutor | None = None,
     config: AnnieConfig | None = None,
 ) -> list[MalRelease]:
-    franchise = collect_franchise(chosen, on_root=on_root, pool=pool, config=config)
-    if not franchise:
-        return []
-    return franchise_to_releases(
-        franchise,
+    cfg = config or AnnieConfig.load()
+
+    franchise_rels = _franchise_releases(
+        chosen,
+        query=query,
         skip_recap=skip_recap,
-        root_id=chosen.mal_id,
-        user_query=query,
+        on_root=on_root,
+        pool=pool,
+        config=cfg,
     )
+
+    # Structure AllAnime (shows discrets S1/S2/Movie) — même source qu'ani-cli.
+    if cfg.metadata.structure == "allanime":
+        try:
+            aa_rels = allanime.releases_for_query(
+                query,
+                chosen=chosen,
+                skip_recap=skip_recap,
+            )
+            if aa_rels:
+                from annie.types import MediaKind
+
+                aa_tv = sum(1 for r in aa_rels if r.kind == MediaKind.EPISODE)
+                fr_tv = sum(
+                    1 for r in franchise_rels if r.kind == MediaKind.EPISODE
+                )
+                # AllAnime parfois incomplet (Overlord S1 seul) → garder le graphe.
+                if fr_tv >= 2 and aa_tv <= 1 and fr_tv > aa_tv:
+                    return franchise_rels
+                return aa_rels
+        except Exception:
+            pass
+
+    return franchise_rels

@@ -616,6 +616,14 @@ def _score_candidate(anime: MalAnime, query: str) -> int:
                 if word not in q_words and not word.isdigit()
             ]
             score -= min(160, len(extra_words) * 55)
+        # Synonyme seul (« Onigiri » aka Demon Slayer) ≪ titre officiel.
+        main_blob = normalize(f"{anime.title} {anime.title_english or ''}")
+        if main_blob and not (
+            _phrase_in(qn, main_blob)
+            or qn == main_blob
+            or any(_token_matches(token, main_blob) for token in tokens)
+        ):
+            score -= 220
     else:
         best_fuzzy = max(
             (_fuzzy_title_ratio(query, hay) for hay in haystacks if hay),

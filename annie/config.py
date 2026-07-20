@@ -41,6 +41,8 @@ class MetadataConfig:
 
     enabled: bool = True
     provider: str = "anilist"  # anilist | mal
+    # Découpe saisons/films : AllAnime (ani-cli) ou graphe AniList/MAL.
+    structure: str = "allanime"  # allanime | franchise
     fallback_mal: bool = True
     fallback_anilist: bool = False
     confirm_ambiguous: bool = True
@@ -210,12 +212,20 @@ class AnnieConfig:
         ).lower()
         if provider not in {"anilist", "mal"}:
             provider = "anilist"
+        structure = toml_util.str_val(
+            os.environ.get("ANNIE_METADATA_STRUCTURE")
+            or metadata_table.get("structure"),
+            "allanime",
+        ).lower()
+        if structure not in {"allanime", "franchise"}:
+            structure = "allanime"
         meta_enabled = metadata_table.get("enabled")
         if meta_enabled is None:
             meta_enabled = mal.enabled
         metadata = MetadataConfig(
             enabled=toml_util.bool_val(meta_enabled, True),
             provider=provider,
+            structure=structure,
             fallback_mal=toml_util.bool_val(metadata_table.get("fallback_mal"), True),
             fallback_anilist=toml_util.bool_val(
                 metadata_table.get("fallback_anilist"), False

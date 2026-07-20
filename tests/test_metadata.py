@@ -11,7 +11,6 @@ from annie.config import AnnieConfig, reload_config
 from annie.mal import (
     MalAnime,
     franchise_to_releases,
-    is_ambiguous_pick,
     nyaa_queries_for,
 )
 

@@ -94,17 +94,21 @@ def fetch_json_post(
     body: dict,
     user_agent: str,
     timeout: float = 25,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict:
     raw = json.dumps(body).encode("utf-8")
+    headers = {
+        "User-Agent": user_agent,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
     request = urllib.request.Request(
         url,
         data=raw,
-        headers={
-            "User-Agent": user_agent,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-        },
+        headers=headers,
         method="POST",
     )
     with _opener_get().open(request, timeout=timeout) as response:

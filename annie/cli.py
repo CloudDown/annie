@@ -19,15 +19,14 @@ from annie.catalog import (
 )
 from annie.parsing import minimal_label
 from annie.scoring import pick_best, rank_entry
-from annie.types import MediaKind, MediaSection, ResultItem, WatchTarget
-from annie import metadata as meta
+from annie.types import MalRelease, MediaKind, MediaSection, ResultItem, WatchTarget
+from annie import allanime, metadata as meta
 from annie.nyaa import search
 from annie.ui import (
     BackToEpisode,
     BACK_TO_EPISODE,
     C,
     begin_playback_ui,
-    clear_terminal,
     copy_magnet,
     EXIT_CANCELLED,
     PLAY_COMPLETED,
@@ -35,6 +34,7 @@ from annie.ui import (
     fzf_available,
     fzf_install_hint,
     is_play_completed,
+    pick_allanime_show,
     pick_anime_candidate,
     pick_catalog,
     pick_episode,
@@ -211,6 +211,49 @@ def gather_catalog(
     if confirm_anime is None:
         confirm_anime = bool(sys.stdin.isatty() and fzf_available())
     preselected = overrides.get("preselected")
+    preselected_release: MalRelease | None = overrides.get("preselected_release")
+
+    # Show AllAnime déjà choisi → Nyaa scopé à une seule release.
+    if preselected_release is not None and meta.metadata_enabled(config):
+        try:
+            with ThreadPoolExecutor(max_workers=config.ui.mal_pool_workers) as pool:
+                for warm_q in preselected_release.nyaa_queries[:12]:
+                    if warm_q:
+                        pool.submit(
+                            _warm_nyaa,
+                            warm_q,
+                            category=category,
+                            filter_code=filter_code,
+                        )
+                catalog = build_catalog_from_releases(
+                    [preselected_release],
+                    search=search,
+                    category=category,
+                    filter_code=filter_code,
+                    skip_recap_movies=config.skip_recap_movies,
+                    pool=pool,
+                    fill_gaps=False,
+                )
+                if catalog:
+                    if fill_gaps:
+                        fill_catalog_gaps(
+                            catalog,
+                            search=search,
+                            category=category,
+                            filter_code=filter_code,
+                            skip_recap_movies=config.skip_recap_movies,
+                            pool=pool,
+                        )
+                    return catalog, options
+        except Exception as exc:
+            print(
+                stylize(
+                    f"annie: catalogue AllAnime échoué ({exc}), fallback",
+                    C.MUTED,
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
 
     if meta.metadata_enabled(config):
         try:
@@ -362,6 +405,36 @@ def resolve_anime_for_query(
         if picked is not None:
             return picked
     return meta.pick_candidate(candidates, query)
+
+
+def resolve_allanime_release(
+    query: str, config: AnnieConfig
+) -> MalRelease | None:
+    """AllAnime search + fzf show → une MalRelease enrichie (hors spinner)."""
+    if not meta.metadata_enabled(config):
+        return None
+    if config.metadata.structure != "allanime":
+        return None
+    if not (sys.stdin.isatty() and fzf_available()):
+        return None
+    try:
+        shows = allanime.search_shows(query, limit=40)
+    except Exception:
+        return None
+    if not shows:
+        return None
+    picked = pick_allanime_show(shows, query)
+    if picked is None:
+        return None  # Esc → fallback AniList
+    release = allanime.show_to_release(picked, user_query=query)
+    if release is None:
+        return None
+    try:
+        return allanime.enrich_release_queries(
+            release, query=query, show_name=picked.name
+        )
+    except Exception:
+        return release
 
 
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
@@ -782,9 +855,12 @@ def interactive_loop(config: AnnieConfig) -> int:
 
         try:
             query, options = parse_inline_target(raw_query)
-            # Confirmation anime sur le thread principal (Evangelion, etc.) —
-            # jamais sous le spinner, sinon « Searching » s'affiche par-dessus fzf.
-            preselected = resolve_anime_for_query(query, config)
+            # 1) AllAnime fzf (hors spinner) — comme ani-cli.
+            # 2) Esc / échec → pick AniList + franchise.
+            preselected_release = resolve_allanime_release(query, config)
+            preselected = None
+            if preselected_release is None:
+                preselected = resolve_anime_for_query(query, config)
             catalog, options = run_search_spinner(
                 query,
                 lambda: gather_catalog(
@@ -794,6 +870,7 @@ def interactive_loop(config: AnnieConfig) -> int:
                     target_kind=kind_from_options(options),
                     confirm_anime=False,
                     preselected=preselected,
+                    preselected_release=preselected_release,
                 ),
             )
         except KeyboardInterrupt:

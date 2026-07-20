@@ -852,6 +852,69 @@ def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
     return picked[1]
 
 
+def pick_allanime_show(shows: list, query: str = "") -> Any | None:
+    """fzf : choisir un show AllAnime (S1 / S2 / Movie), comme ani-cli."""
+    if not shows:
+        return None
+
+    from annie.allanime import (
+        AllAnimeShow,
+        _infer_kind,
+        _infer_season,
+        rank_shows_for_picker,
+    )
+
+    ranked = rank_shows_for_picker(
+        [s for s in shows if isinstance(s, AllAnimeShow)],
+        user_query=query,
+    )
+    if not ranked:
+        return None
+    if len(ranked) == 1:
+        return ranked[0]
+
+    indexed: dict[str, AllAnimeShow] = {}
+    previews: dict[str, str] = {}
+    lines: list[str] = []
+    for index, show in enumerate(ranked):
+        key = f"s{index:03d}"
+        indexed[key] = show
+        kind = _infer_kind(show)
+        season = _infer_season(show.name)
+        if kind == MediaKind.MOVIE:
+            kind_label = "Movie"
+        elif kind == MediaKind.OVA:
+            kind_label = "OVA"
+        elif kind == MediaKind.SPECIAL:
+            kind_label = "Special"
+        elif season is not None:
+            kind_label = f"S{season:02d}"
+        else:
+            kind_label = "TV"
+        eps = f"{show.episode_count} ep"
+        detail = f"{kind_label} · {eps}"
+        previews[key] = stylize(
+            f"{show.name}\n{detail}\nAllAnime {show.show_id}",
+            C.META,
+        )
+        lines.append(
+            f"{key}{SEP}{stylize(show.name, C.LIST, C.BOLD)}  "
+            f"{stylize(detail, C.META)}"
+        )
+
+    picked = _fzf_choose(
+        indexed,
+        previews,
+        lines,
+        prompt="show> ",
+        header=_fzf_header("→ Enter · Esc → fallback AniList"),
+        expect="enter",
+    )
+    if picked is None:
+        return None
+    return picked[1]
+
+
 def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
     options = [
         (key, GROUP_LABELS[key], groups[key])

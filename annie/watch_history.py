@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 
 from annie import toml_util
 from annie.paths import config_dir, ensure_directory

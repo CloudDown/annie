@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import socket
 import subprocess
 import sys
@@ -104,9 +103,6 @@ def _mkv_head_bytes() -> int:
 
 def _stream_margin_bytes() -> int:
     return _buffer_cfg().stream_margin_mib * 1024 * 1024
-
-
-_ffprobe_cache: bool | None = None
 
 
 def die(message: str, code: int = 1) -> None:
@@ -623,24 +619,6 @@ def _piece_range_for_file_bytes(
     return start // piece_len, end // piece_len
 
 
-def _pieces_available(
-    handle: lt.torrent_handle, first_piece: int, last_piece: int
-) -> bool:
-    for piece in range(first_piece, last_piece + 1):
-        if not handle.have_piece(piece):
-            return False
-    return True
-
-
-def _file_header_on_disk(
-    handle: lt.torrent_handle, file_index: int, nbytes: int = 65536
-) -> bool:
-    piece_range = _piece_range_for_file_bytes(handle, file_index, 0, nbytes)
-    if piece_range is None:
-        return False
-    return _pieces_available(handle, piece_range[0], piece_range[1])
-
-
 def _mp4_has_ftyp(path: Path) -> bool:
     try:
         with path_open(path, "rb") as f:
@@ -674,37 +652,6 @@ def _mp4_moov_in_tail(path: Path, file_size: int) -> bool:
             data = f.read(read_len)
         return _mp4_has_moov_in_bytes(data)
     except OSError:
-        return False
-
-
-def _ffprobe_available() -> bool:
-    global _ffprobe_cache
-    if _ffprobe_cache is None:
-        _ffprobe_cache = shutil.which("ffprobe") is not None
-    return _ffprobe_cache
-
-
-def _probe_with_ffprobe(path: Path) -> bool:
-    if not _ffprobe_available() or not path_exists(path):
-        return False
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=format_name",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                windows_extended_path(path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        return result.returncode == 0 and bool(result.stdout.strip())
-    except (OSError, subprocess.TimeoutExpired):
         return False
 
 
@@ -1198,7 +1145,6 @@ def _play_while_downloading(
                                 on_episode_done(current_item)
                             current_item = next_item
                             file_index = next_index
-                            target = next_path
                             file_size = next_size
                             playback_started_at = time.monotonic()
                             prev_play_byte = 0
