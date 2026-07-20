@@ -594,11 +594,12 @@ def enrich_release_queries(
     query: str,
     show_name: str = "",
 ) -> MalRelease:
-    """Ajoute synonymes AniList/MAL aux nyaa_queries si un match titre existe."""
+    """Ajoute synonymes AniList/MAL + offset absolu franchise si match titre."""
     from dataclasses import replace
 
     from annie import metadata as meta
-    from annie.mal import pick_candidate
+    from annie.catalog import franchise_absolute_offsets
+    from annie.mal import franchise_to_releases, pick_candidate
 
     titles = [t for t in (show_name, release.label, query) if t and str(t).strip()]
     chosen: MalAnime | None = None
@@ -638,4 +639,48 @@ def enrich_release_queries(
         if title and str(title).strip():
             extra.append(str(title).strip())
     merged = list(dict.fromkeys([*release.nyaa_queries, *extra]))
-    return replace(release, nyaa_queries=merged)
+    updates: dict = {"nyaa_queries": merged}
+
+    # Offset absolu : sans ça, un seul show AllAnime S2 a offset=0 et
+    # accepte les E01 saisonless de la S1.
+    try:
+        franchise = meta.collect_franchise(chosen)
+        fr_releases = franchise_to_releases(
+            franchise, root_id=chosen.mal_id, user_query=query
+        )
+        offsets = franchise_absolute_offsets(fr_releases)
+        match = None
+        if release.season is not None:
+            for row in fr_releases:
+                if row.kind != MediaKind.EPISODE:
+                    continue
+                if row.season == release.season:
+                    match = row
+                    break
+        if match is None and release.kind == MediaKind.EPISODE:
+            # Fallback : meilleur overlap de titre.
+            best_score = 0.0
+            for row in fr_releases:
+                if row.kind != MediaKind.EPISODE:
+                    continue
+                score = _stem_overlap(
+                    _franchise_stem(show_name or release.label),
+                    _franchise_stem(row.label),
+                )
+                if score > best_score:
+                    best_score = score
+                    match = row
+        if match is not None:
+            updates["absolute_episode_offset"] = max(
+                release.absolute_episode_offset,
+                match.absolute_episode_offset,
+                offsets.get(match.mal_id, 0),
+            )
+            if match.episode_count and not release.episode_count:
+                updates["episode_count"] = match.episode_count
+            if match.mal_id > 0:
+                updates["mal_id"] = match.mal_id
+    except Exception:
+        pass
+
+    return replace(release, **updates)

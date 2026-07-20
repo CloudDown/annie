@@ -16,10 +16,12 @@ from annie.parsing import (
     is_manga,
     minimal_label,
     normalize,
+    parse_roman_season,
     parse_season,
     parse_title,
     query_tokens,
     strip_release_group,
+    title_marks_season,
 )
 from annie.scoring import catalog_episode_pick_rank, rank_entry, target_match_score
 from annie.season_coherence import assess_season_coherence
@@ -182,18 +184,21 @@ def max_tv_season(releases: list[MalRelease]) -> int | None:
 def _explicit_seasons_in_title(title: str) -> set[int]:
     seasons: set[int] = set()
     parsed = parse_season(title)
-    if parsed is not None and parsed >= 1:
+    if parsed is not None and parsed >= 0:
         seasons.add(parsed)
+    roman = parse_roman_season(title)
+    if roman is not None:
+        seasons.add(roman)
     for match in _SEASON_TAG_RE.finditer(title):
         value = int(match.group(1))
-        if value >= 1:
+        if value >= 0:
             seasons.add(value)
     for pattern in (_SEASON_SPAN_IN_TITLE_RE, _S_SPAN_IN_TITLE_RE):
         for match in pattern.finditer(title):
             groups = match.groupdict()
             lo = int(groups.get("lo") or groups.get("lo2") or 0)
             hi = int(groups.get("hi") or groups.get("hi2") or 0)
-            if lo >= 1 and hi >= lo:
+            if lo >= 0 and hi >= lo:
                 seasons.update(range(lo, hi + 1))
     return seasons
 
@@ -238,11 +243,17 @@ def _remap_item_for_release(
     release: MalRelease,
     *,
     absolute_offset: int = 0,
+    max_tv_season: int | None = None,
 ) -> ResultItem | None:
     if release.kind != MediaKind.EPISODE or release.season is None:
         return item
     parsed = item.parsed
     if parsed.episode is None:
+        return None
+    # S00 / specials packs ne sont pas des saisons TV.
+    if parsed.season == 0:
+        return None
+    if 0 in _explicit_seasons_in_title(item.entry.title) and release.season != 0:
         return None
     expected = release.episode_count or 0
     if not expected:
@@ -250,12 +261,7 @@ def _remap_item_for_release(
 
     episode = parsed.episode
     if parsed.season is None:
-        if 1 <= episode <= expected:
-            return ResultItem(
-                entry=item.entry,
-                parsed=replace(parsed, season=release.season, episode=episode),
-                score=item.score,
-            )
+        # Numérotation absolue d'abord (ex. Re:Zero - 42 → S2E17).
         if absolute_offset > 0:
             relative = episode - absolute_offset
             if 1 <= relative <= expected:
@@ -269,7 +275,28 @@ def _remap_item_for_release(
                     ),
                     score=item.score,
                 )
-        return None
+        if not (1 <= episode <= expected):
+            return None
+        # S1 : E01 sans tag saison = OK. S≥2 : exige S2 / Season 2 / II…
+        # sinon un Youjo Senki - 01 (S1) pollue la S2 (offset AllAnime = 0).
+        # Exception : « Final Season » sur la dernière saison franchise.
+        marked = title_marks_season(item.entry.title, release.season)
+        final_ok = (
+            max_tv_season is not None
+            and release.season == max_tv_season
+            and bool(
+                _FINAL_SEASON_RE.search(
+                    f"{parsed.arc or ''} {item.entry.title}"
+                )
+            )
+        )
+        if release.season >= 2 and not marked and not final_ok:
+            return None
+        return ResultItem(
+            entry=item.entry,
+            parsed=replace(parsed, season=release.season, episode=episode),
+            score=item.score,
+        )
 
     if parsed.season == release.season and 1 <= episode <= expected:
         return item
@@ -388,7 +415,10 @@ def _episode_belongs_to_release(
         return False
 
     remapped = _remap_item_for_release(
-        item, release, absolute_offset=absolute_offset
+        item,
+        release,
+        absolute_offset=absolute_offset,
+        max_tv_season=max_tv_season,
     )
     if remapped is None:
         return False
@@ -483,17 +513,29 @@ def _season_movie_pack_covers_release(title: str, release: MalRelease) -> bool:
 
 
 def _franchise_batch_covers_full_season(
-    title: str, episodes: list[int], expected: int
+    title: str,
+    episodes: list[int],
+    expected: int,
+    *,
+    release_season: int | None = None,
 ) -> bool:
     """Pack multi-saisons : « Season 1-4 » est parsé 1~4, pas les 51 épisodes."""
-    if is_franchise_multi_season_batch(title):
-        if not episodes:
-            return True
-        if max(episodes) <= 2:
-            return True
-        if expected and len(episodes) < expected * 0.5:
-            return True
+    if not is_franchise_multi_season_batch(title):
         return False
+    explicit = _explicit_seasons_in_title(title)
+    # Ne jamais étendre un pack S1-S2 à la S3 / S4.
+    if (
+        release_season is not None
+        and explicit
+        and release_season not in explicit
+    ):
+        return False
+    if not episodes:
+        return True
+    if max(episodes) <= 2:
+        return True
+    if expected and len(episodes) < expected * 0.5:
+        return True
     return False
 
 
@@ -965,9 +1007,20 @@ def _batch_episodes_for_release(
 ) -> list[tuple[int, int]]:
     """Paires (épisode relatif release, numéro brut batch) à importer."""
     title = item.entry.title
-    _, episodes = parse_batch_episode_range(title)
+    batch_season, episodes = parse_batch_episode_range(title)
     expected = release.episode_count or 0
     if not expected:
+        return []
+    # Packs S00 / season 0 = specials, pas une saison TV.
+    if batch_season == 0 or 0 in _explicit_seasons_in_title(title):
+        return []
+    if (
+        batch_season is not None
+        and release.season is not None
+        and batch_season != release.season
+        and not is_franchise_multi_season_batch(title)
+        and not _season_movie_pack_covers_release(title, release)
+    ):
         return []
 
     pairs: list[tuple[int, int]] = []
@@ -979,7 +1032,7 @@ def _batch_episodes_for_release(
             pairs.append((relative, raw))
 
     if _franchise_batch_covers_full_season(
-        title, episodes, expected
+        title, episodes, expected, release_season=release.season
     ) or _season_movie_pack_covers_release(title, release):
         for relative in range(1, expected + 1):
             add(relative, absolute_offset + relative)
@@ -1019,7 +1072,10 @@ def _merge_batches_into_section(
             ):
                 candidate = item_for_episode(item, raw)
                 remapped = _remap_item_for_release(
-                    candidate, release, absolute_offset=absolute_offset
+                    candidate,
+                    release,
+                    absolute_offset=absolute_offset,
+                    max_tv_season=max_tv_season,
                 )
                 if remapped is None:
                     continue
@@ -1136,7 +1192,11 @@ def build_catalog(
 
     for section in sections.values():
         if section.kind == MediaKind.EPISODE and section.episodes:
-            apply_coherent_season_picks(section, expected=section.expected_episodes)
+            apply_coherent_season_picks(
+                section,
+                expected=section.expected_episodes,
+                absolute_offset=section.absolute_episode_offset,
+            )
 
     result = [
         section for section in sections.values() if section.episodes or section.singles
@@ -1176,7 +1236,10 @@ def _pick_section_for_release(
                 continue
             for _ep, item in section.episodes.items():
                 remapped = _remap_item_for_release(
-                    item, release, absolute_offset=absolute_offset
+                    item,
+                    release,
+                    absolute_offset=absolute_offset,
+                    max_tv_season=max_tv_season,
                 )
                 if remapped is None:
                     continue
@@ -1263,25 +1326,66 @@ def _batch_candidates(section: MediaSection) -> list[ResultItem]:
 
 
 def _batch_coverage(
-    batch: ResultItem, expected: int | None
+    batch: ResultItem,
+    expected: int | None,
+    *,
+    season: int | None = None,
+    absolute_offset: int = 0,
 ) -> tuple[list[int], float]:
     title = batch.entry.title
-    _, episodes = parse_batch_episode_range(title)
+    batch_season, episodes = parse_batch_episode_range(title)
+    # S00 / specials : ne couvrent jamais une saison TV.
+    if batch_season == 0 or 0 in _explicit_seasons_in_title(title):
+        return [], 0.0
+    if (
+        season is not None
+        and batch_season is not None
+        and batch_season != season
+        and not is_franchise_multi_season_batch(title)
+    ):
+        return [], 0.0
+    # Pack « Seasons 1-2 » : hors plage → couverture nulle (pas S3/S4).
+    if season is not None and is_franchise_multi_season_batch(title):
+        explicit = _explicit_seasons_in_title(title)
+        if explicit and season not in explicit:
+            return [], 0.0
     if not expected:
         if not episodes:
             return [], 0.0
         return episodes, 1.0
-    if _franchise_batch_covers_full_season(title, episodes, expected):
+    if _franchise_batch_covers_full_season(
+        title, episodes, expected, release_season=season
+    ):
         covered = list(range(1, expected + 1))
         return covered, 1.0
     if not episodes:
         return [], 0.0
-    covered = [episode for episode in episodes if 1 <= episode <= expected]
+    covered: list[int] = []
+    seen: set[int] = set()
+    for raw in episodes:
+        if absolute_offset > 0:
+            relative = raw - absolute_offset
+        else:
+            relative = raw
+        if 1 <= relative <= expected and relative not in seen:
+            seen.add(relative)
+            covered.append(relative)
     return covered, len(covered) / expected
 
 
-def _batch_pick_score(batch: ResultItem, expected: int | None) -> tuple[float, list[int]]:
-    covered, coverage = _batch_coverage(batch, expected)
+def _batch_pick_score(
+    batch: ResultItem,
+    expected: int | None,
+    *,
+    season: int | None = None,
+    absolute_offset: int = 0,
+) -> tuple[float, list[int]]:
+    covered, coverage = _batch_coverage(
+        batch,
+        expected,
+        season=season,
+        absolute_offset=absolute_offset,
+    )
     if not covered:
         return 0.0, []
     score = coverage * batch.entry.seeders * max(1, batch.parsed.quality)
@@ -1295,6 +1399,7 @@ def apply_coherent_season_picks(
     prefer_batch: bool | None = None,
     season_batch_min_coverage: float | None = None,
     coherence_min_share: float | None = None,
+    absolute_offset: int = 0,
 ) -> None:
     """Privilégie un pack saison cohérent avant les épisodes isolés."""
     if section.kind != MediaKind.EPISODE or not section.episodes:
@@ -1324,8 +1429,18 @@ def apply_coherent_season_picks(
     best_covered: list[int] = []
 
     for batch in candidates:
-        score, covered = _batch_pick_score(batch, expected)
-        _, coverage = _batch_coverage(batch, expected)
+        score, covered = _batch_pick_score(
+            batch,
+            expected,
+            season=section.season,
+            absolute_offset=absolute_offset,
+        )
+        _, coverage = _batch_coverage(
+            batch,
+            expected,
+            season=section.season,
+            absolute_offset=absolute_offset,
+        )
         if coverage >= min_coverage and score > best_score:
             best_score = score
             best_batch = batch
@@ -1343,7 +1458,12 @@ def apply_coherent_season_picks(
     for batch in candidates:
         if batch.entry.magnet != report.dominant_magnet:
             continue
-        covered, _ = _batch_coverage(batch, expected)
+        covered, _ = _batch_coverage(
+            batch,
+            expected,
+            season=section.season,
+            absolute_offset=absolute_offset,
+        )
         for episode in covered:
             dominant_by_episode[episode] = item_for_episode(batch, episode)
     for episode, item in section.episodes.items():
@@ -1795,6 +1915,7 @@ def build_catalog_from_releases(
             section,
             expected=release.episode_count,
             prefer_batch=coherent_picks,
+            absolute_offset=absolute_offset,
         )
         if fill_gaps:
             _fill_missing_episodes(

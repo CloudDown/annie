@@ -242,6 +242,46 @@ class EpisodeBelongsTests(unittest.TestCase):
         item = _item("[SubsPlease] Re Zero - 42 (720p).mkv")
         self.assertTrue(_episode_belongs_to_release(item, s2, absolute_offset=25))
 
+    def test_s2_rejects_seasonless_s1_without_offset(self) -> None:
+        """AllAnime S2 seul (offset 0) : ne pas prendre Youjo Senki - 01 (S1)."""
+        s2 = MalRelease(
+            mal_id=2,
+            label="Youjo Senki II",
+            kind=MediaKind.EPISODE,
+            season=2,
+            episode_count=12,
+            nyaa_queries=["youjo senki", "tanya"],
+            sort_key=(2, "youjo senki ii"),
+        )
+        s1_ep = _item("[SubsPlease] Youjo Senki - 01 (1080p) [ABC].mkv")
+        self.assertFalse(_episode_belongs_to_release(s1_ep, s2, absolute_offset=0))
+
+    def test_s2_accepts_roman_marked_title(self) -> None:
+        s2 = MalRelease(
+            mal_id=2,
+            label="Youjo Senki II",
+            kind=MediaKind.EPISODE,
+            season=2,
+            episode_count=12,
+            nyaa_queries=["youjo senki"],
+            sort_key=(2, "youjo senki ii"),
+        )
+        s2_ep = _item("[SubsPlease] Youjo Senki II - 01 (1080p).mkv")
+        self.assertTrue(_episode_belongs_to_release(s2_ep, s2, absolute_offset=0))
+
+
+class RomanSeasonParseTests(unittest.TestCase):
+    def test_youjo_senki_ii_episode(self) -> None:
+        from annie.parsing import parse_title, title_marks_season
+
+        parsed = parse_title("[SubsPlease] Youjo Senki II - 01 (1080p).mkv")
+        self.assertEqual(parsed.season, 2)
+        self.assertEqual(parsed.episode, 1)
+        self.assertTrue(title_marks_season(parsed.raw, 2))
+        self.assertFalse(
+            title_marks_season("[SubsPlease] Youjo Senki - 01 (1080p).mkv", 2)
+        )
+
 
 class FranchiseOffsetTests(unittest.TestCase):
     def test_cumulative_offsets(self) -> None:

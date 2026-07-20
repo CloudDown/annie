@@ -10,9 +10,12 @@ from annie.parsing import (
     is_manga,
     parse_title,
     target_match_score,
+    title_marks_season,
 )
 from annie.season_coherence import assess_season_coherence, format_coherence_issue
 from annie.types import MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
+
+_FINAL_SEASON_FLAG_RE = re.compile(r"\b(?:final|last)\s+season\b", re.I)
 
 MIN_SEEDERS_STRICT = 10
 MIN_SEEDERS_RELAXED = 3
@@ -169,6 +172,7 @@ class EpisodeAssessment:
             "low_quality",
             "directors_cut",
             "suspect_source",
+            "season_unmarked",
         }
         return not blocked.intersection(self.flags)
 
@@ -235,6 +239,17 @@ def assess_episode_item(
     elif quality < qual_strict:
         flags.append("sd_quality")
 
+    # S≥2 sans marqueur de saison dans le titre → risque de pollution S1.
+    effective_season = season if season is not None else item.parsed.season
+    if (
+        effective_season is not None
+        and effective_season >= 2
+        and not title_marks_season(item.entry.title, effective_season)
+        and item.parsed.source_episode is None
+        and not _FINAL_SEASON_FLAG_RE.search(item.entry.title)
+    ):
+        flags.append("season_unmarked")
+
     return EpisodeAssessment(
         season=season if season is not None else item.parsed.season,
         episode=episode,
@@ -255,7 +270,7 @@ def _format_episode_issue(assessment: EpisodeAssessment) -> str:
     if "low_quality" in assessment.flags or "sd_quality" in assessment.flags:
         res = assessment.resolution or "?"
         parts.append(f"qualité {res}/{assessment.quality}")
-    for flag in ("directors_cut", "new_edition", "suspect_source"):
+    for flag in ("directors_cut", "new_edition", "suspect_source", "season_unmarked"):
         if flag in assessment.flags:
             parts.append(flag.replace("_", " "))
     detail = ", ".join(parts) if parts else "ok"

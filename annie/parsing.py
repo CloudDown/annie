@@ -292,6 +292,18 @@ GINTAMA_KAI_EP_RE = re.compile(r"\bKa[iï]\s+(?P<episode>\d{1,3})\s*[-–—]", 
 ROMAN_SEASON_BATCH_RE = re.compile(
     r"\bMob Psycho 100\s+(?P<roman>II|III|IV)\b.*\[1080", re.I
 )
+# « Youjo Senki II - 01 », « Tiger & Bunny II » — pas Final Fantasy VII.
+ROMAN_SEASON_RE = re.compile(
+    r"(?<![A-Za-z])(?P<roman>II|III|IV|V|VI)(?![A-Za-z0-9])",
+    re.I,
+)
+_ROMAN_SEASON_VALUES = {
+    "ii": 2,
+    "iii": 3,
+    "iv": 4,
+    "v": 5,
+    "vi": 6,
+}
 UNDERSCORE_ORDINAL_EP_RE = re.compile(
     r"_(?P<season>\d)(?:st|nd|rd|th)_(?P<episode>\d{1,3})_", re.I
 )
@@ -386,6 +398,14 @@ def matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
     return any(pattern.search(text) for pattern in patterns)
 
 
+def parse_roman_season(body: str) -> int | None:
+    """Saison via chiffre romain (II…VI) dans le titre."""
+    match = ROMAN_SEASON_RE.search(body)
+    if not match:
+        return None
+    return _ROMAN_SEASON_VALUES.get(match.group("roman").lower())
+
+
 def parse_season(body: str) -> int | None:
     for pattern in (
         R_CODE_RE,
@@ -399,7 +419,51 @@ def parse_season(body: str) -> int | None:
         match = pattern.search(body)
         if match:
             return int(match.group("season"))
-    return None
+    return parse_roman_season(body)
+
+
+def title_marks_season(title: str, season: int) -> bool:
+    """True si le titre Nyaa indique explicitement cette saison (S2, Season 2, II…)."""
+    if season < 1:
+        return False
+    if parse_season(title) == season:
+        return True
+    if parse_roman_season(title) == season:
+        return True
+    # Tags S02 / S2 hors parse_season court-circuité.
+    if re.search(rf"\bS0?{season}\b", title, re.I):
+        return True
+    if re.search(rf"\b(?:season|part|cour)\s*0?{season}\b", title, re.I):
+        return True
+    ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(season) or f"{season}th"
+    if re.search(rf"\b{ordinal}\s+season\b", title, re.I):
+        return True
+    # Plages « Seasons 1-3 », « Season 1-3 », « S1-S2 ».
+    for match in re.finditer(
+        r"\bseasons\s*(?P<lo>\d{1,2})\s*[-–—~]\s*(?P<hi>\d{1,2})\b",
+        title,
+        re.I,
+    ):
+        lo, hi = int(match.group("lo")), int(match.group("hi"))
+        if lo <= season <= hi:
+            return True
+    for match in re.finditer(
+        r"\bseason\s*(?P<lo>\d{1,2})[-–—~](?P<hi>[1-5])\b",
+        title,
+        re.I,
+    ):
+        lo, hi = int(match.group("lo")), int(match.group("hi"))
+        if lo <= season <= hi:
+            return True
+    for match in re.finditer(
+        r"\bS0?(?P<lo>\d{1,2})\s*[-–—~]\s*S0?(?P<hi>\d{1,2})\b",
+        title,
+        re.I,
+    ):
+        lo, hi = int(match.group("lo")), int(match.group("hi"))
+        if lo <= season <= hi:
+            return True
+    return False
 
 
 def is_non_anime_extra(title: str) -> bool:

@@ -636,5 +636,145 @@ class MovieSectionFilterTests(unittest.TestCase):
         self.assertEqual(section.singles[0].entry.magnet, strong.entry.magnet)
 
 
+class TanyaAllAnimeScopedTests(unittest.TestCase):
+    """Flux AllAnime : une seule release S2, offset 0 — pas de pollution S1."""
+
+    def test_s2_picks_roman_not_seasonless_s1(self) -> None:
+        s2 = mal_release(
+            mal_id=2,
+            season=2,
+            episode_count=12,
+            label="Youjo Senki II",
+            queries=["youjo senki", "tanya the evil"],
+            absolute_episode_offset=0,
+        )
+        entries = [
+            nyaa_entry(
+                "[SubsPlease] Youjo Senki - 01 (1080p) [DEAD].mkv",
+                seeders=500,
+            ),
+            nyaa_entry(
+                "[SubsPlease] Youjo Senki II - 01 (1080p).mkv",
+                seeders=40,
+            ),
+            nyaa_entry(
+                "[Erai-raws] Youjo Senki II - 02 [1080p].mkv",
+                seeders=35,
+            ),
+        ]
+
+        def fake_search(query: str, **kwargs):
+            return entries
+
+        sections = build_catalog_from_releases(
+            [s2],
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertEqual(section.season, 2)
+        self.assertIn(1, section.episodes)
+        ep1 = section.episodes[1]
+        self.assertIn("II", ep1.entry.title)
+        self.assertNotIn("DEAD", ep1.entry.title)
+
+    def test_s00_specials_pack_does_not_cover_s2(self) -> None:
+        """Pack Gecko S00E02-E14 ne doit pas écraser la vraie S2."""
+        from annie.catalog import _batch_coverage, _batch_episodes_for_release
+
+        s2 = mal_release(
+            mal_id=2,
+            season=2,
+            episode_count=12,
+            label="Saga of Tanya the Evil Season 2",
+            queries=["tanya the evil", "youjo senki"],
+            absolute_episode_offset=12,
+        )
+        gecko = (
+            "[Gecko] Saga of Tanya the Evil - S00E02-E14 "
+            "(幼女戦記; Youjo Shenki) [YTB.WEB-DL 1080P AVC]"
+        )
+        good = "[SubsPlease] Saga of Tanya the Evil S2 - 01 (1080p).mkv"
+        entries = [
+            nyaa_entry(gecko, seeders=7),
+            nyaa_entry(good, seeders=40),
+            nyaa_entry(
+                "[SubsPlease] Saga of Tanya the Evil S2 - 02 (1080p).mkv",
+                seeders=35,
+            ),
+        ]
+
+        gecko_item = result_item(gecko, score=50.0)
+        self.assertEqual(
+            _batch_coverage(
+                gecko_item, 12, season=2, absolute_offset=12
+            ),
+            ([], 0.0),
+        )
+        self.assertEqual(
+            _batch_episodes_for_release(gecko_item, s2, absolute_offset=12),
+            [],
+        )
+
+        def fake_search(query: str, **kwargs):
+            return entries
+
+        sections = build_catalog_from_releases(
+            [s2],
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertIn(1, section.episodes)
+        self.assertNotIn("S00", section.episodes[1].entry.title)
+        self.assertIn("S2", section.episodes[1].entry.title)
+
+    def test_seasons_1_2_pack_does_not_cover_s3(self) -> None:
+        from annie.catalog import (
+            _batch_coverage,
+            _batch_episodes_for_release,
+            _franchise_batch_covers_full_season,
+        )
+        from annie.parsing import title_marks_season
+
+        title = (
+            "[Judas] Mob Psycho 100 (Seasons 1-2 + OVA + Specials) "
+            "[BD 1080p][HEVC x265 10bit]"
+        )
+        self.assertTrue(title_marks_season(title, 2))
+        self.assertFalse(title_marks_season(title, 3))
+        self.assertFalse(
+            _franchise_batch_covers_full_season(
+                title, [1, 2], 12, release_season=3
+            )
+        )
+        self.assertTrue(
+            _franchise_batch_covers_full_season(
+                title, [1, 2], 12, release_season=2
+            )
+        )
+        item = result_item(title, score=50.0)
+        self.assertEqual(
+            _batch_coverage(item, 12, season=3, absolute_offset=25),
+            ([], 0.0),
+        )
+        s3 = mal_release(
+            mal_id=3,
+            season=3,
+            episode_count=12,
+            label="Mob Psycho 100 III",
+            queries=["mob psycho"],
+            absolute_episode_offset=25,
+        )
+        self.assertEqual(
+            _batch_episodes_for_release(item, s3, absolute_offset=25),
+            [],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,15 @@ class AssessEpisodeTests(unittest.TestCase):
         self.assertIn("dead", assessment.flags)
         self.assertFalse(assessment.relaxed_ok)
 
+    def test_season_unmarked_flagged_on_s2(self) -> None:
+        entry = nyaa_entry("[SubsPlease] Youjo Senki - 01 (1080p).mkv", seeders=50)
+        rank = rank_entry(entry, WatchTarget(query="youjo senki"))
+        self.assertIsNotNone(rank)
+        item = ResultItem(entry=entry, parsed=rank[1], score=rank[0])
+        assessment = assess_episode_item(item, season=2)
+        self.assertIn("season_unmarked", assessment.flags)
+        self.assertFalse(assessment.strict_ok)
+
     def test_batch_1080p_is_strict_ok(self) -> None:
         entry = nyaa_entry(
             "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu (01-25) (1080p) [Batch]",

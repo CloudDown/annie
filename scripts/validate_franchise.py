@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Valide saisons/épisodes MAL + couverture Nyaa sans lancer mpv."""
+"""Valide saisons/épisodes MAL + couverture Nyaa sans lancer mpv.
+
+Couvre le chemin franchise complète (offsets absolus corrects). Le flux
+interactif AllAnime (une seule release, offset 0) est couvert par les tests
+offline (ex. Tanya S2) + le flag qualité ``season_unmarked``.
+"""
 
 from __future__ import annotations
 
@@ -264,6 +269,17 @@ def _mal_tv_from_query(
     return _mal_tv_from_id(chosen.mal_id, query)
 
 
+def _looks_like_airing_partial(section) -> bool:
+    """Saison en cours : E01..EN contigüs, N < expected MAL."""
+    expected = section.expected_episodes
+    if not expected or not section.episodes:
+        return False
+    eps = sorted(section.episodes)
+    if eps[0] != 1 or len(eps) >= expected:
+        return False
+    return eps == list(range(1, eps[-1] + 1))
+
+
 def _score_tv(
     mal_tv: list[tuple[str, int | None]],
     nyaa_tv: list,
@@ -294,6 +310,7 @@ def _score_tv(
 
     nyaa_detail = [(s.label, s.found, s.expected) for s in report.seasons]
     mal_by_season = {index + 1: count for index, (_, count) in enumerate(mal_tv)}
+    nyaa_by_season = {s.season: s for s in nyaa_tv if s.season is not None}
 
     coverage_strict = True
     coverage_relaxed = True
@@ -301,7 +318,14 @@ def _score_tv(
         expected = mal_by_season.get(season.season or 0) or season.expected
         if expected and season.found < expected:
             coverage_strict = False
-            if season.found < max(1, int(expected * COVERAGE_RELAXED)):
+            section = nyaa_by_season.get(season.season)
+            airing = section is not None and _looks_like_airing_partial(section)
+            if airing:
+                issues.append(
+                    f"{season.label}: {season.found}/{expected} "
+                    "(saison en cours — couverture partielle OK)"
+                )
+            elif season.found < max(1, int(expected * COVERAGE_RELAXED)):
                 coverage_relaxed = False
     if len(nyaa_tv) != len(mal_tv):
         coverage_strict = False
@@ -333,8 +357,19 @@ def _score_tv(
             for ep in s.episodes
             if any(
                 f in ep.flags
-                for f in ("directors_cut", "new_edition", "suspect_source")
+                for f in (
+                    "directors_cut",
+                    "new_edition",
+                    "suspect_source",
+                    "season_unmarked",
+                )
             )
+        ),
+        "season_unmarked_episodes": sum(
+            1
+            for s in report.seasons
+            for ep in s.episodes
+            if "season_unmarked" in ep.flags
         ),
         "coherence_outliers": sum(
             len(s.coherence_outliers) for s in report.seasons
