@@ -22,7 +22,7 @@ uv sync
 
 </details>
 
-`libtorrent` est installé dans le venv via le lockfile (`uv.lock`). Sur Arch, le paquet AUR utilise plutôt `python-libtorrent` système — voir [packaging/aur/README.md](packaging/aur/README.md).
+`libtorrent` est installé dans le venv via le lockfile (`uv.lock`). Sur Arch, le paquet AUR utilise plutôt `python-libtorrent` système — voir [../packaging/aur/README.md](../packaging/aur/README.md).
 
 ## Commandes Make
 
@@ -37,7 +37,11 @@ make clean          # supprime venv & artefacts
 ## Structure du projet
 
 ```
-annie.py              Lanceur (active .venv si présent)
+bin/
+  annie.py            Lanceur (active .venv si présent)
+  annie.cmd           Lanceur Windows (sources)
+docs/
+  CONTRIBUTING.md     Ce guide
 annie/
   cli.py              Commandes & boucle interactive
   metadata.py         Façade AniList / MAL
@@ -68,7 +72,7 @@ scripts/              Outils debug / validation (réseau)
 packaging/
   aur/                PKGBUILD AUR
   debian/             build .deb
-  windows/            install.ps1
+  windows/            install-windows.bat, install.ps1
 ```
 
 ## Tests vs scripts de validation
@@ -101,7 +105,7 @@ Corriger uniquement les **patterns répétés** du rapport, puis figer le cas en
 
 ## CI
 
-Chaque push et pull request sur `master` / `cursor/initial-release` déclenche `uv sync` puis les tests unitaires via [`.github/workflows/test.yml`](.github/workflows/test.yml).
+Chaque push et pull request sur `master` / `cursor/initial-release` déclenche `uv sync` puis les tests unitaires via [`.github/workflows/test.yml`](../.github/workflows/test.yml).
 
 ## Paquet AUR
 

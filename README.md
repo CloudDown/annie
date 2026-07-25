@@ -76,23 +76,23 @@ Le script installe **Python, uv, fzf et mpv** s’ils manquent, crée la command
 ```bat
 git clone https://github.com/CloudDown/annie.git
 cd annie
-install-windows.bat
+packaging\windows\install-windows.bat
 ```
 
 | Après install | Commande |
 |---------------|----------|
 | Terminal courant | `annie` |
-| Depuis le dossier projet | `.\annie.cmd` |
+| Depuis le dossier projet | `.\bin\annie.cmd` |
 | Nouveau terminal | `annie` (PATH mis à jour) |
 
-**Options :** `install-windows.bat -SkipOptional` — n’installe pas fzf/mpv automatiquement.
+**Options :** `packaging\windows\install-windows.bat -SkipOptional` — n’installe pas fzf/mpv automatiquement.
 
 <details>
 <summary><strong>Windows — pièges courants</strong></summary>
 
-- **« Python was not found… Microsoft Store »** — Désactive les alias `python.exe` / `python3.exe` dans *Paramètres → Applications → Alias d’exécution d’applications*, puis relance `install-windows.bat`.
-- **Ne pas faire** `python -m venv .` à la racine. Utilise **`annie`** ou **`annie.cmd`**, pas `annie.exe` (pip).
-- **Lecture ou lecteur introuvable** — Relance `install-windows.bat` (ou `git pull` puis relance si tu as cloné le dépôt).
+- **« Python was not found… Microsoft Store »** — Désactive les alias `python.exe` / `python3.exe` dans *Paramètres → Applications → Alias d’exécution d’applications*, puis relance `packaging\windows\install-windows.bat`.
+- **Ne pas faire** `python -m venv .` à la racine. Utilise **`annie`** ou **`bin\annie.cmd`**, pas `annie.exe` (pip).
+- **Lecture ou lecteur introuvable** — Relance `packaging\windows\install-windows.bat` (ou `git pull` puis relance si tu as cloné le dépôt).
 
 </details>
 
@@ -109,7 +109,7 @@ sudo pacman -S mpv fzf   # si manquants
 git clone https://github.com/CloudDown/annie.git
 cd annie
 make install
-./annie.py
+./bin/annie.py
 ```
 
 Config créée au premier lancement : `~/.config/annie/config.toml`
@@ -122,7 +122,7 @@ Config créée au premier lancement : `~/.config/annie/config.toml`
 
 ```bash
 annie          # après install
-./annie.py     # depuis les sources
+./bin/annie.py     # depuis les sources
 ```
 
 Logo ASCII → invite `>` → tape un titre (**anglais** ou **romaji**, ex. `frieren`).
@@ -204,14 +204,14 @@ Sous-titres externes = **mpv** uniquement. Ne partage pas ce fichier (mot de pas
 <details>
 <summary><strong>« filename or extension is too long » (Windows)</strong></summary>
 
-Certains packs torrent ont des dossiers très longs. Annie utilise des chemins étendus (`\\?\`) pour contourner la limite de 260 caractères. Mets à jour Annie (`git pull` + `install-windows.bat`) si tu vois encore cette erreur.
+Certains packs torrent ont des dossiers très longs. Annie utilise des chemins étendus (`\\?\`) pour contourner la limite de 260 caractères. Mets à jour Annie (`git pull` + `packaging\windows\install-windows.bat`) si tu vois encore cette erreur.
 
 </details>
 
 <details>
 <summary><strong>« fzf not found »</strong></summary>
 
-**Windows :** relance `install-windows.bat`.
+**Windows :** relance `packaging\windows\install-windows.bat`.
 
 **Linux :**
 
@@ -225,7 +225,7 @@ sudo apt install fzf    # Debian/Ubuntu
 <details>
 <summary><strong>« no player found »</strong></summary>
 
-**Windows :** relance `install-windows.bat` — détecte mpv, VLC ou ffplay et écrit le chemin dans `config.toml`.
+**Windows :** relance `packaging\windows\install-windows.bat` — détecte mpv, VLC ou ffplay et écrit le chemin dans `config.toml`.
 
 **Linux :** `sudo pacman -S mpv` (ou `apt install mpv`).
 
@@ -381,7 +381,7 @@ flowchart LR
 
 ## Développeurs
 
-[CONTRIBUTING.md](CONTRIBUTING.md) · `make test` (tests unitaires hors réseau)
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) · `make test` (tests unitaires hors réseau)
 
 ---
 
