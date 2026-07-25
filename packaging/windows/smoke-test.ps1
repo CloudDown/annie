@@ -84,15 +84,15 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "==> Lanceur annie.cmd"
-if (-not (Test-Path (Join-Path $Root "annie.cmd"))) {
-    Write-Host "[FAIL] annie.cmd introuvable" -ForegroundColor Red
+if (-not (Test-Path (Join-Path $Root "bin\annie.cmd"))) {
+    Write-Host "[FAIL] bin\annie.cmd introuvable" -ForegroundColor Red
     $failures++
 } else {
-    & cmd /c "annie.cmd --help" 2>$null
+    & cmd /c "bin\annie.cmd --help" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[warn] annie.cmd --help a echoue (peut etre normal sans fzf)"
+        Write-Host "[warn] bin\annie.cmd --help a echoue (peut etre normal sans fzf)"
     } else {
-        Write-Host "[ok] annie.cmd"
+        Write-Host "[ok] bin\annie.cmd"
     }
 }
 
@@ -102,4 +102,4 @@ if ($failures -gt 0) {
     exit 1
 }
 Write-Host "Smoke test automatise : OK."
-Write-Host "Etape manuelle : lancer annie (ou .\annie.cmd), choisir un anime et verifier la lecture mpv + Ctrl-O (magnet)."
+Write-Host "Etape manuelle : lancer annie (ou .\bin\annie.cmd), choisir un anime et verifier la lecture mpv + Ctrl-O (magnet)."

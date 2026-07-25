@@ -17,7 +17,7 @@ make install   # uv sync + ~/.config/annie/config.toml (si absent)
 
 ```bash
 uv sync
-./annie.py
+./bin/annie.py
 ```
 
 </details>

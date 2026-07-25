@@ -11,6 +11,8 @@ from annie.mal import MalAnime, nyaa_queries_for
 from annie.net import TokenBucket, fetch_json_post
 from annie.parsing import normalize, query_tokens
 from annie.paths import cache_dir
+from annie.catalog import is_recap_movie
+from annie.releases import extra_release, movie_release, tv_release
 from annie.types import MalRelease, MediaKind
 
 ALLANIME_API = "https://api.allanime.day/api"
@@ -410,7 +412,7 @@ def shows_to_releases(
         kind = _infer_kind(show)
         if kind == MediaKind.UNKNOWN:
             continue
-        if skip_recap and re.search(r"\b(?:recap|summary|digest)\b", show.name, re.I):
+        if skip_recap and is_recap_movie(show.name):
             continue
         if kind == MediaKind.MOVIE:
             movies.append(show)
@@ -472,10 +474,9 @@ def shows_to_releases(
         )
         label = f"Season {season:02d} · {show.episode_count} ep · {show.name}"
         releases.append(
-            MalRelease(
+            tv_release(
                 mal_id=_synthetic_mal_id(show.show_id),
                 label=label,
-                kind=MediaKind.EPISODE,
                 season=season,
                 episode_count=show.episode_count or None,
                 nyaa_queries=queries,
@@ -490,14 +491,12 @@ def shows_to_releases(
             show, user_query=user_query, chosen=chosen, season=None
         )
         releases.append(
-            MalRelease(
+            movie_release(
                 mal_id=_synthetic_mal_id(show.show_id),
                 label=_movie_label(show.name),
-                kind=MediaKind.MOVIE,
-                season=None,
-                episode_count=show.episode_count or 1,
                 nyaa_queries=queries,
                 sort_key=(15 + index, show.name.lower()),
+                episode_count=show.episode_count or 1,
             )
         )
 
@@ -510,14 +509,13 @@ def shows_to_releases(
         if kind == MediaKind.OVA:
             label = f"OVA · {label}"
         releases.append(
-            MalRelease(
+            extra_release(
                 mal_id=_synthetic_mal_id(show.show_id),
                 label=label,
                 kind=kind,
-                season=None,
-                episode_count=show.episode_count or None,
                 nyaa_queries=queries,
                 sort_key=(25, show.name.lower()),
+                episode_count=show.episode_count or None,
             )
         )
 

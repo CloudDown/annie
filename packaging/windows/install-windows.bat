@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+cd /d "%~dp0\..\.."
 echo Installation Annie (Windows)...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0packaging\windows\install.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
 if errorlevel 1 (
   echo.
   echo Echec installation. Voir les messages ci-dessus.
@@ -15,6 +15,6 @@ if exist "%ANNIE_BIN%\annie.cmd" (
 )
 echo.
 echo OK. Dans CE terminal vous pouvez taper : annie
-echo    ou depuis ce dossier : annie.cmd
+echo    ou depuis le depot : bin\annie.cmd
 echo Pour les autres fenetres : fermez-les et rouvrez un terminal, puis : annie
 pause

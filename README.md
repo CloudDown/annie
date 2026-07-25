@@ -67,7 +67,7 @@ Interface : terminal + menus **fzf** (↑↓, Entrée, Échap).
 
 1. GitHub → **Code** → **Download ZIP**
 2. Décompresse le dossier
-3. Double-clic sur **`install-windows.bat`**
+3. Double-clic sur **`packaging\windows\install-windows.bat`**
 
 Le script installe **Python, uv, fzf et mpv** s’ils manquent, crée la commande **`annie`** dans ton PATH, et enregistre le lecteur dans `%APPDATA%\annie\config.toml`.
 

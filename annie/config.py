@@ -354,6 +354,8 @@ class AnnieConfig:
         )
         return replace(_config_cache)
 
+    load_cached = load
+
     def resolved_player(self, override: str | None = None) -> str | None:
         if override and override != "auto":
             return override

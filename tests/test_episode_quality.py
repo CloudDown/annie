@@ -5,12 +5,8 @@ from __future__ import annotations
 import unittest
 
 from annie.catalog import build_catalog_from_releases
-from annie.scoring import rank_entry
-from annie.scoring import (
-    MIN_SEEDERS_STRICT,
-    assess_episode_item,
-    assess_tv_catalog,
-)
+from annie.config import AnnieConfig
+from annie.scoring import assess_episode_item, assess_tv_catalog, rank_entry
 from annie.types import MediaKind, ResultItem, WatchTarget
 from tests.helpers import entries_from_fixture, load_fixture, mal_release, nyaa_entry
 
@@ -58,7 +54,8 @@ class AssessEpisodeTests(unittest.TestCase):
 
         ep8 = item_for_episode(item, 8)
         assessment = assess_episode_item(ep8, season=1)
-        self.assertGreaterEqual(assessment.seeders, MIN_SEEDERS_STRICT)
+        min_strict = AnnieConfig.load_cached().catalog.min_seeders_strict
+        self.assertGreaterEqual(assessment.seeders, min_strict)
         self.assertGreaterEqual(assessment.quality, 38)
         self.assertTrue(assessment.strict_ok)
 

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from annie.types import MediaKind, ParsedTitle, WatchTarget
 
+FINAL_SEASON_RE = re.compile(r"\b(?:final|last)\s+season\b", re.I)
+
 
 def normalize(text: str) -> str:
     text = text.lower()
@@ -40,14 +42,10 @@ PREFERRED_GROUPS = {
 }
 
 
-def _merged_preferred_groups() -> dict[str, int]:
-    from annie.config import AnnieConfig
+def quality_score(title: str, release_group: str | None) -> int:
+    from annie.scoring import torrent_quality_score
 
-    groups = dict(PREFERRED_GROUPS)
-    cfg = AnnieConfig.load().catalog
-    for name in cfg.preferred_groups:
-        groups[name.lower()] = cfg.preferred_group_bonus
-    return groups
+    return torrent_quality_score(title, release_group)
 
 
 def resolution_tag(title: str) -> str | None:
@@ -56,29 +54,6 @@ def resolution_tag(title: str) -> str | None:
         if match:
             return match.group(0).lower().replace("4k", "2160p")
     return None
-
-
-def quality_score(title: str, release_group: str | None) -> int:
-    score = 0
-    for pattern, points in RESOLUTION_SCORES:
-        if pattern.search(title):
-            score += points
-            break
-    for pattern, points in SOURCE_SCORES:
-        if pattern.search(title):
-            score += points
-            break
-    for pattern, points in CODEC_SCORES:
-        if pattern.search(title):
-            score += points
-            break
-    if release_group:
-        score += _merged_preferred_groups().get(release_group.lower(), 0)
-    if re.search(r"\brepack\b", title, re.I):
-        score -= 5
-    if re.search(r"\bdual[\s-]?audio\b", title, re.I):
-        score += 2
-    return score
 
 
 MANGA_KEYWORDS = (
@@ -886,11 +861,27 @@ def query_tokens(query: str) -> list[str]:
     return [token for token in normalize(query).split() if len(token) > 1]
 
 
-def _token_matches(token: str, hay: str) -> bool:
+def _token_matches(token: str, hay: str, *, fuzzy: bool = False) -> bool:
     if len(token) < 2:
         return False
-    pattern = rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])"
-    return bool(re.search(pattern, hay))
+    if not fuzzy:
+        pattern = rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])"
+        return bool(re.search(pattern, hay))
+    from difflib import SequenceMatcher
+
+    words = hay.split()
+    if token in words:
+        return True
+    if len(token) < 4:
+        return False
+    for word in words:
+        if abs(len(word) - len(token)) > 2:
+            continue
+        if SequenceMatcher(None, token, word).ratio() >= 0.85:
+            return True
+    if len(token) >= 5 and token in hay:
+        return True
+    return False
 
 
 def series_match_score(parsed: ParsedTitle, query: str) -> int:
@@ -1038,3 +1029,74 @@ def match_episode_filename(
     if re.search(rf"[Ss]\d+[Ee]0?{episode}\b", stem, re.I):
         return True
     return _match_dash_episode(stem, episode)
+
+
+def parse_inline_target(query: str) -> tuple[str, dict]:
+    """Parse cibles inline (-s2e5, movie, ova…) depuis la query CLI."""
+    lowered = query.strip()
+    options = {
+        "season": None,
+        "episode": None,
+        "movie": False,
+        "movie_number": None,
+        "ova": False,
+        "special": False,
+        "batch": False,
+        "direct": False,
+    }
+
+    match = re.search(r"\bs(?P<season>\d{1,2})e(?P<episode>\d{1,3})\b", lowered, re.I)
+    if match:
+        base = lowered[: match.start()].strip()
+        options.update(
+            season=int(match.group("season")),
+            episode=int(match.group("episode")),
+            direct=True,
+        )
+        return base, options
+
+    match = re.search(r"\b(?P<season>\d{1,2})\s+(?P<episode>\d{1,3})\s*$", lowered)
+    if match:
+        base = lowered[: match.start()].strip()
+        options.update(
+            season=int(match.group("season")),
+            episode=int(match.group("episode")),
+            direct=True,
+        )
+        return base, options
+
+    match = re.search(r"\b(?:movie|film|m)\s*(?P<num>[1-9])\b", lowered, re.I)
+    if match:
+        base = re.sub(r"\b(?:movie|film|m)\s*[1-9]\b", "", lowered, flags=re.I).strip()
+        options.update(movie=True, movie_number=int(match.group("num")), direct=True)
+        return base, options
+
+    match = re.search(r"\bs(?P<season>\d{1,2})\b", lowered, re.I)
+    if match:
+        base = lowered[: match.start()].strip()
+        options["season"] = int(match.group("season"))
+        return base, options
+
+    if re.search(r"\b(?:movie|film)\b", lowered, re.I):
+        base = re.sub(r"\b(?:movie|film)\b", "", lowered, flags=re.I).strip()
+        options["movie"] = True
+        return base, options
+
+    if re.search(r"\bova\b", lowered, re.I):
+        base = re.sub(r"\bova\b", "", lowered, flags=re.I).strip()
+        options["ova"] = True
+        return base, options
+
+    return lowered, options
+
+
+def kind_from_options(options: dict) -> MediaKind | None:
+    if options.get("movie"):
+        return MediaKind.MOVIE
+    if options.get("ova"):
+        return MediaKind.OVA
+    if options.get("special"):
+        return MediaKind.SPECIAL
+    if options.get("batch"):
+        return MediaKind.BATCH
+    return None

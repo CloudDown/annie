@@ -5,19 +5,16 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
 
 from annie.settings import AnnieSettings
 from annie.config import AnnieConfig
 from annie.catalog import (
     build_catalog,
-    build_catalog_from_releases,
-    fill_catalog_gaps,
     fill_section_gaps,
+    gather_catalog,
     resolve_catalog_target,
-    scope_releases_for_target,
 )
-from annie.parsing import minimal_label
+from annie.parsing import kind_from_options, minimal_label, parse_inline_target
 from annie.scoring import pick_best, rank_entry
 from annie.types import MalRelease, MediaKind, MediaSection, ResultItem, WatchTarget
 from annie import allanime, metadata as meta
@@ -48,79 +45,6 @@ from annie.ui import (
     is_user_cancel,
 )
 from annie.watch_history import WatchHistory
-
-MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
-
-
-def parse_inline_target(query: str) -> tuple[str, dict]:
-    lowered = query.strip()
-    options = {
-        "season": None,
-        "episode": None,
-        "movie": False,
-        "movie_number": None,
-        "ova": False,
-        "special": False,
-        "batch": False,
-        "direct": False,
-    }
-
-    match = re.search(r"\bs(?P<season>\d{1,2})e(?P<episode>\d{1,3})\b", lowered, re.I)
-    if match:
-        base = lowered[: match.start()].strip()
-        options.update(
-            season=int(match.group("season")),
-            episode=int(match.group("episode")),
-            direct=True,
-        )
-        return base, options
-
-    match = re.search(r"\b(?P<season>\d{1,2})\s+(?P<episode>\d{1,3})\s*$", lowered)
-    if match:
-        base = lowered[: match.start()].strip()
-        options.update(
-            season=int(match.group("season")),
-            episode=int(match.group("episode")),
-            direct=True,
-        )
-        return base, options
-
-    match = re.search(r"\b(?:movie|film|m)\s*(?P<num>[1-9])\b", lowered, re.I)
-    if match:
-        base = re.sub(r"\b(?:movie|film|m)\s*[1-9]\b", "", lowered, flags=re.I).strip()
-        options.update(movie=True, movie_number=int(match.group("num")), direct=True)
-        return base, options
-
-    match = re.search(r"\bs(?P<season>\d{1,2})\b", lowered, re.I)
-    if match:
-        base = lowered[: match.start()].strip()
-        options["season"] = int(match.group("season"))
-        return base, options
-
-    if re.search(r"\b(?:movie|film)\b", lowered, re.I):
-        base = re.sub(r"\b(?:movie|film)\b", "", lowered, flags=re.I).strip()
-        options["movie"] = True
-        return base, options
-
-    if re.search(r"\bova\b", lowered, re.I):
-        base = re.sub(r"\bova\b", "", lowered, flags=re.I).strip()
-        options["ova"] = True
-        return base, options
-
-    return lowered, options
-
-
-def kind_from_options(options: dict) -> MediaKind | None:
-    if options.get("movie"):
-        return MediaKind.MOVIE
-    if options.get("ova"):
-        return MediaKind.OVA
-    if options.get("special"):
-        return MediaKind.SPECIAL
-    if options.get("batch"):
-        return MediaKind.BATCH
-    return None
-
 
 MOVIE_NUMBER_RE = re.compile(r"\bmovie\s*(?P<num>[1-9])\b", re.I)
 
@@ -187,200 +111,6 @@ def _pick_for_options(entries, query: str, options: dict, config: AnnieConfig):
         return ranked[0][1], ranked[0][2]
 
     return pick_best(entries, target)
-
-
-def _warm_nyaa(query: str, *, category: str, filter_code: str) -> None:
-    if not query:
-        return
-    try:
-        search(query, category=category, filter_code=filter_code)
-    except Exception:
-        pass
-
-
-def gather_catalog(
-    raw_query: str, config: AnnieConfig, **overrides
-) -> tuple[list, dict]:
-    query, options = parse_inline_target(raw_query)
-    category = overrides.get("category") or config.category
-    filter_code = overrides.get("filter_code") or config.filter_code
-    fill_gaps = overrides.get("fill_gaps", config.catalog.fill_gaps_on_search)
-    target_season = overrides.get("target_season", options.get("season"))
-    target_kind = overrides.get("target_kind", kind_from_options(options))
-    confirm_anime = overrides.get("confirm_anime")
-    if confirm_anime is None:
-        confirm_anime = bool(sys.stdin.isatty() and fzf_available())
-    preselected = overrides.get("preselected")
-    preselected_release: MalRelease | None = overrides.get("preselected_release")
-
-    # Show AllAnime déjà choisi → Nyaa scopé à une seule release.
-    if preselected_release is not None and meta.metadata_enabled(config):
-        try:
-            with ThreadPoolExecutor(max_workers=config.ui.mal_pool_workers) as pool:
-                for warm_q in preselected_release.nyaa_queries[:12]:
-                    if warm_q:
-                        pool.submit(
-                            _warm_nyaa,
-                            warm_q,
-                            category=category,
-                            filter_code=filter_code,
-                        )
-                catalog = build_catalog_from_releases(
-                    [preselected_release],
-                    search=search,
-                    category=category,
-                    filter_code=filter_code,
-                    skip_recap_movies=config.skip_recap_movies,
-                    pool=pool,
-                    fill_gaps=False,
-                )
-                if catalog:
-                    if fill_gaps:
-                        fill_catalog_gaps(
-                            catalog,
-                            search=search,
-                            category=category,
-                            filter_code=filter_code,
-                            skip_recap_movies=config.skip_recap_movies,
-                            pool=pool,
-                        )
-                    return catalog, options
-        except Exception as exc:
-            print(
-                stylize(
-                    f"annie: catalogue AllAnime échoué ({exc}), fallback",
-                    C.MUTED,
-                ),
-                file=sys.stderr,
-                flush=True,
-            )
-
-    if meta.metadata_enabled(config):
-        try:
-            with ThreadPoolExecutor(max_workers=config.ui.mal_pool_workers) as pool:
-                if preselected is not None:
-                    chosen = preselected
-                    pool.submit(
-                        _warm_nyaa, query, category=category, filter_code=filter_code
-                    )
-                else:
-                    candidates_future = pool.submit(
-                        meta.search_anime, query, config=config
-                    )
-                    pool.submit(
-                        _warm_nyaa, query, category=category, filter_code=filter_code
-                    )
-
-                    candidates = candidates_future.result()
-                    chosen = None
-                    if candidates:
-                        if (
-                            confirm_anime
-                            and config.metadata.confirm_ambiguous
-                            and meta.is_ambiguous_pick(candidates, query)
-                        ):
-                            chosen = pick_anime_candidate(candidates, query)
-                        if chosen is None:
-                            chosen = meta.pick_candidate(candidates, query)
-                if chosen is not None:
-                    options["mal_titles"] = tuple(
-                        title
-                        for title in (
-                            chosen.title_english,
-                            chosen.title,
-                            chosen.title_japanese,
-                            *chosen.synonyms[:4],
-                        )
-                        if title
-                    )
-                    for warm_q in dict.fromkeys(
-                        [
-                            chosen.title_english or "",
-                            chosen.title,
-                            chosen.title_japanese or "",
-                            *chosen.synonyms[:6],
-                        ]
-                    ):
-                        if warm_q:
-                            pool.submit(
-                                _warm_nyaa,
-                                warm_q,
-                                category=category,
-                                filter_code=filter_code,
-                            )
-
-                    from_anilist = chosen.anilist_id is not None
-
-                    def on_root(root_data: dict) -> None:
-                        for hint in meta.relation_nyaa_hints(
-                            root_data, from_anilist=from_anilist
-                        ):
-                            pool.submit(
-                                _warm_nyaa,
-                                hint,
-                                category=category,
-                                filter_code=filter_code,
-                            )
-
-                    releases = pool.submit(
-                        meta.releases_for_anime,
-                        chosen,
-                        query=query,
-                        skip_recap=config.skip_recap_movies,
-                        on_root=on_root,
-                        pool=pool,
-                        config=config,
-                    ).result()
-                    if releases:
-                        releases = scope_releases_for_target(
-                            releases,
-                            season=target_season,
-                            kind=target_kind,
-                        )
-                        catalog = build_catalog_from_releases(
-                            releases,
-                            search=search,
-                            category=category,
-                            filter_code=filter_code,
-                            skip_recap_movies=config.skip_recap_movies,
-                            pool=pool,
-                            fill_gaps=False,
-                        )
-                        if catalog:
-                            if fill_gaps:
-                                fill_catalog_gaps(
-                                    catalog,
-                                    search=search,
-                                    category=category,
-                                    filter_code=filter_code,
-                                    skip_recap_movies=config.skip_recap_movies,
-                                    pool=pool,
-                                )
-                            return catalog, options
-        except Exception as exc:
-            print(
-                stylize(
-                    f"annie: métadonnées indisponibles ({exc}), fallback Nyaa",
-                    C.MUTED,
-                ),
-                file=sys.stderr,
-                flush=True,
-            )
-
-    entries = search(query, category=category, filter_code=filter_code)
-    if not entries:
-        return [], options
-
-    kind = kind_from_options(options)
-    catalog = build_catalog(
-        entries,
-        query,
-        season=options.get("season"),
-        episode=options.get("episode"),
-        kind=kind if options.get("season") or options.get("episode") or kind else None,
-        skip_recap_movies=config.skip_recap_movies,
-    )
-    return catalog, options
 
 
 def resolve_anime_for_query(

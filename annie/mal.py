@@ -7,16 +7,19 @@ import time
 import urllib.error
 import urllib.parse
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from annie.cache import read_json, read_json_stale, write_json
+from annie.api_cache import ApiDiskCache
+from annie.cache import read_json, write_json
 from annie.catalog import is_recap_movie
+from annie.franchise_walk import drain_franchise_queue
 from annie.net import TokenBucket, fetch_json
-from annie.parsing import normalize
+from annie.parsing import _token_matches as parsing_token_matches, normalize
 from annie.paths import cache_dir
+from annie.releases import extra_release, movie_release, tv_release
 from annie.types import MalRelease, MediaKind
 
 JIKAN_BASE = "https://api.jikan.moe/v4"
@@ -29,7 +32,7 @@ DISK_CACHE_TTL = 7 * 24 * 3600
 def _mal_cfg():
     from annie.config import AnnieConfig
 
-    return AnnieConfig.load().mal
+    return AnnieConfig.load_cached().mal
 
 
 def _mal_cache_ttl() -> int:
@@ -101,6 +104,7 @@ _COLON_CONTINUATION_RE = re.compile(
 )
 
 _response_cache: dict[str, dict] = {}
+_api_cache = ApiDiskCache(DISK_CACHE_DIR, ttl=DISK_CACHE_TTL, memory=_response_cache)
 
 _jikan_limiter = TokenBucket(rate=4.0, burst=5)
 
@@ -215,20 +219,8 @@ def fetch_top_anime(
     return entries[:limit]
 
 
-def _disk_cache_path(path: str) -> Path:
-    safe = path.strip("/").replace("/", "_")
-    return DISK_CACHE_DIR / f"{safe}.json"
-
-
 def _cached_payload(path: str) -> dict | None:
-    cached = _response_cache.get(path)
-    if cached is not None:
-        return cached
-    disk_cached = read_json(_disk_cache_path(path), ttl=_mal_cache_ttl())
-    if disk_cached is not None:
-        _response_cache[path] = disk_cached
-        return disk_cached
-    return None
+    return _api_cache.get(path, ttl=_mal_cache_ttl())
 
 
 def _get(path: str, *, retries: int = 4) -> dict:
@@ -242,29 +234,24 @@ def _get(path: str, *, retries: int = 4) -> dict:
         _jikan_limiter.acquire()
         try:
             payload = fetch_json(url, user_agent=USER_AGENT, timeout=25)
-            _response_cache[path] = payload
-            write_json(_disk_cache_path(path), payload)
-            return payload
+            return _api_cache.store(path, payload)
         except urllib.error.HTTPError as exc:
             last_error = exc
             if exc.code == 429 and attempt < retries - 1:
                 time.sleep(1.5 * (attempt + 1))
                 continue
-            stale = read_json_stale(_disk_cache_path(path))
+            stale = _api_cache.get_stale(path)
             if isinstance(stale, dict):
-                _response_cache[path] = stale
                 return stale
             raise RuntimeError(f"MAL API error ({exc.code})") from exc
         except urllib.error.URLError as exc:
-            stale = read_json_stale(_disk_cache_path(path))
+            stale = _api_cache.get_stale(path)
             if isinstance(stale, dict):
-                _response_cache[path] = stale
                 return stale
             raise RuntimeError(f"MAL API unreachable: {exc.reason}") from exc
     if last_error:
-        stale = read_json_stale(_disk_cache_path(path))
+        stale = _api_cache.get_stale(path)
         if isinstance(stale, dict):
-            _response_cache[path] = stale
             return stale
         raise RuntimeError("MAL API error") from last_error
     raise RuntimeError("MAL API error")
@@ -409,22 +396,7 @@ def _phrase_in(phrase: str, haystack: str) -> bool:
 
 def _token_matches(token: str, haystack: str) -> bool:
     """Mot entier exact, ou fuzzy / sous-chaîne pour tokens assez longs."""
-    if not token or len(token) < 2:
-        return False
-    words = haystack.split()
-    if token in words:
-        return True
-    if len(token) < 4:
-        return False
-    for word in words:
-        if abs(len(word) - len(token)) > 2:
-            continue
-        if SequenceMatcher(None, token, word).ratio() >= 0.85:
-            return True
-    # Sous-chaîne multi-caractères seulement si token long (évite oshi⊂hoshi).
-    if len(token) >= 5 and token in haystack:
-        return True
-    return False
+    return parsing_token_matches(token, haystack, fuzzy=True)
 
 
 def _significant_title_tokens(anime: MalAnime) -> set[str]:
@@ -779,75 +751,28 @@ def collect_franchise(
     except Exception:
         return []
 
-    def _run_batch(
-        batch: list[tuple[int, bool, str]], executor: ThreadPoolExecutor
-    ) -> None:
-        if not batch:
-            return
-        cached: list[tuple[dict, bool, str]] = []
-        pending: list[tuple[int, bool, str]] = []
-        for mal_id, from_recap, via_relation in batch:
-            if _mal_cached(mal_id):
-                try:
-                    cached.append((_fetch_anime_full(mal_id), from_recap, via_relation))
-                except Exception:
-                    pending.append((mal_id, from_recap, via_relation))
-            else:
-                pending.append((mal_id, from_recap, via_relation))
+    def _ingest(data: dict, from_recap: bool, via_relation: str) -> None:
+        _ingest_franchise_node(
+            data,
+            from_recap=from_recap,
+            via_relation=via_relation,
+            seen=seen,
+            recap_ids=recap_ids,
+            queue=queue,
+            queued=queued,
+        )
 
-        for data, from_recap, via_relation in cached:
-            _ingest_franchise_node(
-                data,
-                from_recap=from_recap,
-                via_relation=via_relation,
-                seen=seen,
-                recap_ids=recap_ids,
-                queue=queue,
-                queued=queued,
-            )
-
-        if not pending:
-            return
-
-        futures: dict[Future[dict], tuple[int, bool, str]] = {
-            executor.submit(_fetch_anime_full, mal_id): (
-                mal_id,
-                from_recap,
-                via_relation,
-            )
-            for mal_id, from_recap, via_relation in pending
-        }
-        for future in as_completed(futures):
-            mal_id, from_recap, via_relation = futures[future]
-            try:
-                data = future.result()
-            except Exception:
-                continue
-            _ingest_franchise_node(
-                data,
-                from_recap=from_recap,
-                via_relation=via_relation,
-                seen=seen,
-                recap_ids=recap_ids,
-                queue=queue,
-                queued=queued,
-            )
-
-    def _drain_queue(executor: ThreadPoolExecutor) -> None:
-        while queue and len(seen) < max_nodes:
-            batch: list[tuple[int, bool, str]] = []
-            while queue and len(seen) + len(batch) < max_nodes:
-                mal_id, from_recap, via_relation = queue.pop(0)
-                if mal_id in seen:
-                    continue
-                batch.append((mal_id, from_recap, via_relation))
-            _run_batch(batch, executor)
-
-    if pool is None:
-        with ThreadPoolExecutor(max_workers=_mal_cfg().parallel) as local_pool:
-            _drain_queue(local_pool)
-    else:
-        _drain_queue(pool)
+    drain_franchise_queue(
+        queue=queue,
+        queued=queued,
+        seen=seen,
+        max_nodes=max_nodes,
+        pool=pool,
+        workers=_mal_cfg().parallel,
+        is_cached=_mal_cached,
+        fetch=_fetch_anime_full,
+        ingest=_ingest,
+    )
 
     return list(seen.values())
 
@@ -1033,10 +958,9 @@ def franchise_to_releases(
             if value and value not in queries:
                 queries.append(value)
         releases.append(
-            MalRelease(
+            tv_release(
                 mal_id=anime.mal_id,
                 label=_season_release_label(index, anime),
-                kind=MediaKind.EPISODE,
                 season=index,
                 episode_count=anime.episodes,
                 nyaa_queries=queries,
@@ -1048,14 +972,12 @@ def franchise_to_releases(
 
     for index, anime in enumerate(movies, start=1):
         releases.append(
-            MalRelease(
+            movie_release(
                 mal_id=anime.mal_id,
                 label=_short_movie_label(anime.title_english or anime.title),
-                kind=MediaKind.MOVIE,
-                season=None,
-                episode_count=anime.episodes,
                 nyaa_queries=nyaa_queries_for(anime, user_query=user_query),
                 sort_key=(15 + index, anime.title.lower()),
+                episode_count=anime.episodes,
             )
         )
 
@@ -1065,14 +987,13 @@ def franchise_to_releases(
         if kind == MediaKind.OVA:
             label = f"OVA · {label}"
         releases.append(
-            MalRelease(
+            extra_release(
                 mal_id=anime.mal_id,
                 label=label,
                 kind=kind,
-                season=None,
-                episode_count=anime.episodes,
                 nyaa_queries=nyaa_queries_for(anime, user_query=user_query),
                 sort_key=(25, anime.title.lower()),
+                episode_count=anime.episodes,
             )
         )
 

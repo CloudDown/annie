@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import ROOT, print  # noqa: E402
 
-from annie.cli import gather_catalog
+from annie.catalog import gather_catalog
 from annie.config import AnnieConfig
 from annie.parsing import is_franchise_pack_with_movie, parse_title
 from annie.types import MediaKind

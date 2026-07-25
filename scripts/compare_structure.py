@@ -14,10 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import ROOT, print  # noqa: E402
 
 from annie import allanime, metadata as meta
-from annie.cli import gather_catalog
+from annie.catalog import gather_catalog
 from annie.config import AnnieConfig
 from annie.mal import franchise_to_releases, pick_candidate
 from annie.types import MediaKind
+
+from _metadata_compare import summarize_releases
 
 OUT = ROOT / "scripts" / "results" / "structure_compare.json"
 
@@ -40,32 +42,6 @@ QUERIES = [
 ]
 
 
-def _summarize_releases(releases) -> dict:
-    tv = [
-        {
-            "season": r.season,
-            "eps": r.episode_count,
-            "label": r.label[:70],
-        }
-        for r in releases
-        if r.kind == MediaKind.EPISODE
-    ]
-    movies = [{"label": r.label[:70], "eps": r.episode_count} for r in releases if r.kind == MediaKind.MOVIE]
-    extras = [
-        {"kind": r.kind.name, "label": r.label[:60]}
-        for r in releases
-        if r.kind not in {MediaKind.EPISODE, MediaKind.MOVIE}
-    ]
-    return {
-        "tv": tv,
-        "movies": movies,
-        "extras": extras,
-        "n_tv": len(tv),
-        "n_movies": len(movies),
-        "n_extras": len(extras),
-    }
-
-
 def compare_one(query: str, config: AnnieConfig) -> dict:
     t0 = time.time()
     row: dict = {"query": query}
@@ -80,14 +56,14 @@ def compare_one(query: str, config: AnnieConfig) -> dict:
 
         # AllAnime structure
         aa = allanime.releases_for_query(query, chosen=chosen)
-        row["allanime"] = _summarize_releases(aa)
+        row["allanime"] = summarize_releases(aa)
 
         # Franchise graph (AniList/MAL)
         fr = meta.collect_franchise(chosen, config=config)
         mal = franchise_to_releases(
             fr, skip_recap=False, root_id=chosen.mal_id, user_query=query
         )
-        row["franchise"] = _summarize_releases(mal)
+        row["franchise"] = summarize_releases(mal)
 
         # Catalog live avec structure allanime (défaut)
         cfg_aa = config

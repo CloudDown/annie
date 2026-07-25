@@ -5,11 +5,11 @@ from __future__ import annotations
 import time
 import urllib.error
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
-from annie.cache import read_json, read_json_stale, write_json
+from annie.api_cache import ApiDiskCache
 from annie.catalog import is_recap_movie
+from annie.franchise_walk import drain_franchise_queue
 from annie.mal import (
     FRANCHISE_EXPAND_RELATIONS,
     MalAnime,
@@ -96,6 +96,7 @@ query ($id: Int) {{
 """
 
 _response_cache: dict[str, dict] = {}
+_api_cache = ApiDiskCache(DISK_CACHE_DIR, ttl=DISK_CACHE_TTL, memory=_response_cache)
 
 
 _anilist_limiter = TokenBucket(rate=0.9, burst=3)
@@ -104,33 +105,19 @@ _anilist_limiter = TokenBucket(rate=0.9, burst=3)
 def _meta_cfg():
     from annie.config import AnnieConfig
 
-    return AnnieConfig.load().metadata
+    return AnnieConfig.load_cached().metadata
 
 
 def _cache_ttl() -> int:
     return _meta_cfg().cache_ttl
 
 
-def _disk_path(key: str) -> Path:
-    safe = key.strip("/").replace("/", "_").replace(" ", "_")
-    return DISK_CACHE_DIR / f"{safe}.json"
-
-
 def _cached(key: str) -> dict | None:
-    hit = _response_cache.get(key)
-    if hit is not None:
-        return hit
-    disk = read_json(_disk_path(key), ttl=_cache_ttl())
-    if disk is not None:
-        _response_cache[key] = disk
-        return disk
-    return None
+    return _api_cache.get(key, ttl=_cache_ttl())
 
 
 def _store(key: str, payload: dict) -> dict:
-    _response_cache[key] = payload
-    write_json(_disk_path(key), payload)
-    return payload
+    return _api_cache.store(key, payload)
 
 
 def _graphql(query: str, variables: dict, *, cache_key: str) -> dict:
@@ -160,22 +147,19 @@ def _graphql(query: str, variables: dict, *, cache_key: str) -> dict:
             if exc.code == 429 and attempt < 3:
                 time.sleep(3.0 * (attempt + 1))
                 continue
-            stale = read_json_stale(_disk_path(cache_key))
+            stale = _api_cache.get_stale(cache_key)
             if isinstance(stale, dict):
-                _response_cache[cache_key] = stale
                 return stale
             raise RuntimeError(f"AniList API error ({exc.code})") from exc
         except urllib.error.URLError as exc:
-            stale = read_json_stale(_disk_path(cache_key))
+            stale = _api_cache.get_stale(cache_key)
             if isinstance(stale, dict):
-                _response_cache[cache_key] = stale
                 return stale
             raise RuntimeError(f"AniList unreachable: {exc.reason}") from exc
         except RuntimeError as exc:
             last_error = exc
-            stale = read_json_stale(_disk_path(cache_key))
+            stale = _api_cache.get_stale(cache_key)
             if isinstance(stale, dict):
-                _response_cache[cache_key] = stale
                 return stale
             if attempt < 3:
                 time.sleep(0.8 * (attempt + 1))
@@ -344,74 +328,28 @@ def collect_franchise(
     except Exception:
         return []
 
-    def _run_batch(
-        batch: list[tuple[int, bool, str]], executor: ThreadPoolExecutor
-    ) -> None:
-        if not batch:
-            return
-        cached: list[tuple[dict, bool, str]] = []
-        pending: list[tuple[int, bool, str]] = []
-        for anilist_id, from_recap, via_relation in batch:
-            if _media_cached(anilist_id):
-                try:
-                    cached.append((_fetch_media(anilist_id), from_recap, via_relation))
-                except Exception:
-                    pending.append((anilist_id, from_recap, via_relation))
-            else:
-                pending.append((anilist_id, from_recap, via_relation))
-
-        for data, from_recap, via_relation in cached:
-            _ingest_node(
-                data,
-                from_recap=from_recap,
-                via_relation=via_relation,
-                seen=seen,
-                queue=queue,
-                queued=queued,
-            )
-
-        if not pending:
-            return
-
-        futures: dict[Future[dict], tuple[int, bool, str]] = {
-            executor.submit(_fetch_media, anilist_id): (
-                anilist_id,
-                from_recap,
-                via_relation,
-            )
-            for anilist_id, from_recap, via_relation in pending
-        }
-        for future in as_completed(futures):
-            anilist_id, from_recap, via_relation = futures[future]
-            try:
-                data = future.result()
-            except Exception:
-                continue
-            _ingest_node(
-                data,
-                from_recap=from_recap,
-                via_relation=via_relation,
-                seen=seen,
-                queue=queue,
-                queued=queued,
-            )
-
-    def _drain(executor: ThreadPoolExecutor) -> None:
-        while queue and len(seen) < max_nodes:
-            batch: list[tuple[int, bool, str]] = []
-            while queue and len(seen) + len(batch) < max_nodes:
-                anilist_id, from_recap, via_relation = queue.pop(0)
-                if anilist_id in seen:
-                    continue
-                batch.append((anilist_id, from_recap, via_relation))
-            _run_batch(batch, executor)
+    def _ingest(data: dict, from_recap: bool, via_relation: str) -> None:
+        _ingest_node(
+            data,
+            from_recap=from_recap,
+            via_relation=via_relation,
+            seen=seen,
+            queue=queue,
+            queued=queued,
+        )
 
     workers = max(2, min(8, _meta_cfg().parallel))
-    if pool is None:
-        with ThreadPoolExecutor(max_workers=workers) as local:
-            _drain(local)
-    else:
-        _drain(pool)
+    drain_franchise_queue(
+        queue=queue,
+        queued=queued,
+        seen=seen,
+        max_nodes=max_nodes,
+        pool=pool,
+        workers=workers,
+        is_cached=_media_cached,
+        fetch=_fetch_media,
+        ingest=_ingest,
+    )
 
     return list(seen.values())
 

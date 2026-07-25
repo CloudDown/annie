@@ -315,15 +315,15 @@ function Annie-CmdLines {
         "set `"ROOT=$RootEsc`""
         'set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"'
         'if exist "%VENV_PY%" ('
-        '  call "%VENV_PY%" "%ROOT%\annie.py" %*'
+        '  call "%VENV_PY%" "%ROOT%\bin\annie.py" %*'
         '  exit /b %ERRORLEVEL%'
         ')'
         "set `"PY=$PythonEsc`""
         'if exist "%PY%" ('
-        '  call "%PY%" "%ROOT%\annie.py" %*'
+        '  call "%PY%" "%ROOT%\bin\annie.py" %*'
         '  exit /b %ERRORLEVEL%'
         ')'
-        'echo Python introuvable. Relancez install-windows.bat'
+        'echo Python introuvable. Relancez packaging\windows\install-windows.bat'
         'exit /b 1'
     )
 }
@@ -715,7 +715,7 @@ Write-Host " Installation terminee."
 Write-Host ""
 Write-Host " Lancer Annie tout de suite :"
 Write-Host "   annie"
-Write-Host "   .\annie.cmd"
+Write-Host "   .\bin\annie.cmd"
 Write-Host ""
 Write-Host " Nouveau terminal : fermez celui-ci, rouvrez, puis : annie"
 Write-Host "========================================"

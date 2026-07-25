@@ -17,7 +17,7 @@ dist/
 .ruff_cache/
 
 # Local agent context (not part of the app)
-AGENTS.md
+docs/AGENTS.md
 
 # Artefacts de validation / debug (scripts eux-mêmes restent versionnables)
 scripts/results/

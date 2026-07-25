@@ -490,7 +490,7 @@ def fzf_available() -> bool:
 
 def fzf_install_hint() -> str:
     if sys.platform == "win32":
-        return "relancez install-windows.bat  (ou : winget install junegunn.fzf)"
+        return "relancez packaging\\windows\\install-windows.bat  (ou : winget install junegunn.fzf)"
     if sys.platform == "darwin":
         return "brew install fzf"
     return "pacman -S fzf  (Debian/Ubuntu: sudo apt install fzf)"

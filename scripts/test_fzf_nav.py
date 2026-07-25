@@ -162,35 +162,14 @@ def _synthetic_catalog() -> list[MediaSection]:
 
 
 def _fixture_catalog(name: str) -> list[MediaSection]:
-    from annie.catalog import build_catalog_from_releases
-    from tests.helpers import entries_from_fixture, load_fixture
+    from tests.helpers import catalog_from_fixture
 
-    fixture = load_fixture(name)
-    entries = entries_from_fixture(fixture)
-    releases = [
-        mal_release(
-            mal_id=row["mal_id"],
-            season=row["season"],
-            episode_count=row["episode_count"],
-            label=row["label"],
-            queries=[fixture["query"]],
-        )
-        for row in fixture["releases"]
-    ]
-
-    def fake_search(query: str, **kwargs):
-        return entries
-
-    return build_catalog_from_releases(
-        releases,
-        search=fake_search,
-        category="1_2",
-        filter_code="0",
-    )
+    sections, _ = catalog_from_fixture(name)
+    return sections
 
 
 def _live_catalog(query: str) -> list[MediaSection]:
-    from annie.cli import gather_catalog
+    from annie.catalog import gather_catalog
     from annie.config import AnnieConfig
 
     catalog, _ = gather_catalog(query, AnnieConfig.load(), confirm_anime=False)

@@ -1,7 +1,7 @@
 .PHONY: install dev run test test-offline debug-rezero clean help
 
 UV ?= uv
-ANNIE := ./annie.py
+ANNIE := ./bin/annie.py
 
 help:
 	@echo "Targets:"

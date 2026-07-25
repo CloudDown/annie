@@ -19,7 +19,14 @@ from annie.catalog import (
     scope_releases_for_target,
 )
 from annie.types import MalRelease, MediaKind, MediaSection
-from tests.helpers import entries_from_fixture, load_fixture, mal_release, nyaa_entry, result_item
+from tests.helpers import (
+    entries_from_fixture,
+    load_fixture,
+    mal_release,
+    movie_release,
+    nyaa_entry,
+    result_item,
+)
 
 
 class ReZeroCatalogFixtureTests(unittest.TestCase):
@@ -422,14 +429,8 @@ class MovieSectionFilterTests(unittest.TestCase):
             "[Cerberus] Konosuba S1 + S2 + OVA + Kurenai Densetsu Movie [BD]"
         )
         self.assertTrue(is_movie_noise(pack))
-        release = MalRelease(
-            mal_id=1,
-            label="Legend of Crimson",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=["KonoSuba Legend of Crimson", "Kurenai Densetsu"],
-            sort_key=(15, "legend"),
+        release = movie_release(
+            queries=["KonoSuba Legend of Crimson", "Kurenai Densetsu"],
         )
         item = result_item(pack, score=10.0)
         self.assertFalse(_movie_belongs_to_release(item, release))
@@ -438,18 +439,12 @@ class MovieSectionFilterTests(unittest.TestCase):
         from annie.catalog import _movie_belongs_to_release
 
         title = "[EMBER] KONOSUBA Legend of Crimson - Movie (2019) [BDRip]"
-        release = MalRelease(
-            mal_id=1,
-            label="Legend of Crimson",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=[
+        release = movie_release(
+            queries=[
                 "konosuba",
                 "KonoSuba Legend of Crimson",
                 "Kurenai Densetsu",
             ],
-            sort_key=(15, "legend"),
         )
         item = result_item(title, score=10.0)
         self.assertTrue(_movie_belongs_to_release(item, release))
@@ -457,19 +452,13 @@ class MovieSectionFilterTests(unittest.TestCase):
     def test_rejects_spinoff_movie(self) -> None:
         from annie.catalog import _movie_belongs_to_release
 
-        release = MalRelease(
-            mal_id=1,
-            label="Legend of Crimson",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=[
+        release = movie_release(
+            queries=[
                 "KonoSuba",
                 "KonoSuba: God's Blessing on This Wonderful World!",
                 "KonoSuba Legend of Crimson",
                 "Kurenai Densetsu",
             ],
-            sort_key=(15, "legend"),
         )
         spinoff = result_item(
             "[Judas] KonoSuba An Explosion on This Wonderful World Movie [BD]",
@@ -481,18 +470,13 @@ class MovieSectionFilterTests(unittest.TestCase):
     def test_rejects_light_novel_pack(self) -> None:
         from annie.catalog import _movie_belongs_to_release, is_movie_noise
 
-        release = MalRelease(
-            mal_id=1,
+        release = movie_release(
             label="KONOSUBA -God's blessing on this wonderful world!- Legend of Crimson",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=[
+            queries=[
                 "konosuba",
                 "KonoSuba Legend of Crimson",
                 "Konosuba Movie",
             ],
-            sort_key=(15, "legend"),
         )
         ln = result_item(
             "Konosuba - God's Blessing on This Wonderful World! [Yen Press] [LuCaZ]",
@@ -504,13 +488,10 @@ class MovieSectionFilterTests(unittest.TestCase):
     def test_rejects_wrong_sao_movie(self) -> None:
         from annie.catalog import _movie_belongs_to_release
 
-        release = MalRelease(
+        release = movie_release(
             mal_id=3,
             label="Ordinal Scale",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=[
+            queries=[
                 "sword art online",
                 "Sword Art Online the Movie: Ordinal Scale",
                 "Sword Art Online the Movie",
@@ -534,13 +515,10 @@ class MovieSectionFilterTests(unittest.TestCase):
     def test_rejects_wrong_franchise_movie(self) -> None:
         from annie.catalog import _movie_belongs_to_release
 
-        release = MalRelease(
+        release = movie_release(
             mal_id=2,
             label="Violet Evergarden the Movie",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=[
+            queries=[
                 "Violet Evergarden",
                 "Violet Evergarden the Movie",
             ],
@@ -589,15 +567,7 @@ class MovieSectionFilterTests(unittest.TestCase):
         tv.episodes[1] = result_item(
             "[SubsPlease] Konosuba - 01 (1080p).mkv", score=10.0
         )
-        release = MalRelease(
-            mal_id=99,
-            label="Legend of Crimson",
-            kind=MediaKind.MOVIE,
-            season=None,
-            episode_count=1,
-            nyaa_queries=["KonoSuba Legend of Crimson"],
-            sort_key=(15, "legend"),
-        )
+        release = movie_release(queries=["KonoSuba Legend of Crimson"])
         picked = _pick_section_for_release([tv], release)
         self.assertIsNotNone(picked)
         assert picked is not None

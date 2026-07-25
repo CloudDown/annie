@@ -7,6 +7,11 @@ from dataclasses import dataclass, field
 
 from annie.nyaa import NyaaEntry
 from annie.parsing import (
+    CODEC_SCORES,
+    FINAL_SEASON_RE,
+    PREFERRED_GROUPS,
+    RESOLUTION_SCORES,
+    SOURCE_SCORES,
     is_manga,
     parse_title,
     target_match_score,
@@ -15,18 +20,45 @@ from annie.parsing import (
 from annie.season_coherence import assess_season_coherence, format_coherence_issue
 from annie.types import MediaKind, MediaSection, ParsedTitle, ResultItem, WatchTarget
 
-_FINAL_SEASON_FLAG_RE = re.compile(r"\b(?:final|last)\s+season\b", re.I)
 
-MIN_SEEDERS_STRICT = 10
-MIN_SEEDERS_RELAXED = 3
-MIN_QUALITY_STRICT = 26
-MIN_QUALITY_RELAXED = 12
+def _merged_preferred_groups() -> dict[str, int]:
+    from annie.config import AnnieConfig
+
+    groups = dict(PREFERRED_GROUPS)
+    cfg = AnnieConfig.load_cached().catalog
+    for name in cfg.preferred_groups:
+        groups[name.lower()] = cfg.preferred_group_bonus
+    return groups
+
+
+def torrent_quality_score(title: str, release_group: str | None) -> int:
+    """Score qualité torrent (résolution, source, codec, groupe)."""
+    score = 0
+    for pattern, points in RESOLUTION_SCORES:
+        if pattern.search(title):
+            score += points
+            break
+    for pattern, points in SOURCE_SCORES:
+        if pattern.search(title):
+            score += points
+            break
+    for pattern, points in CODEC_SCORES:
+        if pattern.search(title):
+            score += points
+            break
+    if release_group:
+        score += _merged_preferred_groups().get(release_group.lower(), 0)
+    if re.search(r"\brepack\b", title, re.I):
+        score -= 5
+    if re.search(r"\bdual[\s-]?audio\b", title, re.I):
+        score += 2
+    return score
 
 
 def _catalog_thresholds() -> tuple[int, int, int, int]:
     from annie.config import AnnieConfig
 
-    cfg = AnnieConfig.load().catalog
+    cfg = AnnieConfig.load_cached().catalog
     return (
         cfg.min_seeders_strict,
         cfg.min_seeders_relaxed,
@@ -246,7 +278,7 @@ def assess_episode_item(
         and effective_season >= 2
         and not title_marks_season(item.entry.title, effective_season)
         and item.parsed.source_episode is None
-        and not _FINAL_SEASON_FLAG_RE.search(item.entry.title)
+        and not FINAL_SEASON_RE.search(item.entry.title)
     ):
         flags.append("season_unmarked")
 
@@ -288,7 +320,7 @@ def assess_tv_catalog(
     if coverage_relaxed is None:
         from annie.config import AnnieConfig
 
-        coverage_relaxed = AnnieConfig.load().catalog.coverage_relaxed
+        coverage_relaxed = AnnieConfig.load_cached().catalog.coverage_relaxed
     issues: list[str] = []
     mal_by_season = {index + 1: count for index, (_, count) in enumerate(mal_tv)}
     season_reports: list[SeasonQualityReport] = []

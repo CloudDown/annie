@@ -11,10 +11,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import print  # noqa: E402
 
-from annie.catalog import build_catalog, build_catalog_from_releases
+from annie.catalog import build_catalog, gather_catalog
 from annie.config import AnnieConfig
 from annie.types import MediaKind
-from tests.helpers import entries_from_fixture, load_fixture, mal_release
+from tests.helpers import catalog_from_fixture, load_fixture
 
 
 def print_catalog(sections) -> None:
@@ -37,31 +37,11 @@ def print_catalog(sections) -> None:
 
 
 def run_fixture(name: str) -> int:
-    fixture = load_fixture(name)
-    entries = entries_from_fixture(fixture)
-    releases = [
-        mal_release(
-            mal_id=row["mal_id"],
-            season=row["season"],
-            episode_count=row["episode_count"],
-            label=row["label"],
-            queries=[fixture["query"]],
-        )
-        for row in fixture["releases"]
-    ]
-
-    def fake_search(query: str, **kwargs):
-        return entries
-
-    sections = build_catalog_from_releases(
-        releases,
-        search=fake_search,
-        category="1_2",
-        filter_code="0",
-    )
-    print(f"Fixture: {name} ({len(entries)} entrées simulées)")
+    sections, meta = catalog_from_fixture(name)
+    print(f"Fixture: {meta['fixture']} ({meta['entries']} entrées simulées)")
     print_catalog(sections)
 
+    fixture = load_fixture(name if name.endswith(".json") else f"{name}.json")
     issues: list[str] = []
     by_season = {s.season: s for s in sections if s.kind == MediaKind.EPISODE}
     for season_str, rules in fixture.get("expectations", {}).items():
@@ -89,8 +69,6 @@ def run_fixture(name: str) -> int:
 
 def run_live(query: str, *, use_mal: bool) -> int:
     if use_mal:
-        from annie.cli import gather_catalog
-
         config = AnnieConfig.load()
         sections, _ = gather_catalog(query, config)
         print(f"Catalogue MAL+Nyaa: {query}")

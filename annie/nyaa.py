@@ -40,7 +40,7 @@ NUMERIC_CELL_RE = re.compile(r'<td class="text-center">\s*(\d+)\s*</td>')
 def _nyaa_cfg():
     from annie.config import AnnieConfig
 
-    return AnnieConfig.load().nyaa
+    return AnnieConfig.load_cached().nyaa
 
 
 def _disk_cache_ttl() -> int:

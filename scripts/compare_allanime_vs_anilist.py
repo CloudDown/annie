@@ -26,7 +26,7 @@ from annie.mal import (
     _fuzzy_title_ratio,
 )
 from annie.parsing import normalize
-from annie.types import MediaKind
+from _metadata_compare import summarize_releases
 from validate_franchise import QUERIES as BIG_QUERIES
 
 OUT = ROOT / "scripts" / "results" / "allanime_vs_anilist.json"
@@ -58,26 +58,11 @@ EXPECT_MIN_TV = {
 
 
 def _summ(releases) -> dict:
-    tv = [
-        {"s": r.season, "eps": r.episode_count, "label": (r.label or "")[:60]}
-        for r in releases
-        if r.kind == MediaKind.EPISODE
-    ]
-    movies = [(r.label or "")[:50] for r in releases if r.kind == MediaKind.MOVIE]
-    extras = [
-        f"{r.kind.name}:{ (r.label or '')[:40]}"
-        for r in releases
-        if r.kind not in {MediaKind.EPISODE, MediaKind.MOVIE}
-    ]
-    return {
-        "n_tv": len(tv),
-        "n_movies": len(movies),
-        "n_extras": len(extras),
-        "tv": tv,
-        "movies": movies,
-        "extras": extras[:8],
-        "seasons": sorted({t["s"] for t in tv if t["s"] is not None}),
-    }
+    out = summarize_releases(releases)
+    out["seasons"] = sorted(
+        {entry["season"] for entry in out["tv"] if entry["season"] is not None}
+    )
+    return out
 
 
 def _titles_close(a: str, b: str) -> bool:
