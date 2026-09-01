@@ -16,7 +16,6 @@ from annie.paths import cache_dir
 
 NYAA_BASE = "https://nyaa.si"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
-NYAA_PARALLEL = 10
 NYAA_SEARCH_PAGES = 2
 NYAA_FAST_PAGES = NYAA_SEARCH_PAGES
 DISK_CACHE_DIR = cache_dir() / "nyaa"

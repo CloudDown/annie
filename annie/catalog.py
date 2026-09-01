@@ -153,7 +153,7 @@ def scope_releases_for_target(
             if release.kind != MediaKind.EPISODE or release.season != season:
                 continue
         scoped.append(release)
-    return scoped or releases
+    return scoped
 
 
 def franchise_absolute_offsets(releases: list[MalRelease]) -> dict[int, int]:
@@ -254,6 +254,49 @@ def _batch_range_is_season_span(body: str, match: re.Match[str]) -> bool:
     return bool(re.search(r"S0?\d+\s*[-–—~]\s*$", prefix, re.I))
 
 
+def _relative_episode_for_release(
+    parsed: ParsedTitle,
+    release: MalRelease,
+    *,
+    absolute_offset: int = 0,
+    title: str = "",
+    max_tv_season: int | None = None,
+) -> int | None:
+    """Épisode relatif à la release, ou None si hors saison."""
+    if parsed.episode is None:
+        return None
+    expected = release.episode_count or 0
+    if not expected:
+        return parsed.episode
+
+    episode = parsed.episode
+    if parsed.season is None:
+        if absolute_offset > 0:
+            relative = episode - absolute_offset
+            if 1 <= relative <= expected:
+                return relative
+        if not (1 <= episode <= expected):
+            return None
+        marked = title_marks_season(title, release.season) if release.season else True
+        final_ok = (
+            max_tv_season is not None
+            and release.season == max_tv_season
+            and bool(FINAL_SEASON_RE.search(f"{parsed.arc or ''} {title}"))
+        )
+        if release.season is not None and release.season >= 2 and not marked and not final_ok:
+            return None
+        return episode
+
+    if parsed.season == release.season and 1 <= episode <= expected:
+        return episode
+
+    if absolute_offset > 0:
+        relative = episode - absolute_offset
+        if 1 <= relative <= expected:
+            return relative
+    return None
+
+
 def _remap_item_for_release(
     item: ResultItem,
     release: MalRelease,
@@ -271,67 +314,39 @@ def _remap_item_for_release(
         return None
     if 0 in _explicit_seasons_in_title(item.entry.title) and release.season != 0:
         return None
-    expected = release.episode_count or 0
-    if not expected:
+    if not (release.episode_count or 0):
         return item
 
-    episode = parsed.episode
-    if parsed.season is None:
-        # Numérotation absolue d'abord (ex. Re:Zero - 42 → S2E17).
-        if absolute_offset > 0:
-            relative = episode - absolute_offset
-            if 1 <= relative <= expected:
-                return ResultItem(
-                    entry=item.entry,
-                    parsed=replace(
-                        parsed,
-                        season=release.season,
-                        episode=relative,
-                        source_episode=parsed.source_episode or episode,
-                    ),
-                    score=item.score,
-                )
-        if not (1 <= episode <= expected):
-            return None
-        # S1 : E01 sans tag saison = OK. S≥2 : exige S2 / Season 2 / II…
-        # sinon un Youjo Senki - 01 (S1) pollue la S2 (offset AllAnime = 0).
-        # Exception : « Final Season » sur la dernière saison franchise.
-        marked = title_marks_season(item.entry.title, release.season)
-        final_ok = (
-            max_tv_season is not None
-            and release.season == max_tv_season
-            and bool(
-                FINAL_SEASON_RE.search(
-                    f"{parsed.arc or ''} {item.entry.title}"
-                )
-            )
-        )
-        if release.season >= 2 and not marked and not final_ok:
-            return None
-        return ResultItem(
-            entry=item.entry,
-            parsed=replace(parsed, season=release.season, episode=episode),
-            score=item.score,
-        )
-
-    if parsed.season == release.season and 1 <= episode <= expected:
+    relative = _relative_episode_for_release(
+        parsed,
+        release,
+        absolute_offset=absolute_offset,
+        title=item.entry.title,
+        max_tv_season=max_tv_season,
+    )
+    if relative is None:
+        return None
+    if (
+        parsed.season == release.season
+        and relative == parsed.episode
+        and parsed.source_episode is None
+    ):
         return item
 
-    if absolute_offset > 0:
-        relative = episode - absolute_offset
-        if 1 <= relative <= expected:
-            return ResultItem(
-                entry=item.entry,
-                parsed=replace(
-                    parsed,
-                    season=release.season,
-                    episode=relative,
-                    source_episode=parsed.source_episode or episode,
-                ),
-                score=item.score,
-            )
-
-    return None
+    used_absolute = relative != parsed.episode
+    return ResultItem(
+        entry=item.entry,
+        parsed=replace(
+            parsed,
+            season=release.season,
+            episode=relative,
+            source_episode=(
+                parsed.source_episode
+                or (parsed.episode if used_absolute else None)
+            ),
+        ),
+        score=item.score,
+    )
 
 
 def _primary_query_token_hits(parsed: ParsedTitle, primary_query: str) -> int:
@@ -372,25 +387,16 @@ def _relative_episode_number(
     release: MalRelease,
     *,
     absolute_offset: int = 0,
+    title: str = "",
+    max_tv_season: int | None = None,
 ) -> int | None:
-    if parsed.episode is None:
-        return None
-    expected = release.episode_count
-    if not expected:
-        return parsed.episode
-
-    episode = parsed.episode
-    if parsed.season is not None and release.season is not None:
-        if parsed.season != release.season:
-            return None
-        return episode if 1 <= episode <= expected else None
-
-    relative = episode - absolute_offset
-    if 1 <= relative <= expected:
-        return relative
-    if absolute_offset == 0 and 1 <= episode <= expected:
-        return episode
-    return None
+    return _relative_episode_for_release(
+        parsed,
+        release,
+        absolute_offset=absolute_offset,
+        title=title,
+        max_tv_season=max_tv_season,
+    )
 
 
 def _series_conflicts_with_release(
@@ -454,7 +460,11 @@ def _episode_belongs_to_release(
     if parsed.episode is None:
         return True
     relative = _relative_episode_number(
-        parsed, release, absolute_offset=absolute_offset
+        parsed,
+        release,
+        absolute_offset=absolute_offset,
+        title=title,
+        max_tv_season=max_tv_season,
     )
     if relative is None:
         return False
@@ -1434,11 +1444,8 @@ def apply_coherent_season_picks(
             season=section.season,
             absolute_offset=absolute_offset,
         )
-        _, coverage = _batch_coverage(
-            batch,
-            expected,
-            season=section.season,
-            absolute_offset=absolute_offset,
+        coverage = (
+            (len(covered) / expected) if expected and covered else (1.0 if covered else 0.0)
         )
         if coverage >= min_coverage and score > best_score:
             best_score = score
@@ -1482,26 +1489,52 @@ def normalize_section_episodes(
     expected: int | None,
     *,
     absolute_offset: int = 0,
+    release: MalRelease | None = None,
+    max_tv_season: int | None = None,
 ) -> None:
     """Remappe numérotation absolue franchise (ex. E42 → S2E17 si offset=25)."""
     if not expected or not section.episodes:
         return
 
+    if release is None and section.kind == MediaKind.EPISODE and section.season is not None:
+        release = MalRelease(
+            mal_id=section.mal_id or 0,
+            label=section.label,
+            kind=section.kind,
+            season=section.season,
+            episode_count=expected,
+            nyaa_queries=section.nyaa_queries or [section.label],
+            sort_key=(section.season or 0, section.label.lower()),
+        )
+
     remapped: dict[int, ResultItem] = {}
     for episode, item in section.episodes.items():
-        relative: int | None
-        if 1 <= episode <= expected:
-            relative = episode
-        elif absolute_offset > 0 and episode > absolute_offset:
-            candidate = episode - absolute_offset
-            relative = candidate if 1 <= candidate <= expected else None
-        else:
-            relative = None
+        candidate = item
+        relative: int | None = None
+        if release is not None:
+            mapped = _remap_item_for_release(
+                item,
+                release,
+                absolute_offset=absolute_offset,
+                max_tv_season=max_tv_season,
+            )
+            if mapped is not None and mapped.parsed.episode is not None:
+                candidate = mapped
+                relative = mapped.parsed.episode
+        if relative is None:
+            if 1 <= episode <= expected:
+                relative = episode
+            elif absolute_offset > 0 and episode > absolute_offset:
+                maybe = episode - absolute_offset
+                relative = maybe if 1 <= maybe <= expected else None
+            else:
+                relative = None
+            if relative is not None and relative != episode:
+                candidate = item_for_episode(item, relative)
 
         if relative is None:
             continue
 
-        candidate = item if relative == episode else item_for_episode(item, relative)
         current = remapped.get(relative)
         if _better_episode_pick(candidate, current):
             remapped[relative] = candidate
@@ -1669,7 +1702,13 @@ def _fill_missing_episodes(
         absolute_offset=absolute_offset,
         max_tv_season=max_tv_season,
     )
-    normalize_section_episodes(section, expected, absolute_offset=absolute_offset)
+    normalize_section_episodes(
+        section,
+        expected,
+        absolute_offset=absolute_offset,
+        release=release,
+        max_tv_season=max_tv_season,
+    )
 
 
 def fill_catalog_gaps(
@@ -1908,7 +1947,11 @@ def build_catalog_from_releases(
             max_tv_season=franchise_max_tv_season,
         )
         normalize_section_episodes(
-            section, release.episode_count, absolute_offset=absolute_offset
+            section,
+            release.episode_count,
+            absolute_offset=absolute_offset,
+            release=release,
+            max_tv_season=franchise_max_tv_season,
         )
         apply_coherent_season_picks(
             section,
@@ -2148,11 +2191,26 @@ def gather_catalog(
                         config=config,
                     ).result()
                     if releases:
-                        releases = scope_releases_for_target(
-                            releases,
-                            season=target_season,
-                            kind=target_kind,
-                        )
+                        if target_season is not None or target_kind is not None:
+                            scoped = scope_releases_for_target(
+                                releases,
+                                season=target_season,
+                                kind=target_kind,
+                            )
+                            if not scoped:
+                                print(
+                                    stylize(
+                                        "annie: saison/type demandé introuvable "
+                                        "dans la franchise",
+                                        C.MUTED,
+                                    ),
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                                releases = []
+                            else:
+                                releases = scoped
+                    if releases:
                         catalog = build_catalog_from_releases(
                             releases,
                             search=search,

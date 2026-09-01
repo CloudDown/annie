@@ -773,6 +773,43 @@ def _peer_wait_deadlines(
     return started_at + no_peers_sec, started_at + absolute_sec
 
 
+def _buffer_start_mode(
+    *,
+    startable: bool,
+    can_start: bool,
+    contiguous: int,
+    target_bytes: int,
+    soft_timeout: bool,
+    hard_timeout: bool,
+    seeding: bool,
+) -> str | None:
+    """Décide si on lance mpv. None = continuer d'attendre."""
+    full = startable and can_start and contiguous >= target_bytes
+    if full:
+        return "ready"
+    if seeding and startable:
+        return "seeding"
+    if soft_timeout and startable and can_start:
+        return "quick"
+    if hard_timeout:
+        if can_start and startable:
+            return "forced"
+        return "timeout"
+    return None
+
+
+def _head_buffered(
+    handle, file_index, target: Path, file_size: int
+) -> bool:
+    """True si la tête du fichier est déjà assez remplie pour lancer mpv."""
+    ready = _file_ready(handle, file_index)
+    contiguous = _contiguous_file_bytes(handle, file_index)
+    startable = _is_startable(
+        target, ready, file_size, handle=handle, file_index=file_index
+    )
+    return startable and contiguous >= _mkv_start_bytes()
+
+
 def wait_startable(
     handle,
     file_index,
@@ -818,21 +855,29 @@ def wait_startable(
 
             soft_timeout = now >= (no_peers_deadline if not has_transfer else deadline)
             hard_timeout = now >= absolute_deadline
-
-            if startable and can_start and contiguous >= target_bytes:
+            seeding = status.state == lt.torrent_status.seeding
+            mode = _buffer_start_mode(
+                startable=startable,
+                can_start=can_start,
+                contiguous=contiguous,
+                target_bytes=target_bytes,
+                soft_timeout=soft_timeout,
+                hard_timeout=hard_timeout,
+                seeding=seeding,
+            )
+            if mode == "ready":
                 display.finish(format_buffer_ready(contiguous // 1024 // 1024))
                 return contiguous, "ready"
-
-            if soft_timeout and startable and can_start and contiguous >= target_bytes:
+            if mode == "quick":
                 display.finish(format_buffer_quick_start(contiguous // 1024 // 1024))
                 return contiguous, "quick"
-
-            if hard_timeout:
-                if can_start and _is_startable(
-                    target, ready, file_size, handle=handle, file_index=file_index
-                ):
-                    display.finish(format_buffer_forced_start(contiguous // 1024 // 1024))
-                    return contiguous, "forced"
+            if mode == "seeding":
+                display.finish(format_buffer_local_file(contiguous // 1024 // 1024))
+                return contiguous, "seeding"
+            if mode == "forced":
+                display.finish(format_buffer_forced_start(contiguous // 1024 // 1024))
+                return contiguous, "forced"
+            if mode == "timeout":
                 display.finish("")
                 peer_note = ""
                 if listed_seeders and listed_seeders > 0:
@@ -846,12 +891,6 @@ def wait_startable(
                     f"{ready // 1024 // 1024} MiB total, {peer_hint.lower()})"
                     f"{peer_note}"
                 )
-
-            if status.state == lt.torrent_status.seeding and _is_startable(
-                target, ready, file_size, handle=handle, file_index=file_index
-            ):
-                display.finish(format_buffer_local_file(contiguous // 1024 // 1024))
-                return contiguous, "seeding"
 
             probe_hint = ""
             if (
@@ -1077,6 +1116,7 @@ def _play_while_downloading(
     current_item = playback_item
     prefetch_index: int | None = None
     last_prefetch_boost = 0.0
+    last_seed_boost = 0.0
 
     if ipc_available and ipc_path is not None:
         _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
@@ -1091,7 +1131,9 @@ def _play_while_downloading(
             urgent = consumption_rate > download_rate * 0.7
             _enforce_sequential_frontier(handle, file_index, urgent=urgent)
             if seed_while_watching and session is not None:
-                _enable_watch_seed(session, handle, file_index)
+                if now - last_seed_boost >= 2.0:
+                    _enable_watch_seed(session, handle, file_index)
+                    last_seed_boost = now
             contiguous = _contiguous_file_bytes(handle, file_index)
             ready = _file_ready(handle, file_index)
 
@@ -1371,9 +1413,7 @@ def _launch_and_stream(
             )
             if not _mkv_playable(target, ready):
                 return code
-        retry_profiles = ["safe"]
-        if sys.platform == "win32":
-            retry_profiles.append("software")
+        retry_profiles = ["safe", "software"]
         for profile in retry_profiles:
             code = _run_pass(mpv_profile=profile)
             if code == 0:
@@ -1629,13 +1669,14 @@ def play(
                     target=next_path,
                     file_size=next_size,
                 )
-                wait_startable(
-                    handle,
-                    next_index,
-                    next_path,
-                    next_size,
-                    listed_seeders=listed_seeders,
-                )
+                if not _head_buffered(handle, next_index, next_path, next_size):
+                    wait_startable(
+                        handle,
+                        next_index,
+                        next_path,
+                        next_size,
+                        listed_seeders=listed_seeders,
+                    )
 
                 next_sub: Path | None = None
                 if subtitle_lang:

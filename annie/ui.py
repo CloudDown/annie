@@ -1254,22 +1254,31 @@ def copy_magnet(magnet: str) -> bool:
                 ["clip"],
                 input=magnet,
                 text=True,
-                check=False,
+                check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW
                 if hasattr(subprocess, "CREATE_NO_WINDOW")
                 else 0,
             )
             return True
-        except OSError:
+        except (OSError, subprocess.CalledProcessError):
             return False
     if shutil.which("wl-copy"):
-        subprocess.run(["wl-copy", magnet], check=False)
-        return True
+        try:
+            subprocess.run(["wl-copy", magnet], check=True)
+            return True
+        except (OSError, subprocess.CalledProcessError):
+            return False
     if shutil.which("xclip"):
-        subprocess.run(
-            ["xclip", "-selection", "clipboard"], input=magnet, text=True, check=False
-        )
-        return True
+        try:
+            subprocess.run(
+                ["xclip", "-selection", "clipboard"],
+                input=magnet,
+                text=True,
+                check=True,
+            )
+            return True
+        except (OSError, subprocess.CalledProcessError):
+            return False
     return False
 
 

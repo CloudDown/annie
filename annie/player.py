@@ -62,6 +62,29 @@ def resolve_player(requested: str | None = None) -> str:
     raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
 
 
+def _mpv_profile_video(
+    profile: str, gpu_api: str, hwdec: str, vo: str
+) -> tuple[str, str, str]:
+    """Ajuste GPU / hwdec selon le profil. d3d11 reste réservé à Windows."""
+    if sys.platform == "win32" and gpu_api in {"opengl", ""}:
+        gpu_api = "d3d11"
+    if profile == "safe":
+        hwdec = "auto-safe"
+        vo = "gpu"
+        if sys.platform == "win32":
+            gpu_api = "d3d11"
+        elif gpu_api in {"d3d11", ""}:
+            gpu_api = "opengl"
+    elif profile == "software":
+        hwdec = "no"
+        vo = "gpu"
+        if sys.platform == "win32":
+            gpu_api = "d3d11"
+        elif gpu_api == "d3d11":
+            gpu_api = "opengl"
+    return gpu_api, hwdec, vo
+
+
 def _mpv_command(
     target: str,
     *,
@@ -76,17 +99,7 @@ def _mpv_command(
     gpu_api = mpv.gpu_api
     hwdec = mpv.hwdec
     vo = mpv.vo
-    # opengl échoue souvent sous Windows ; d3d11 est le choix sûr.
-    if sys.platform == "win32" and gpu_api in {"opengl", ""}:
-        gpu_api = "d3d11"
-    if profile == "safe":
-        gpu_api = "d3d11"
-        hwdec = "auto-safe"
-        vo = "gpu"
-    elif profile == "software":
-        gpu_api = "d3d11"
-        hwdec = "no"
-        vo = "gpu"
+    gpu_api, hwdec, vo = _mpv_profile_video(profile, gpu_api, hwdec, vo)
     if mpv.force_window:
         cmd.append("--force-window=immediate")
     # keep-open=yes pendant un binge (loadfile IPC) pour ne pas fermer mpv à l'EOF.

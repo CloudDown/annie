@@ -185,14 +185,13 @@ class NyaaQueriesForTests(unittest.TestCase):
 
 
 class ScopeReleasesTests(unittest.TestCase):
-    def test_filters_to_target_season(self) -> None:
+    def test_missing_season_returns_empty(self) -> None:
         releases = [
             mal_release(mal_id=1, season=1, episode_count=25),
             mal_release(mal_id=2, season=2, episode_count=25),
         ]
-        scoped = scope_releases_for_target(releases, season=2)
-        self.assertEqual(len(scoped), 1)
-        self.assertEqual(scoped[0].season, 2)
+        scoped = scope_releases_for_target(releases, season=5)
+        self.assertEqual(scoped, [])
 
     def test_target_season_excludes_movies(self) -> None:
         from annie.types import MalRelease

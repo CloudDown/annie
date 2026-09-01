@@ -24,7 +24,6 @@ from annie.types import MalRelease, MediaKind
 
 JIKAN_BASE = "https://api.jikan.moe/v4"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"
-MAL_PARALLEL = 10
 DISK_CACHE_DIR = cache_dir() / "jikan"
 DISK_CACHE_TTL = 7 * 24 * 3600
 

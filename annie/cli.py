@@ -167,6 +167,14 @@ def resolve_allanime_release(
         return release
 
 
+def _catalog_error(exc: BaseException) -> None:
+    print(
+        stylize(f"annie: catalogue indisponible ({exc}), fallback Nyaa", C.MUTED),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
     del seeders, release_group
     begin_playback_ui()
@@ -361,8 +369,8 @@ def try_direct_play(
                     ),
                     interactive_subs=True,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            _catalog_error(exc)
 
     entries = search(query, category=config.category, filter_code=config.filter_code)
     picked = _pick_for_options(entries, query, options, config)
@@ -504,8 +512,8 @@ def run_watch(
                         list(section.nyaa_queries) if section is not None else None
                     ),
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            _catalog_error(exc)
 
     entries = search(
         query,
@@ -811,7 +819,7 @@ def main() -> int:
     try:
         return _main_impl()
     except KeyboardInterrupt:
-        return 0
+        return EXIT_CANCELLED
 
 
 def _main_impl() -> int:

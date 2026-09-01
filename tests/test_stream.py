@@ -24,6 +24,7 @@ from annie.stream import (
     BINGE_PREFETCH_PROGRESS,
     BINGE_SWITCH_PROGRESS,
     _buffer_peer_state,
+    _buffer_start_mode,
     _peer_wait_deadlines,
 )
 from annie.settings import BufferSettings
@@ -91,6 +92,75 @@ class PeerWaitDeadlineTests(unittest.TestCase):
         no_peers, absolute = _peer_wait_deadlines(buf, 100.0)
         self.assertEqual(no_peers, 145.0)
         self.assertEqual(absolute, 190.0)
+
+
+class BufferStartModeTests(unittest.TestCase):
+    def test_ready_beats_quick(self) -> None:
+        self.assertEqual(
+            _buffer_start_mode(
+                startable=True,
+                can_start=True,
+                contiguous=80 * 1024 * 1024,
+                target_bytes=80 * 1024 * 1024,
+                soft_timeout=True,
+                hard_timeout=False,
+                seeding=False,
+            ),
+            "ready",
+        )
+
+    def test_quick_after_soft_timeout_without_full_buffer(self) -> None:
+        self.assertEqual(
+            _buffer_start_mode(
+                startable=True,
+                can_start=True,
+                contiguous=20 * 1024 * 1024,
+                target_bytes=80 * 1024 * 1024,
+                soft_timeout=True,
+                hard_timeout=False,
+                seeding=False,
+            ),
+            "quick",
+        )
+
+    def test_keeps_waiting_before_timeout(self) -> None:
+        self.assertIsNone(
+            _buffer_start_mode(
+                startable=True,
+                can_start=True,
+                contiguous=20 * 1024 * 1024,
+                target_bytes=80 * 1024 * 1024,
+                soft_timeout=False,
+                hard_timeout=False,
+                seeding=False,
+            )
+        )
+
+    def test_forced_on_hard_timeout(self) -> None:
+        self.assertEqual(
+            _buffer_start_mode(
+                startable=True,
+                can_start=True,
+                contiguous=10 * 1024 * 1024,
+                target_bytes=80 * 1024 * 1024,
+                soft_timeout=True,
+                hard_timeout=True,
+                seeding=False,
+            ),
+            "quick",
+        )
+        self.assertEqual(
+            _buffer_start_mode(
+                startable=False,
+                can_start=True,
+                contiguous=10 * 1024 * 1024,
+                target_bytes=80 * 1024 * 1024,
+                soft_timeout=True,
+                hard_timeout=True,
+                seeding=False,
+            ),
+            "timeout",
+        )
 
 
 class BufferDefaultTests(unittest.TestCase):
