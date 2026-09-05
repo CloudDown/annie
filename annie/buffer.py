@@ -274,15 +274,15 @@ def _buffer_peer_state(
         return True, f"{num_peers} peers"
 
     if _is_downloading_metadata(status):
-        return False, "récupération métadonnées…"
+        return False, "fetching metadata…"
 
     if num_seeds > 0:
-        return False, f"connexion au swarm… ({num_seeds} seeds)"
+        return False, f"connecting to swarm… ({num_seeds} seeds)"
 
     if listed_seeders and listed_seeders > 0:
-        return False, f"connexion au swarm… ({listed_seeders}S Nyaa)"
+        return False, f"connecting to swarm… ({listed_seeders}S Nyaa)"
 
-    return False, "connexion au swarm…"
+    return False, "connecting to swarm…"
 
 
 def _peer_wait_deadlines(
@@ -410,14 +410,14 @@ def wait_startable(
                 peer_note = ""
                 if listed_seeders and listed_seeders > 0:
                     peer_note = (
-                        f" — Nyaa affichait {listed_seeders} seeders ; "
-                        "la connexion au swarm peut prendre plus de temps"
+                        f" — Nyaa listed {listed_seeders} seeders; "
+                        "swarm connection may take longer"
                     )
                 from annie.stream import die
 
                 die(
-                    "buffer timeout — fichier incomplet "
-                    f"({contiguous // 1024 // 1024} MiB contigu / "
+                    "buffer timeout — incomplete file "
+                    f"({contiguous // 1024 // 1024} MiB contiguous / "
                     f"{ready // 1024 // 1024} MiB total, {peer_hint.lower()})"
                     f"{peer_note}"
                 )

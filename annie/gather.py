@@ -17,7 +17,7 @@ from annie.types import MalRelease, MediaKind, MediaSection
 
 
 def format_catalog_status(catalog: list[MediaSection], options: dict) -> str:
-    """Une ligne : source + saisons/films, ou pourquoi le scope a raté."""
+    """One line: source + seasons/movies, or why the scope missed."""
     source = options.get("catalog_source") or "nyaa"
     labels = {
         "allanime": "AllAnime",
@@ -32,20 +32,20 @@ def format_catalog_status(catalog: list[MediaSection], options: dict) -> str:
     tv = [s.season for s in catalog if s.kind == MediaKind.EPISODE and s.season]
     movies = sum(1 for s in catalog if s.kind == MediaKind.MOVIE)
     if tv:
-        parts.append(f"{len(tv)} saison{'s' if len(tv) != 1 else ''}")
+        parts.append(f"{len(tv)} season{'s' if len(tv) != 1 else ''}")
     if movies:
-        parts.append(f"{movies} film{'s' if movies != 1 else ''}")
+        parts.append(f"{movies} movie{'s' if movies != 1 else ''}")
 
     if options.get("scope_missed"):
         wanted = options.get("target_season")
         avail = options.get("available_seasons") or []
-        avail_txt = ", ".join(f"S{s}" for s in avail) if avail else "aucune"
+        avail_txt = ", ".join(f"S{s}" for s in avail) if avail else "none"
         if wanted is not None:
-            parts.append(f"S{wanted} absente (dispo {avail_txt})")
+            parts.append(f"S{wanted} missing (have {avail_txt})")
         else:
-            parts.append("type demandé introuvable")
+            parts.append("requested type not found")
     elif options.get("catalog_fallback"):
-        parts.append("fallback Nyaa")
+        parts.append("Nyaa fallback")
     return " · ".join(parts)
 
 
@@ -137,7 +137,7 @@ def gather_catalog(
         except Exception as exc:
             print(
                 stylize(
-                    f"annie: catalogue AllAnime échoué ({exc}), fallback",
+                    f"annie: AllAnime catalog failed ({exc}), falling back",
                     C.MUTED,
                 ),
                 file=sys.stderr,
@@ -263,7 +263,7 @@ def gather_catalog(
         except Exception as exc:
             print(
                 stylize(
-                    f"annie: métadonnées indisponibles ({exc}), fallback Nyaa",
+                    f"annie: metadata unavailable ({exc}), Nyaa fallback",
                     C.MUTED,
                 ),
                 file=sys.stderr,

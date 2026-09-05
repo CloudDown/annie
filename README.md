@@ -136,15 +136,15 @@ Logo ASCII → invite `>` → tape un titre (**anglais** ou **romaji**, ex. `fri
 Pendant la lecture :
 
 ```
-lecture      [SubsPlease] … mkv  mpv
-prêt         22 MiB contigu
+playing      [SubsPlease] … mkv  mpv
+ready        22 MiB contiguous
 ```
 
-Connexion lente → `pause  buffer insuffisant` puis reprise auto. Quitter mpv : **q** ou fermer la fenêtre.
+Slow connection → `pause  buffer too low` then auto-resume. Quit mpv: **q** or close the window.
 
-Au prompt Annie : `help` · `settings` · `quit` (chips sous le logo).
+Au prompt Annie: `help` · `settings` (shortcut chips under the logo). Ctrl+C to exit.
 
-Dans le TUI : barre raccourcis style Omarchy · `?` aide · couleurs = thème du terminal.
+In the TUI: Omarchy-style shortcut bar · colors follow the terminal theme.
 
 ---
 

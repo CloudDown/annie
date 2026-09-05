@@ -26,7 +26,7 @@ class CatalogStatusTests(unittest.TestCase):
         )
         self.assertIn("AniList/MAL", line)
         self.assertIn("Re:Zero", line)
-        self.assertIn("2 saisons", line)
+        self.assertIn("2 seasons", line)
 
     def test_scope_missed_names_available(self) -> None:
         line = format_catalog_status(
@@ -38,7 +38,7 @@ class CatalogStatusTests(unittest.TestCase):
                 "available_seasons": [1, 2, 3],
             },
         )
-        self.assertIn("S9 absente", line)
+        self.assertIn("S9 missing", line)
         self.assertIn("S1", line)
         self.assertIn("S3", line)
 
@@ -48,7 +48,7 @@ class CatalogStatusTests(unittest.TestCase):
             {"catalog_source": "nyaa", "catalog_fallback": True},
         )
         self.assertIn("Nyaa", line)
-        self.assertIn("fallback Nyaa", line)
+        self.assertIn("Nyaa fallback", line)
 
 
 if __name__ == "__main__":

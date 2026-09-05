@@ -156,7 +156,7 @@ def _opensubtitles_config_hint() -> str:
     config_path = config_dir() / "config.toml"
     return (
         "clé API OpenSubtitles manquante — ajoutez api_key dans [subtitles] de "
-        f"{config_path} (gratuit : https://www.opensubtitles.com/en/consumers)"
+        f"{config_path} (free: https://www.opensubtitles.com/en/consumers)"
     )
 
 
@@ -486,10 +486,10 @@ def no_subtitles_message(query: SubtitleQuery, lang_code: str) -> str:
         if en is not None:
             try:
                 if search(query, en):
-                    return f"aucun trouvé en {label} — essayez English"
+                    return f"none found in {label} — try English"
             except SubtitlesError:
                 pass
-    return f"aucun trouvé en {label}"
+    return f"none found in {label}"
 
 
 def _cache_key(query: SubtitleQuery, lang_code: str) -> str:
@@ -544,7 +544,7 @@ def _extract_subtitle(data: bytes) -> tuple[bytes, str]:
                 if Path(name).suffix.lower() in SUBTITLE_EXT
             ]
             if not names:
-                raise ValueError("zip sans fichier sous-titre")
+                raise ValueError("zip has no subtitle file")
             name = sorted(names, key=lambda n: (len(n), n))[0]
             return archive.read(name), Path(name).suffix.lower()
     if data.lstrip()[:1] in {b"1", b"["} or b"-->" in data[:4096]:

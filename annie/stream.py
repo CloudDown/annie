@@ -389,7 +389,7 @@ def load_torrent_info(source: str) -> lt.torrent_info:
             session.remove_torrent(handle)
     path = Path(source).expanduser().resolve()
     if not path.is_file():
-        die(f"fichier introuvable : {path}")
+        die(f"file not found: {path}")
     return lt.torrent_info(str(path))
 
 
@@ -825,7 +825,7 @@ def _play_while_downloading(
                 _has_transfer, peer_hint = _buffer_peer_state(
                     status, listed_seeders=listed_seeders
                 )
-                extra_hint = " · ⏸ buffer insuffisant" if paused_for_buffer else ""
+                extra_hint = " · pause: buffer low" if paused_for_buffer else ""
                 display.update(
                     format_buffer_lines(
                         contiguous=contiguous,
@@ -926,14 +926,14 @@ def _launch_and_stream(
         )
         if not _mkv_playable(target, ready):
             die(
-                "fichier MKV illisible — données insuffisantes "
-                f"({ready // 1024 // 1024} MiB contigu)"
+                "MKV unreadable — not enough data "
+                f"({ready // 1024 // 1024} MiB contiguous)"
             )
 
     active_sub = sub_file
     if active_sub is not None and player_name != "mpv":
         stream_log_err(
-            "sous-titres",
+            "subtitles",
             "externes supportés uniquement avec mpv",
             tone="warn",
         )
@@ -987,7 +987,7 @@ def _launch_and_stream(
         PLAY_COMPLETED,
         PLAY_INCOMPLETE,
     ) and not is_user_cancel(code):
-        stream_log("mpv", "échec lecture, nouvel essai…", tone="warn")
+        stream_log("mpv", "playback failed, retrying…", tone="warn")
         if target.suffix.lower() == ".mkv":
             ready = _wait_mkv_playable(
                 handle,
@@ -1048,7 +1048,7 @@ def play(
                 if subtitles_api_available():
                     sub_future = pool.submit(fetch_best, subtitle_query, subtitle_lang)
                 else:
-                    sub_status = ("warn", "sous-titres", _opensubtitles_config_hint())
+                    sub_status = ("warn", "subtitles", _opensubtitles_config_hint())
 
             if source.startswith("magnet:?"):
                 save_path = magnet_save_path(source)
@@ -1089,23 +1089,23 @@ def play(
                 try:
                     sub_file = sub_future.result(timeout=sub_timeout)
                     if sub_file is not None:
-                        sub_status = ("ok", "sous-titres", sub_file.name)
+                        sub_status = ("ok", "subtitles", sub_file.name)
                     else:
                         from annie.subtitles import no_subtitles_message
 
                         detail = (
                             no_subtitles_message(subtitle_query, subtitle_lang)
                             if subtitle_query and subtitle_lang
-                            else "aucun trouvé"
+                            else "none found"
                         )
-                        sub_status = ("warn", "sous-titres", detail)
+                        sub_status = ("warn", "subtitles", detail)
                 except Exception as exc:
                     from annie.subtitles import SubtitlesError
 
                     if isinstance(exc, SubtitlesError):
-                        sub_status = ("err", "sous-titres", str(exc))
+                        sub_status = ("err", "subtitles", str(exc))
                     else:
-                        sub_status = ("err", "sous-titres", f"indisponibles ({exc})")
+                        sub_status = ("err", "subtitles", f"unavailable ({exc})")
 
         # Clear + ligne ◆ juste avant le bloc lecture (pas pendant le fetch metadata).
         if on_ui_start is not None:
@@ -1125,7 +1125,7 @@ def play(
 
             log_playback_start(target.name, player_name)
             if seed_while_watching:
-                stream_log("seed", "actif pendant la lecture", tone="muted")
+                stream_log("seed", "active while watching", tone="muted")
                 _enable_watch_seed(session, handle, file_index)
 
             binge_queue = list(binge_items or [])
@@ -1323,7 +1323,7 @@ def play(
                 except Exception:
                     print(f"◆ {next_path.name}", flush=True)
                 if next_sub is not None:
-                    stream_log("sous-titres", next_sub.name, tone="accent")
+                    stream_log("subtitles", next_sub.name, tone="accent")
                 log_playback_start(next_path.name, player_name)
                 return next_index, next_path, next_size, next_sub, nxt
 

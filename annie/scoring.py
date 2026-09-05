@@ -263,7 +263,7 @@ class CatalogQualityReport:
     @property
     def relaxed_ok(self) -> bool:
         return not any(
-            issue.startswith("saison") or issue.startswith("saisons")
+            issue.startswith("season") or issue.startswith("seasons")
             for issue in self.issues
         ) and all(season.relaxed_ok for season in self.seasons)
 
@@ -345,7 +345,7 @@ def assess_tv_catalog(
     season_reports: list[SeasonQualityReport] = []
 
     if len(nyaa_tv) != len(mal_tv):
-        issues.append(f"saisons: MAL={len(mal_tv)} Nyaa={len(nyaa_tv)}")
+        issues.append(f"seasons: MAL={len(mal_tv)} Nyaa={len(nyaa_tv)}")
 
     for section in sorted(nyaa_tv, key=lambda s: s.season or 0):
         season = section.season or 0
@@ -383,6 +383,6 @@ def assess_tv_catalog(
 
     for season, expected in mal_by_season.items():
         if not any(s.season == season for s in nyaa_tv):
-            issues.append(f"saison {season:02d} absente du catalogue Nyaa")
+            issues.append(f"season {season:02d} missing from Nyaa catalog")
 
     return CatalogQualityReport(seasons=season_reports, issues=issues)

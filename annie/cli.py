@@ -170,7 +170,7 @@ def resolve_allanime_release(
 
 def _catalog_error(exc: BaseException) -> None:
     print(
-        stylize(f"annie: catalogue indisponible ({exc}), fallback Nyaa", C.MUTED),
+        stylize(f"annie: catalog unavailable ({exc}), Nyaa fallback", C.MUTED),
         file=sys.stderr,
         flush=True,
     )
@@ -600,7 +600,7 @@ def interactive_loop(config: AnnieConfig) -> int:
             if run_settings():
                 config = reload_config()
                 reload_settings()
-                print_status("réglages enregistrés", kind="ok")
+                print_status("settings saved", kind="ok")
             continue
         if cmd == "quit":
             return 0
@@ -883,7 +883,7 @@ def _main_impl() -> int:
     watch_cmd.add_argument(
         "--sub-lang",
         metavar="CODE",
-        help="Langue sous-titres (en, zh, hi, es, fr)",
+        help="Subtitle language (en, zh, hi, es, fr)",
     )
 
     sub.add_parser("ls", help="List torrent files").add_argument("source")

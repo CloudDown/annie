@@ -79,12 +79,16 @@ class RenderHelpersTests(unittest.TestCase):
     def test_cycle_choice(self) -> None:
         self.assertEqual(cycle_choice("720p", ("auto", "720p", "1080p")), "1080p")
         self.assertEqual(cycle_choice("1080p", ("auto", "720p", "1080p")), "auto")
+        from annie.tui import cycle_choice_prev
+
+        self.assertEqual(cycle_choice_prev("720p", ("auto", "720p", "1080p")), "auto")
+        self.assertEqual(cycle_choice_prev("auto", ("auto", "720p", "1080p")), "1080p")
 
 
 class ChromeTests(unittest.TestCase):
     def test_no_box_drawing(self) -> None:
         frame = chrome(
-            title="saison",
+            title="season",
             body=["Season 01", "Season 02"],
             footer="/  ↑↓  enter",
             preview=["Season 02", "episode · 12 ep"],
@@ -94,14 +98,14 @@ class ChromeTests(unittest.TestCase):
         )
         plain = strip_ansi(frame)
         self.assertIn("annie", plain)
-        self.assertIn("saison", plain)
+        self.assertIn("season", plain)
         self.assertNotIn("╭", plain)
         self.assertNotIn("│", plain)
         self.assertNotIn("╰", plain)
 
     def test_fits_rows(self) -> None:
         frame = chrome(
-            title="saison",
+            title="season",
             body=["a"] * 40,
             footer="x",
             preview=["p"] * 12,
@@ -116,8 +120,8 @@ class ChromeTests(unittest.TestCase):
         self.assertEqual(4 + body_h + spacer + (1 if preview_h else 0) + preview_h, 24)
 
     def test_screen_title_strips_brand(self) -> None:
-        self.assertEqual(screen_title("annie  ·  réglages"), "réglages")
-        self.assertEqual(screen_title("saison> "), "saison")
+        self.assertEqual(screen_title("annie  ·  settings"), "settings")
+        self.assertEqual(screen_title("season> "), "season")
 
     def test_select_row_marker(self) -> None:
         selected = select_row("Season 02", 40, selected=True)
@@ -132,7 +136,7 @@ class ChromeTests(unittest.TestCase):
 
     def test_uses_ansi16_not_truecolor(self) -> None:
         frame = chrome(
-            title="saison",
+            title="season",
             body=[select_row("x", 40, selected=True)],
             footer="?",
             cols=80,

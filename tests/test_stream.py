@@ -53,7 +53,7 @@ class BufferPeerStateTests(unittest.TestCase):
         )
         active, hint = _buffer_peer_state(status)
         self.assertFalse(active)
-        self.assertIn("métadonnées", hint)
+        self.assertIn("metadata", hint)
 
     def test_listed_seeders_hint(self) -> None:
         status = SimpleNamespace(

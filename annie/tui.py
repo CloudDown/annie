@@ -60,18 +60,9 @@ HELP_OVERLAY = [
             ("enter", "open"),
             ("1-9", "jump"),
             ("type", "filter"),
-            ("?", "fermer"),
+            ("?", "close"),
             ("ctrl-o", "magnet"),
             ("esc", "back"),
-        ],
-        prefix="",
-    ),
-    "",
-    shortcut_line(
-        [
-            ("help", "aide"),
-            ("settings", "réglages"),
-            ("quit", "quitter"),
         ],
         prefix="",
     ),
@@ -220,6 +211,14 @@ def cycle_choice(current: str, choices: tuple[str, ...]) -> str:
     if current not in choices:
         return choices[0]
     return choices[(choices.index(current) + 1) % len(choices)]
+
+
+def cycle_choice_prev(current: str, choices: tuple[str, ...]) -> str:
+    if not choices:
+        return current
+    if current not in choices:
+        return choices[0]
+    return choices[(choices.index(current) - 1) % len(choices)]
 
 
 class _UnixKeys:
@@ -510,10 +509,10 @@ def choose(
                         body.append("")
                     ses.draw(
                         chrome(
-                            title="aide",
+                            title="help",
                             body=body,
                             footer=shortcut_line(
-                                [("?", "fermer"), ("esc", "retour")],
+                                [("?", "close"), ("esc", "back")],
                                 prefix="",
                             ),
                             preview=None,
@@ -525,7 +524,7 @@ def choose(
                     preview_src = (
                         strip_ansi(filtered[cursor][1][2]).splitlines()
                         if filtered
-                        else ["aucun résultat — efface le filtre ou esc"]
+                        else ["no matches — clear filter or press esc"]
                     )
                     list_h, _ph, _sp = layout(lines, len(preview_src))
                     if filtered:
@@ -551,7 +550,7 @@ def choose(
                     if not filtered:
                         body.append(
                             select_row(
-                                f"{DIM}aucun résultat — backspace / esc{RESET}",
+                                f"{DIM}no matches — backspace / esc{RESET}",
                                 width,
                                 selected=False,
                             )
@@ -568,7 +567,7 @@ def choose(
                         footer_pairs.append(("←", "back"))
                     if "ctrl-o" in actions:
                         footer_pairs.append(("ctrl-o", "magnet"))
-                    footer_pairs.append(("?", "aide"))
+                    footer_pairs.append(("?", "help"))
                     footer = _bar(
                         f"{ACC}/{RESET}{TEXT}{query_buf}{RESET}" if query_buf else f"{ACC}/{RESET}",
                         shortcut_line(footer_pairs, prefix=""),
@@ -658,12 +657,14 @@ def prompt_edit(
     hint: str = "",
 ) -> str | None:
     buf = initial
+    pos = len(buf)
     session.show_cursor(True)
     try:
         while True:
             cols, rows = term_size()
-            shown = ("•" * len(buf)) if secret else buf
-            caret = f"{TEXT}{shown}{ACC}▍{RESET}"
+            display = ("•" * len(buf)) if secret else buf
+            before, after = display[:pos], display[pos:]
+            caret = f"{TEXT}{before}{ACC}▍{RESET}{TEXT}{after}{RESET}"
             body = [
                 f"{DIM}{label}{RESET}",
                 "",
@@ -675,7 +676,14 @@ def prompt_edit(
                 chrome(
                     title=title,
                     body=body,
-                    footer=f"{shortcut_line([('enter', 'ok'), ('esc', 'annuler')], prefix='')}",
+                    footer=shortcut_line(
+                        [
+                            ("←→", "cursor"),
+                            ("enter", "save"),
+                            ("esc", "cancel"),
+                        ],
+                        prefix="",
+                    ),
                     preview=None,
                     cols=cols,
                     rows=rows,
@@ -686,12 +694,28 @@ def prompt_edit(
                 return None
             if key == "enter":
                 return buf
-            if key == "backspace":
-                buf = buf[:-1]
-            elif key in {"ctrl-u", "delete"}:
+            if key == "left":
+                pos = max(0, pos - 1)
+            elif key == "right":
+                pos = min(len(buf), pos + 1)
+            elif key == "home":
+                pos = 0
+            elif key == "end":
+                pos = len(buf)
+            elif key == "backspace":
+                if pos > 0:
+                    buf = buf[: pos - 1] + buf[pos:]
+                    pos -= 1
+            elif key == "delete":
+                if pos < len(buf):
+                    buf = buf[:pos] + buf[pos + 1 :]
+            elif key == "ctrl-u":
                 buf = ""
+                pos = 0
             elif key.startswith("char:"):
-                buf += key[5:]
+                ch = key[5:]
+                buf = buf[:pos] + ch + buf[pos:]
+                pos += len(ch)
     finally:
         session.show_cursor(False)
 
@@ -717,21 +741,21 @@ class _Field:
 
 
 _FIELDS: tuple[_Field, ...] = (
-    _Field("os_key", "Clé API OpenSubtitles", "secret", "subtitles", "api_key",
+    _Field("os_key", "OpenSubtitles API key", "secret", "subtitles", "api_key",
            hint="https://www.opensubtitles.com/en/consumers"),
-    _Field("os_user", "Identifiant OpenSubtitles", "text", "subtitles", "username"),
-    _Field("os_pass", "Mot de passe OpenSubtitles", "secret", "subtitles", "password"),
-    _Field("sub_on", "Sous-titres", "toggle", "subtitles", "enabled"),
-    _Field("sub_lang", "Langue sous-titres", "choice", "subtitles", "default_lang",
-           LANG_CHOICES, hint="vide = menu à chaque lecture"),
-    _Field("resolution", "Résolution préférée", "choice", "catalog", "preferred_resolution",
-           RES_CHOICES, hint="influence le choix des torrents"),
-    _Field("player", "Lecteur", "choice", "player", "command", PLAYER_CHOICES),
-    _Field("meta", "Métadonnées", "choice", "metadata", "mode", MODE_CHOICES,
-           hint="auto · anilist · mal · off (Nyaa seul)"),
-    _Field("seed", "Seed pendant la lecture", "toggle", "streaming", "seed_while_watching"),
-    _Field("groups", "Groupes préférés", "list", "catalog", "preferred_groups",
-           hint="ex. SubsPlease, Erai-raws"),
+    _Field("os_user", "OpenSubtitles username", "text", "subtitles", "username"),
+    _Field("os_pass", "OpenSubtitles password", "secret", "subtitles", "password"),
+    _Field("sub_on", "Subtitles", "toggle", "subtitles", "enabled"),
+    _Field("sub_lang", "Subtitle language", "choice", "subtitles", "default_lang",
+           LANG_CHOICES, hint="empty = ask each time"),
+    _Field("resolution", "Preferred resolution", "choice", "catalog", "preferred_resolution",
+           RES_CHOICES, hint="influences torrent ranking"),
+    _Field("player", "Player", "choice", "player", "command", PLAYER_CHOICES),
+    _Field("meta", "Metadata", "choice", "metadata", "mode", MODE_CHOICES,
+           hint="auto · anilist · mal · off (Nyaa only)"),
+    _Field("seed", "Seed while watching", "toggle", "streaming", "seed_while_watching"),
+    _Field("groups", "Preferred groups", "list", "catalog", "preferred_groups",
+           hint="e.g. SubsPlease, Erai-raws"),
 )
 
 
@@ -757,14 +781,14 @@ def _settings_values() -> dict[str, object]:
 
 def _settings_display(field: _Field, value: object) -> str:
     if field.kind == "toggle":
-        return "oui" if value else "non"
+        return "yes" if value else "no"
     if field.kind == "secret":
         return mask_secret(str(value or ""))
     if field.kind == "list":
         items = value if isinstance(value, list) else []
         return ", ".join(str(item) for item in items) if items else "—"
     if field.key == "sub_lang":
-        return str(value) if value else "menu"
+        return str(value) if value else "ask"
     text = str(value or "")
     return text if text else "—"
 
@@ -792,45 +816,72 @@ def _settings_save(field: _Field, value: object) -> None:
 
 
 def run_settings() -> bool:
-    """Écran réglages. True si une valeur a changé."""
+    """Settings screen. True if any value changed."""
     if not available():
         return False
 
     values = _settings_values()
     cursor = 0
     dirty = False
+    # Inline edit for text/secret/list — same screen, Esc cancels edit (not settings).
+    editing = False
+    edit_buf = ""
+    edit_pos = 0
 
     with Session() as ses:
         while True:
             cols, rows = term_size()
             width = max(24, cols - 1)
-            body: list[str] = []
-            for index, field in enumerate(_FIELDS):
-                shown = _settings_display(field, values[field.key])
-                label = f"{field.label:<26} {shown}"
-                if index == cursor:
-                    body.append(select_row(label, width, selected=True))
-                else:
-                    body.append(
-                        select_row(
-                            f"{TEXT}{field.label:<26}{RESET} {ACC}{shown}{RESET}",
-                            width,
-                            selected=False,
-                        )
-                    )
             field = _FIELDS[cursor]
-            preview = [
-                field.hint or "enter pour modifier · espace bascule",
-                "~/.config/annie/config.toml",
-            ]
+
+            body: list[str] = []
+            for index, item in enumerate(_FIELDS):
+                if editing and index == cursor:
+                    raw = ("•" * len(edit_buf)) if item.kind == "secret" else edit_buf
+                    before, after = raw[:edit_pos], raw[edit_pos:]
+                    line = (
+                        f"{SEL_BAR}▏{RESET}{SEL} "
+                        f"{item.label:<26} {before}{RESET}{ACC}█{RESET}{SEL}{after}{RESET}"
+                    )
+                    body.append(pad_visible(line, width))
+                else:
+                    shown = _settings_display(item, values[item.key])
+                    label = f"{item.label:<26} {shown}"
+                    if index == cursor:
+                        body.append(select_row(label, width, selected=True))
+                    else:
+                        body.append(
+                            select_row(
+                                f"{TEXT}{item.label:<26}{RESET} {ACC}{shown}{RESET}",
+                                width,
+                                selected=False,
+                            )
+                        )
+
+            if editing:
+                footer = shortcut_line(
+                    [("←→", "cursor"), ("enter", "save"), ("esc", "cancel")],
+                    prefix="",
+                )
+                preview = [field.hint or "edit value", "~/.config/annie/config.toml"]
+            elif field.kind in {"toggle", "choice"}:
+                footer = shortcut_line(
+                    [("↑↓", "move"), ("←→", "change"), ("esc", "back")],
+                    prefix="",
+                )
+                preview = [field.hint or "← → to change value", "~/.config/annie/config.toml"]
+            else:
+                footer = shortcut_line(
+                    [("↑↓", "move"), ("enter", "edit"), ("esc", "back")],
+                    prefix="",
+                )
+                preview = [field.hint or "enter to edit", "~/.config/annie/config.toml"]
+
             ses.draw(
                 chrome(
-                    title="réglages",
+                    title="settings",
                     body=body,
-                    footer=shortcut_line(
-                        [("↑↓", "move"), ("enter", "edit"), ("esc", "back")],
-                        prefix="",
-                    ),
+                    footer=footer,
                     preview=preview,
                     cols=cols,
                     rows=rows,
@@ -841,7 +892,53 @@ def run_settings() -> bool:
             if ses.resized or key == "resize":
                 ses.resized = False
                 continue
-            if key in {"esc", "ctrl-c", "left"}:
+
+            if editing:
+                if key in {"esc", "ctrl-c"}:
+                    editing = False
+                    ses.show_cursor(False)
+                    continue
+                if key == "enter":
+                    nxt: object = (
+                        [
+                            p.strip()
+                            for p in edit_buf.replace(";", ",").split(",")
+                            if p.strip()
+                        ]
+                        if field.kind == "list"
+                        else edit_buf.strip()
+                    )
+                    values[field.key] = nxt
+                    _settings_save(field, nxt)
+                    dirty = True
+                    editing = False
+                    ses.show_cursor(False)
+                    continue
+                if key == "left":
+                    edit_pos = max(0, edit_pos - 1)
+                elif key == "right":
+                    edit_pos = min(len(edit_buf), edit_pos + 1)
+                elif key == "home":
+                    edit_pos = 0
+                elif key == "end":
+                    edit_pos = len(edit_buf)
+                elif key == "backspace":
+                    if edit_pos > 0:
+                        edit_buf = edit_buf[: edit_pos - 1] + edit_buf[edit_pos:]
+                        edit_pos -= 1
+                elif key == "delete":
+                    if edit_pos < len(edit_buf):
+                        edit_buf = edit_buf[:edit_pos] + edit_buf[edit_pos + 1 :]
+                elif key == "ctrl-u":
+                    edit_buf = ""
+                    edit_pos = 0
+                elif key.startswith("char:"):
+                    ch = key[5:]
+                    edit_buf = edit_buf[:edit_pos] + ch + edit_buf[edit_pos:]
+                    edit_pos += len(ch)
+                continue
+
+            if key in {"esc", "ctrl-c"}:
                 return dirty
             if key in {"up", "ctrl-p", "char:k"}:
                 cursor = (cursor - 1) % len(_FIELDS)
@@ -851,45 +948,45 @@ def run_settings() -> bool:
                 continue
             if key == "char:?":
                 continue
-            if key not in {"enter", "right", "char: "}:
-                continue
 
             current = values[field.key]
-            if field.kind == "toggle":
+            if field.kind == "toggle" and key in {
+                "enter",
+                "right",
+                "left",
+                "char: ",
+            }:
                 nxt = not bool(current)
                 values[field.key] = nxt
                 _settings_save(field, nxt)
                 dirty = True
                 continue
-            if field.kind == "choice":
+            if field.kind == "choice" and key in {"enter", "right", "char: "}:
                 nxt = cycle_choice(str(current or field.choices[0]), field.choices)
                 values[field.key] = nxt
                 _settings_save(field, nxt)
                 dirty = True
                 continue
+            if field.kind == "choice" and key == "left":
+                nxt = cycle_choice_prev(str(current or field.choices[0]), field.choices)
+                values[field.key] = nxt
+                _settings_save(field, nxt)
+                dirty = True
+                continue
+            if field.kind in {"toggle", "choice"}:
+                continue
+            if key not in {"enter", "right"}:
+                continue
 
+            # Text / secret / list: edit in place (same settings screen).
             initial = (
                 ", ".join(str(item) for item in current)
                 if field.kind == "list" and isinstance(current, list)
                 else str(current or "")
             )
-            edited = prompt_edit(
-                ses,
-                title="réglages",
-                label=field.label,
-                initial=initial,
-                secret=field.kind == "secret",
-                hint=field.hint,
-            )
-            if edited is None:
-                continue
-            nxt: object = (
-                [p.strip() for p in edited.replace(";", ",").split(",") if p.strip()]
-                if field.kind == "list"
-                else edited.strip()
-            )
-            values[field.key] = nxt
-            _settings_save(field, nxt)
-            dirty = True
+            editing = True
+            edit_buf = initial
+            edit_pos = len(edit_buf)
+            ses.show_cursor(True)
 
     return dirty

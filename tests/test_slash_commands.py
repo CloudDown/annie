@@ -27,7 +27,8 @@ class PromptCommandTests(unittest.TestCase):
         self.assertNotIn("\n", plain)
         self.assertIn("help", plain)
         self.assertIn("settings", plain)
-        self.assertIn("quit", plain)
+        self.assertNotIn("quit", plain)
+        self.assertNotIn("TUI help", plain)
         self.assertNotIn("/help", plain)
         self.assertIn("\033[7m", BANNER_HINT)
 

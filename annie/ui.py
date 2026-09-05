@@ -101,11 +101,11 @@ def format_buffer_lines(
         meta = f"{stylize(peer_hint, C.MUTED)}{hint}"
     lines = [
         (
-            f"{stylize('contigu', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
+            f"{stylize('contig', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
             f"{_mib_label(contiguous, target_bytes)}"
         ),
         (
-            f"{stylize('fichier', C.MUTED)}  [{bar_file}] {file_pct:3d}%  "
+            f"{stylize('file', C.MUTED)}  [{bar_file}] {file_pct:3d}%  "
             f"{_mib_label(ready, file_size)}"
         ),
         meta,
@@ -173,12 +173,10 @@ def shortcut_line(pairs: list[tuple[str, str]], *, prefix: str = "  ") -> str:
 # Une ligne sous le logo — chips Omarchy (comme la barre raccourcis).
 BANNER_HINT = shortcut_line(
     [
-        ("help", "aide"),
-        ("settings", "réglages"),
-        ("quit", "quitter"),
+        ("help", "menu"),
+        ("settings", "config"),
         ("↑↓", "move"),
         ("enter", "open"),
-        ("?", "aide TUI"),
         ("esc", "back"),
     ]
 )
@@ -193,8 +191,6 @@ PROMPT_COMMANDS = {
     "h": "help",
     "settings": "settings",
     "config": "settings",
-    "reglages": "settings",
-    "réglages": "settings",
     "quit": "quit",
     "exit": "quit",
     "q": "quit",
@@ -363,31 +359,31 @@ def format_stream_fatal(message: str) -> str:
 
 
 def format_buffer_ready(mib: int) -> str:
-    return format_stream_log("prêt", f"{mib} MiB contigu", tone="ok")
+    return format_stream_log("ready", f"{mib} MiB contiguous", tone="ok")
 
 
 def format_buffer_quick_start(mib: int) -> str:
-    return format_stream_log("démarrage rapide", f"{mib} MiB contigu", tone="info")
+    return format_stream_log("quick start", f"{mib} MiB contiguous", tone="info")
 
 
 def format_buffer_forced_start(mib: int) -> str:
     return format_stream_log(
-        "démarrage forcé",
-        f"{mib} MiB contigu, tentative mpv",
+        "forced start",
+        f"{mib} MiB contiguous, trying mpv",
         tone="warn",
     )
 
 
 def format_buffer_local_file(mib: int) -> str:
-    return format_stream_log("fichier local", f"{mib} MiB contigu", tone="ok")
+    return format_stream_log("local file", f"{mib} MiB contiguous", tone="ok")
 
 
 def log_buffer_pause() -> None:
-    print(format_stream_log("pause", "buffer insuffisant", tone="err"), flush=True)
+    print(format_stream_log("pause", "buffer too low", tone="err"), flush=True)
 
 
 def log_buffer_resume() -> None:
-    print(format_stream_log("reprise", tone="ok"), flush=True)
+    print(format_stream_log("resume", tone="ok"), flush=True)
 
 
 _T = TypeVar("_T")
@@ -494,7 +490,7 @@ def log_playback_start(filename: str, player: str) -> None:
     cols, _ = _terminal_size()
     name = _clip(filename, max(40, cols - 28))
     line = (
-        f"{_annie_prefix()}{_s('lecture', C.MUTED)}  "
+        f"{_annie_prefix()}{_s('playing', C.MUTED)}  "
         f"{_s(name, C.FG)}  {_s(player, C.MUTED)}"
     )
     print(line, flush=True)
@@ -592,7 +588,7 @@ def format_preview_item(
     else:
         title = stylize(_compact_ep_label(item), C.LIST, C.BOLD)
     if _item_is_watched(section, item, watch_history):
-        title = f"{title} {stylize('· vu', C.RED)}"
+        title = f"{title} {stylize('· watched', C.RED)}"
     seeds = item.entry.seeders
     seed_line = stylize(
         f"{seeds} seeders · {item.entry.leechers} leechers · {item.entry.size}",
@@ -738,7 +734,7 @@ def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
         indexed,
         previews,
         lines,
-        prompt="titre",
+        prompt="anime",
         header=_fzf_header("↑↓ enter · 1-9 · ? · esc"),
         expect="enter",
     )
@@ -801,7 +797,7 @@ def pick_allanime_show(shows: list, query: str = "") -> Any | None:
         indexed,
         previews,
         lines,
-        prompt="série",
+        prompt="show",
         header=_fzf_header("↑↓ enter · 1-9 · ? · esc"),
         expect="enter",
     )
@@ -864,7 +860,7 @@ def _pick_section_flat(
         indexed,
         previews,
         lines,
-        prompt="saison",
+        prompt="season",
         header=header,
         expect="left,enter",
     )
@@ -1006,14 +1002,14 @@ def pick_subtitle_language() -> str | None | _BackToEpisode:
         lines.append(f"{key}{SEP}{stylize(lang.label, C.LIST, C.BOLD)}")
 
     indexed["lang99"] = SKIP_SUBS
-    previews["lang99"] = stylize("Lecture sans sous-titres externes", C.META)
-    lines.append(f"lang99{SEP}{stylize('Aucun', C.MUTED)}")
+    previews["lang99"] = stylize("Play without external subtitles", C.META)
+    lines.append(f"lang99{SEP}{stylize('None', C.MUTED)}")
 
     picked = _tui_choose(
         indexed,
         previews,
         lines,
-        prompt="langue",
+        prompt="language",
         header=_fzf_header("↑↓ enter · ← · ? · esc"),
         expect="left,enter",
     )
