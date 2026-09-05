@@ -12,8 +12,7 @@ from annie.net import TokenBucket, fetch_json_post
 from annie.parsing import normalize, query_tokens
 from annie.paths import cache_dir
 from annie.catalog import is_recap_movie
-from annie.releases import extra_release, movie_release, tv_release
-from annie.types import MalRelease, MediaKind
+from annie.types import MalRelease, MediaKind, extra_release, movie_release, tv_release
 
 ALLANIME_API = "https://api.allanime.day/api"
 ALLANIME_ORIGIN = "https://youtu-chan.com"

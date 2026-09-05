@@ -12,15 +12,14 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from annie.api_cache import ApiDiskCache
+from annie.cache import ApiDiskCache
 from annie.cache import read_json, write_json
 from annie.catalog import is_recap_movie
 from annie.franchise_walk import drain_franchise_queue
 from annie.net import TokenBucket, fetch_json
 from annie.parsing import _token_matches as parsing_token_matches, normalize
 from annie.paths import cache_dir
-from annie.releases import extra_release, movie_release, tv_release
-from annie.types import MalRelease, MediaKind
+from annie.types import MalRelease, MediaKind, extra_release, movie_release, tv_release
 
 JIKAN_BASE = "https://api.jikan.moe/v4"
 USER_AGENT = "Annie/0.5 (+https://github.com/CloudDown/annie)"

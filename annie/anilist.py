@@ -7,7 +7,7 @@ import urllib.error
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from annie.api_cache import ApiDiskCache
+from annie.cache import ApiDiskCache
 from annie.catalog import is_recap_movie
 from annie.franchise_walk import drain_franchise_queue
 from annie.mal import (

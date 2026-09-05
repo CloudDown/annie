@@ -2,33 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
 import threading
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from annie.paths import cache_dir
 from annie.parsing import minimal_label
-from annie.theme import (
-    ACC,
-    BOLD,
-    BRIGHT,
-    CYAN_FG,
-    DIM as FG_DIM,
-    ERR,
-    FG,
-    MAG,
-    OK,
-    RESET,
-    RULE,
-    WARN,
-)
 from annie.types import MediaKind, MediaSection, ResultItem
 
 # Code de sortie conventionnel (SIGINT / Ctrl+C volontaire).
@@ -46,33 +28,34 @@ def is_play_completed(code: int | None) -> bool:
 
 
 class C:
-    RESET = RESET
-    BOLD = BOLD
+    """Couleurs ANSI 16 — suivent le thème du terminal."""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
     DIM = "\033[2m"
     ITALIC = "\033[3m"
     UNDER = "\033[4m"
 
-    # Tokyo Night (Omarchy) — PALE_PINK reste un alias de l'accent.
-    FG = FG
-    MUTED = FG_DIM
-    PINK = MAG
-    PALE_PINK = ACC
-    ROSE = MAG
-    CYAN = CYAN_FG
-    GREEN = OK
-    YELLOW = WARN
-    MAGENTA = MAG
-    ORANGE = WARN
-    RED = ERR
-    BLUE = ACC
-    WHITE = BRIGHT
+    FG = ""
+    MUTED = "\033[2m"
+    PINK = "\033[35m"
+    PALE_PINK = "\033[1;34m"
+    ROSE = "\033[35m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    MAGENTA = "\033[35m"
+    ORANGE = "\033[33m"
+    RED = "\033[31m"
+    BLUE = "\033[1;34m"
+    WHITE = "\033[1m"
 
-    LIST = BRIGHT
-    META = FG_DIM
-    CHROME = RULE
-    SEED_HIGH = OK
-    SEED_MID = WARN
-    SEED_LOW = ERR
+    LIST = "\033[1m"
+    META = "\033[2m"
+    CHROME = "\033[2m"
+    SEED_HIGH = "\033[32m"
+    SEED_MID = "\033[33m"
+    SEED_LOW = "\033[31m"
 
 
 def stylize(text: str, *codes: str) -> str:
@@ -178,8 +161,11 @@ BANNER_ART = [
 
 
 HELP = f"""
-  {stylize("↑↓ enter", C.FG)}     select
+  {stylize("↑↓ j k", C.FG)}      move
+  {stylize("enter →", C.FG)}      open
+  {stylize("1–9", C.FG)}         jump (no filter)
   {stylize("type", C.FG)}         filter
+  {stylize("?", C.FG)}            help overlay
   {stylize("ctrl-o", C.FG)}       magnet
   {stylize("← esc", C.MUTED)}       back / search
 
@@ -187,45 +173,11 @@ HELP = f"""
   {stylize("settings · help · quit", C.MUTED)}
 """
 
-CACHE_DIR = cache_dir()
-PREVIEW_FILE = CACHE_DIR / "previews.json"
 SEP = "\x1f"
-_preview_digest: str | None = None
-
-
-def _preview_command() -> str:
-    preview_file = str(PREVIEW_FILE)
-    if shutil.which("jq"):
-        if sys.platform == "win32":
-            path = preview_file.replace('"', '""')
-            return f'jq -r --arg k {{1}} ".[$k] // empty" "{path}"'
-        path = shlex.quote(preview_file)
-        return f"jq -r --arg k {{1}} '.[$k] // empty' {path}"
-
-    root = Path(__file__).resolve().parent.parent
-    if sys.platform == "win32":
-        root_esc = str(root).replace('"', '""')
-        exe_esc = sys.executable.replace('"', '""')
-        return f'set "PYTHONPATH={root_esc}"&& "{exe_esc}" -m annie.preview {{1}}'
-
-    exe = shlex.quote(sys.executable)
-    return f"PYTHONPATH={shlex.quote(str(root))} {exe} -m annie.preview {{1}}"
-
-
-def _write_previews(previews: dict[str, str]) -> None:
-    global _preview_digest
-    payload = json.dumps(previews, ensure_ascii=False, sort_keys=True)
-    if payload == _preview_digest:
-        return
-    _preview_digest = payload
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = PREVIEW_FILE.with_suffix(".tmp")
-    tmp.write_text(payload, encoding="utf-8")
-    tmp.replace(PREVIEW_FILE)
 
 
 def _tty_streams() -> list[Any]:
-    """Flux réellement attachés au terminal (stdout peut être pipé après fzf)."""
+    """Flux réellement attachés au terminal."""
     streams: list[Any] = []
     if sys.platform != "win32":
         try:
@@ -745,7 +697,7 @@ def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
         previews,
         lines,
         prompt="titre",
-        header=_fzf_header("↑↓  enter  esc"),
+        header=_fzf_header("↑↓ enter · 1-9 · ? · esc"),
         expect="enter",
     )
     if picked is None:
@@ -808,7 +760,7 @@ def pick_allanime_show(shows: list, query: str = "") -> Any | None:
         previews,
         lines,
         prompt="série",
-        header=_fzf_header("↑↓  enter  esc"),
+        header=_fzf_header("↑↓ enter · 1-9 · ? · esc"),
         expect="enter",
     )
     if picked is None:
@@ -842,7 +794,7 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
         previews,
         lines,
         prompt="type",
-        header=_fzf_header("↑↓  enter  ←  esc"),
+        header=_fzf_header("↑↓ enter · ← · ? · esc"),
         expect="left,enter",
     )
     if picked is None:
@@ -865,7 +817,7 @@ def _pick_section_flat(
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = _fzf_header(f"↑↓  enter  ← {back_label}  esc")
+    header = _fzf_header(f"↑↓ enter · ← {back_label} · ? · esc")
     picked = _tui_choose(
         indexed,
         previews,
@@ -963,7 +915,7 @@ def pick_episode(
         )
 
     prompt = _clip(section.label, 24)
-    header = _fzf_header("↑↓  enter  ctrl-o  ←  esc")
+    header = _fzf_header("↑↓ enter · ctrl-o · ← · ? · esc")
     picked = _tui_choose(
         indexed,
         previews,
@@ -1020,7 +972,7 @@ def pick_subtitle_language() -> str | None | _BackToEpisode:
         previews,
         lines,
         prompt="langue",
-        header=_fzf_header("↑↓  enter  ←  esc"),
+        header=_fzf_header("↑↓ enter · ← · ? · esc"),
         expect="left,enter",
     )
     if picked is None:
@@ -1161,8 +1113,3 @@ def copy_magnet(magnet: str) -> bool:
         except (OSError, subprocess.CalledProcessError):
             return False
     return False
-
-
-def preview_key(key: str) -> None:
-    if PREVIEW_FILE.exists():
-        print(json.loads(PREVIEW_FILE.read_text(encoding="utf-8")).get(key, ""))

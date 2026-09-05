@@ -1,4 +1,4 @@
-"""TUI in-process : picker plein écran + chrome partagé."""
+"""TUI in-process : picker, réglages, chrome — couleurs ANSI 16 du terminal."""
 
 from __future__ import annotations
 
@@ -8,26 +8,60 @@ import select
 import shutil
 import signal
 import sys
+from dataclasses import dataclass
 from typing import Any, Callable
 
-from annie import theme as T
+# Couleurs 16-ANSI : suivent le thème du terminal (Omarchy, Alacritty, …).
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+REV = "\033[7m"
+FG = ""
+ACC = "\033[1;34m"  # bold blue → accent terminal
+RULE = DIM
+OK = "\033[32m"
+WARN = "\033[33m"
+ERR = "\033[31m"
+CYAN = "\033[36m"
+MAG = "\033[35m"
+TEXT = FG
+HINT = DIM
+SEL = BOLD + REV
+SEL_BAR = ACC
+
+# Compat imports historiques (_ACCENT etc.)
+_RESET = RESET
+_BOLD = BOLD
+_DIM = DIM
+_TITLE = BOLD + ACC
+_ACCENT = ACC
+_RULE = RULE
+_TEXT = TEXT
+_SEL = SEL
+_HINT = HINT
+_OK = OK
 
 ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
 
-_RESET = T.RESET
-_BOLD = T.BOLD
-_DIM = T.DIM
-_TITLE = T.BOLD + T.ACC
-_ACCENT = T.ACC
-_RULE = T.RULE
-_TEXT = T.FG
-_SEL = T.SEL
-_HINT = T.DIM
-_OK = T.OK
+HELP_OVERLAY = [
+    "navigation",
+    "  ↑↓ / j k     déplacer",
+    "  enter / →    ouvrir",
+    "  ← / esc      retour",
+    "  / + texte    filtrer",
+    "  1–9          aller à la ligne (sans filtre)",
+    "  pgup / pgdn  page",
+    "  ctrl-o       copier magnet (si dispo)",
+    "  ?            fermer cette aide",
+    "",
+    "prompt",
+    "  settings     clés API, résolution, lecteur",
+    "  help / ?     aide",
+    "  quit         quitter",
+]
 
 
 def available() -> bool:
-    """True si un TTY est utilisable pour le picker."""
     if sys.stdin.isatty() and sys.stdout.isatty():
         return True
     if sys.platform == "win32":
@@ -65,13 +99,12 @@ def clip_visible(text: str, width: int) -> str:
         out.append(text[i])
         n += 1
         i += 1
-    return "".join(out) + _RESET
+    return "".join(out) + RESET
 
 
 def pad_visible(text: str, width: int) -> str:
     clipped = clip_visible(text, width)
-    pad = max(0, width - visible_len(clipped))
-    return clipped + (" " * pad)
+    return clipped + (" " * max(0, width - visible_len(clipped)))
 
 
 def _bar(left: str, right: str, width: int) -> str:
@@ -90,10 +123,7 @@ def screen_title(title: str) -> str:
 
 
 def layout(rows: int, preview_n: int) -> tuple[int, int, int]:
-    """Hauteur liste, aperçu, spacer. Doit rester ≤ *rows* avec le chrome."""
-    preview_h = 0
-    extra = 0
-    spacer = 0
+    preview_h = extra = spacer = 0
     if preview_n > 0:
         cap = 8 if rows >= 28 else (5 if rows >= 20 else 3)
         preview_h = min(preview_n, cap)
@@ -103,18 +133,18 @@ def layout(rows: int, preview_n: int) -> tuple[int, int, int]:
     return body_h, preview_h, spacer
 
 
-def select_row(text: str, width: int, *, selected: bool) -> str:
-    inner = max(1, width - 2)
+def select_row(text: str, width: int, *, selected: bool, index: int | None = None) -> str:
+    """Ligne sélectionnée en reverse vidéo (suit le thème). Numéro optionnel."""
+    num = f"{index} " if index is not None and 1 <= index <= 9 else "  "
     if selected:
-        return (
-            f"{T.SEL_BAR}▏{T.RESET}{T.SEL} "
-            f"{pad_visible(strip_ansi(text), inner)}{T.RESET}"
-        )
-    return f"  {pad_visible(text, inner)}"
+        inner = max(1, width - 1)
+        return f"{SEL_BAR}▏{RESET}{SEL}{pad_visible(num + strip_ansi(text), inner)}{RESET}"
+    if index is not None and 1 <= index <= 9:
+        return f"{DIM}{index}{RESET} {pad_visible(text, max(1, width - 2))}"
+    return f"  {pad_visible(text, max(1, width - 2))}"
 
 
 def fuzzy_score(query: str, text: str) -> int | None:
-    """Score subsequence façon fzf. None = pas de match. Plus haut = mieux."""
     if not query:
         return 0
     needle = query.casefold()
@@ -123,7 +153,7 @@ def fuzzy_score(query: str, text: str) -> int | None:
     score = 0
     prev = -2
     first = -1
-    for i, char in enumerate(needle):
+    for char in needle:
         found = hay.find(char, start)
         if found < 0:
             return None
@@ -145,11 +175,9 @@ def fuzzy_score(query: str, text: str) -> int | None:
 def filter_rows(
     rows: list[tuple[str, str, str, Any]], query: str
 ) -> list[tuple[int, tuple[str, str, str, Any]]]:
-    """Retourne (score, row) triés, matches seulement."""
     scored: list[tuple[int, int, tuple[str, str, str, Any]]] = []
     for index, row in enumerate(rows):
-        hay = strip_ansi(row[1])
-        score = fuzzy_score(query, hay)
+        score = fuzzy_score(query, strip_ansi(row[1]))
         if score is None:
             continue
         scored.append((score, -index, row))
@@ -259,6 +287,8 @@ class _UnixKeys:
             "OB": "down",
             "OC": "right",
             "OD": "left",
+            "[5~": "pgup",
+            "[6~": "pgdn",
         }
         for prefix, name in mapping.items():
             if seq.startswith(prefix):
@@ -286,6 +316,8 @@ class _WinKeys:
                 "S": "delete",
                 "G": "home",
                 "O": "end",
+                "I": "pgup",
+                "Q": "pgdn",
             }.get(code, "esc")
         if char == "\x03":
             return "ctrl-c"
@@ -326,8 +358,6 @@ def term_size() -> tuple[int, int]:
 
 
 class Session:
-    """Écran alternatif + raw TTY. Un seul à la fois."""
-
     def __init__(self) -> None:
         self.stdin, self.stdout, self._owned = _open_tty()
         self._keys: _UnixKeys | _WinKeys
@@ -383,16 +413,15 @@ def chrome(
     rows: int,
     meta: str = "",
 ) -> str:
-    """Barre Omarchy : marque, filet, liste, aperçu, footer — sans cadre."""
     width = max(24, cols - 1)
     preview_n = len(preview) if preview else 0
     body_h, preview_h, spacer = layout(rows, preview_n)
-    rule = f"{_RULE}{'─' * width}{_RESET}"
-    brand = f"{_TITLE}annie{_RESET}"
+    rule = f"{RULE}{'─' * width}{RESET}"
+    brand = f"{_TITLE}annie{RESET}"
     label = screen_title(title)
-    left = brand if not label else f"{brand}  {_DIM}{label}{_RESET}"
+    left = brand if not label else f"{brand}  {DIM}{label}{RESET}"
     if meta and "\033" not in meta:
-        right = f"{_DIM}{meta}{_RESET}"
+        right = f"{DIM}{meta}{RESET}"
     else:
         right = meta
     lines = [_bar(left, right, width), rule]
@@ -411,7 +440,7 @@ def chrome(
         while len(shown) < preview_h:
             shown.append("")
         for row in shown:
-            lines.append(f"{_DIM}{pad_visible(row, width)}{_RESET}")
+            lines.append(f"{DIM}{pad_visible(row, width)}{RESET}")
 
     lines.append(rule)
     lines.append(pad_visible(footer, width))
@@ -437,6 +466,7 @@ def choose(
     query_buf = query
     scroll = 0
     cursor = 0
+    help_open = False
     if cursor_key is not None:
         for index, row in enumerate(rows):
             if row[0] == cursor_key:
@@ -447,58 +477,99 @@ def choose(
         with Session() as ses:
             while True:
                 cols, lines = term_size()
+                width = max(24, cols - 1)
+                list_h = 3
+                view: list[tuple[int, tuple[str, str, str, Any]]] = []
                 filtered = filter_rows(rows, query_buf)
                 if cursor >= len(filtered):
                     cursor = max(0, len(filtered) - 1)
                 if cursor < 0:
                     cursor = 0
 
-                preview_src = (
-                    strip_ansi(filtered[cursor][1][2]).splitlines() if filtered else []
-                )
-                list_h, _preview_h, _spacer = layout(lines, len(preview_src))
-                width = max(24, cols - 1)
-                if filtered:
-                    if cursor < scroll:
-                        scroll = cursor
-                    if cursor >= scroll + list_h:
-                        scroll = cursor - list_h + 1
-
-                body: list[str] = []
-                view = filtered[scroll : scroll + list_h]
-                for offset, (_score, row) in enumerate(view):
-                    index = scroll + offset
-                    label = clip_visible(row[1], max(10, width - 2))
-                    body.append(select_row(label, width, selected=index == cursor))
-                if not filtered:
-                    body.append(select_row(f"{_DIM}rien{_RESET}", width, selected=False))
-                while len(body) < list_h:
-                    body.append("")
-
-                shown = len(filtered)
-                typed = f"{_TEXT}{query_buf}{_RESET}" if query_buf else ""
-                footer = _bar(
-                    f"{_ACCENT}/{_RESET}{typed}",
-                    f"{_HINT}{header}{_RESET}",
-                    width,
-                )
-                ses.draw(
-                    chrome(
-                        title=prompt,
-                        body=body,
-                        footer=footer,
-                        preview=preview_src or None,
-                        cols=cols,
-                        rows=lines,
-                        meta=f"{shown}/{len(rows)}",
+                if help_open:
+                    body = [f"  {DIM}{line}{RESET}" if line else "" for line in HELP_OVERLAY]
+                    while len(body) < max(3, lines - 4):
+                        body.append("")
+                    ses.draw(
+                        chrome(
+                            title="aide",
+                            body=body,
+                            footer=f"{HINT}? fermer  ·  esc retour{RESET}",
+                            preview=None,
+                            cols=cols,
+                            rows=lines,
+                        )
                     )
-                )
+                else:
+                    preview_src = (
+                        strip_ansi(filtered[cursor][1][2]).splitlines()
+                        if filtered
+                        else ["aucun résultat — efface le filtre ou esc"]
+                    )
+                    list_h, _ph, _sp = layout(lines, len(preview_src))
+                    if filtered:
+                        if cursor < scroll:
+                            scroll = cursor
+                        if cursor >= scroll + list_h:
+                            scroll = cursor - list_h + 1
+
+                    body: list[str] = []
+                    view = filtered[scroll : scroll + list_h]
+                    for offset, (_score, row) in enumerate(view):
+                        index = scroll + offset
+                        label = clip_visible(row[1], max(10, width - 4))
+                        visible_n = offset + 1 if not query_buf else None
+                        body.append(
+                            select_row(
+                                label,
+                                width,
+                                selected=index == cursor,
+                                index=visible_n if visible_n and visible_n <= 9 else None,
+                            )
+                        )
+                    if not filtered:
+                        body.append(
+                            select_row(
+                                f"{DIM}aucun résultat — backspace / esc{RESET}",
+                                width,
+                                selected=False,
+                            )
+                        )
+                        view = []
+                    while len(body) < list_h:
+                        body.append("")
+
+                    footer = _bar(
+                        f"{ACC}/{RESET}{TEXT}{query_buf}{RESET}" if query_buf else f"{ACC}/{RESET}",
+                        f"{HINT}{header}  ?{RESET}",
+                        width,
+                    )
+                    ses.draw(
+                        chrome(
+                            title=prompt,
+                            body=body,
+                            footer=footer,
+                            preview=preview_src or None,
+                            cols=cols,
+                            rows=lines,
+                            meta=f"{len(filtered)}/{len(rows)}",
+                        )
+                    )
 
                 key = ses.read()
                 if ses.resized or key == "resize":
                     ses.resized = False
                     continue
-                if key in {"ctrl-c", "esc"}:
+                if key in {"ctrl-c"}:
+                    return None
+                if help_open:
+                    if key in {"esc", "char:?", "char:h"}:
+                        help_open = False
+                    continue
+                if key == "char:?" or (key == "char:h" and not query_buf):
+                    help_open = True
+                    continue
+                if key == "esc":
                     return None
                 if key in {"enter", "right"}:
                     if not filtered:
@@ -514,26 +585,35 @@ def choose(
                     if not filtered:
                         continue
                     return "ctrl-o", filtered[cursor][1][3]
-                if key in {"up", "ctrl-p"} and filtered:
+                if key in {"up", "ctrl-p", "char:k"} and filtered:
                     cursor = (cursor - 1) % len(filtered)
-                elif key in {"down", "ctrl-n"} and filtered:
+                elif key in {"down", "ctrl-n", "char:j"} and filtered:
                     cursor = (cursor + 1) % len(filtered)
+                elif key == "pgup" and filtered:
+                    cursor = max(0, cursor - max(1, list_h))
+                elif key == "pgdn" and filtered:
+                    cursor = min(len(filtered) - 1, cursor + max(1, list_h))
                 elif key == "home":
                     cursor = 0
                 elif key == "end" and filtered:
                     cursor = len(filtered) - 1
                 elif key == "backspace":
                     query_buf = query_buf[:-1]
-                    cursor = 0
-                    scroll = 0
+                    cursor = scroll = 0
                 elif key in {"ctrl-u", "delete"}:
                     query_buf = ""
-                    cursor = 0
-                    scroll = 0
+                    cursor = scroll = 0
                 elif key.startswith("char:"):
-                    query_buf += key[5:]
-                    cursor = 0
-                    scroll = 0
+                    ch = key[5:]
+                    if ch in "jk" and not query_buf:
+                        continue
+                    if not query_buf and ch in "123456789" and filtered:
+                        pick = int(ch) - 1
+                        if 0 <= pick < len(view):
+                            return "enter", view[pick][1][3]
+                        continue
+                    query_buf += ch
+                    cursor = scroll = 0
     except KeyboardInterrupt:
         return None
 
@@ -547,27 +627,25 @@ def prompt_edit(
     secret: bool = False,
     hint: str = "",
 ) -> str | None:
-    """Saisie inline dans la session déjà ouverte. None = annuler."""
     buf = initial
     session.show_cursor(True)
     try:
         while True:
             cols, rows = term_size()
             shown = ("•" * len(buf)) if secret else buf
-            caret = f"{_TEXT}{shown}{_ACCENT}▍{_RESET}"
+            caret = f"{TEXT}{shown}{ACC}▍{RESET}"
             body = [
-                f"{_DIM}{label}{_RESET}",
+                f"{DIM}{label}{RESET}",
                 "",
                 caret,
                 "",
-                f"{_DIM}{hint}{_RESET}" if hint else "",
+                f"{DIM}{hint}{RESET}" if hint else "",
             ]
-            footer = f"{_HINT}enter  esc{_RESET}"
             session.draw(
                 chrome(
                     title=title,
                     body=body,
-                    footer=footer,
+                    footer=f"{HINT}enter enregistrer  ·  esc annuler{RESET}",
                     preview=None,
                     cols=cols,
                     rows=rows,
@@ -586,3 +664,199 @@ def prompt_edit(
                 buf += key[5:]
     finally:
         session.show_cursor(False)
+
+
+# --- Réglages (ex-tui_settings) ------------------------------------------------
+
+RES_QUALITY = {"auto": 26, "720p": 26, "1080p": 38, "2160p": 45}
+LANG_CHOICES = ("", "fr", "en", "es", "de", "it", "pt", "ja")
+PLAYER_CHOICES = ("auto", "mpv", "vlc", "ffplay")
+MODE_CHOICES = ("auto", "anilist", "mal", "off")
+RES_CHOICES = ("auto", "720p", "1080p", "2160p")
+
+
+@dataclass
+class _Field:
+    key: str
+    label: str
+    kind: str
+    section: str
+    toml_key: str
+    choices: tuple[str, ...] = ()
+    hint: str = ""
+
+
+_FIELDS: tuple[_Field, ...] = (
+    _Field("os_key", "Clé API OpenSubtitles", "secret", "subtitles", "api_key",
+           hint="https://www.opensubtitles.com/en/consumers"),
+    _Field("os_user", "Identifiant OpenSubtitles", "text", "subtitles", "username"),
+    _Field("os_pass", "Mot de passe OpenSubtitles", "secret", "subtitles", "password"),
+    _Field("sub_on", "Sous-titres", "toggle", "subtitles", "enabled"),
+    _Field("sub_lang", "Langue sous-titres", "choice", "subtitles", "default_lang",
+           LANG_CHOICES, hint="vide = menu à chaque lecture"),
+    _Field("resolution", "Résolution préférée", "choice", "catalog", "preferred_resolution",
+           RES_CHOICES, hint="influence le choix des torrents"),
+    _Field("player", "Lecteur", "choice", "player", "command", PLAYER_CHOICES),
+    _Field("meta", "Métadonnées", "choice", "metadata", "mode", MODE_CHOICES,
+           hint="auto · anilist · mal · off (Nyaa seul)"),
+    _Field("seed", "Seed pendant la lecture", "toggle", "streaming", "seed_while_watching"),
+    _Field("groups", "Groupes préférés", "list", "catalog", "preferred_groups",
+           hint="ex. SubsPlease, Erai-raws"),
+)
+
+
+def _settings_values() -> dict[str, object]:
+    from annie.config import AnnieConfig
+    from annie.settings import AnnieSettings
+
+    cfg = AnnieConfig.load()
+    settings = AnnieSettings.load()
+    return {
+        "os_key": cfg.subtitles.api_key,
+        "os_user": cfg.subtitles.username,
+        "os_pass": cfg.subtitles.password,
+        "sub_on": cfg.subtitles.enabled,
+        "sub_lang": cfg.subtitles.default_lang,
+        "resolution": getattr(cfg.catalog, "preferred_resolution", "auto") or "auto",
+        "player": cfg.player or "auto",
+        "meta": cfg.metadata.mode,
+        "seed": settings.seed_while_watching,
+        "groups": list(cfg.catalog.preferred_groups),
+    }
+
+
+def _settings_display(field: _Field, value: object) -> str:
+    if field.kind == "toggle":
+        return "oui" if value else "non"
+    if field.kind == "secret":
+        return mask_secret(str(value or ""))
+    if field.kind == "list":
+        items = value if isinstance(value, list) else []
+        return ", ".join(str(item) for item in items) if items else "—"
+    if field.key == "sub_lang":
+        return str(value) if value else "menu"
+    text = str(value or "")
+    return text if text else "—"
+
+
+def _settings_save(field: _Field, value: object) -> None:
+    from annie.config import reload_config
+    from annie.settings import reload_settings
+    from annie.user_config import set_config_value
+
+    if field.key == "player":
+        from annie.user_config import set_player_command
+
+        set_player_command(str(value), only_if_auto=False)
+    else:
+        set_config_value(field.section, field.toml_key, value)
+    if field.key == "resolution":
+        res = str(value or "auto")
+        set_config_value("catalog", "min_quality_strict", RES_QUALITY.get(res, 26))
+    if field.key == "meta" and value == "off":
+        set_config_value("metadata", "enabled", False)
+    elif field.key == "meta":
+        set_config_value("metadata", "enabled", True)
+    reload_config()
+    reload_settings()
+
+
+def run_settings() -> bool:
+    """Écran réglages. True si une valeur a changé."""
+    if not available():
+        return False
+
+    values = _settings_values()
+    cursor = 0
+    dirty = False
+
+    with Session() as ses:
+        while True:
+            cols, rows = term_size()
+            width = max(24, cols - 1)
+            body: list[str] = []
+            for index, field in enumerate(_FIELDS):
+                shown = _settings_display(field, values[field.key])
+                label = f"{field.label:<26} {shown}"
+                if index == cursor:
+                    body.append(select_row(label, width, selected=True))
+                else:
+                    body.append(
+                        select_row(
+                            f"{TEXT}{field.label:<26}{RESET} {ACC}{shown}{RESET}",
+                            width,
+                            selected=False,
+                        )
+                    )
+            field = _FIELDS[cursor]
+            preview = [
+                field.hint or "enter pour modifier · espace bascule",
+                "~/.config/annie/config.toml",
+            ]
+            ses.draw(
+                chrome(
+                    title="réglages",
+                    body=body,
+                    footer=f"{HINT}↑↓  enter  esc  ?{RESET}",
+                    preview=preview,
+                    cols=cols,
+                    rows=rows,
+                    meta=f"{OK}ok{RESET}" if dirty else "",
+                )
+            )
+            key = ses.read()
+            if ses.resized or key == "resize":
+                ses.resized = False
+                continue
+            if key in {"esc", "ctrl-c", "left"}:
+                return dirty
+            if key in {"up", "ctrl-p", "char:k"}:
+                cursor = (cursor - 1) % len(_FIELDS)
+                continue
+            if key in {"down", "ctrl-n", "char:j"}:
+                cursor = (cursor + 1) % len(_FIELDS)
+                continue
+            if key == "char:?":
+                continue
+            if key not in {"enter", "right", "char: "}:
+                continue
+
+            current = values[field.key]
+            if field.kind == "toggle":
+                nxt = not bool(current)
+                values[field.key] = nxt
+                _settings_save(field, nxt)
+                dirty = True
+                continue
+            if field.kind == "choice":
+                nxt = cycle_choice(str(current or field.choices[0]), field.choices)
+                values[field.key] = nxt
+                _settings_save(field, nxt)
+                dirty = True
+                continue
+
+            initial = (
+                ", ".join(str(item) for item in current)
+                if field.kind == "list" and isinstance(current, list)
+                else str(current or "")
+            )
+            edited = prompt_edit(
+                ses,
+                title="réglages",
+                label=field.label,
+                initial=initial,
+                secret=field.kind == "secret",
+                hint=field.hint,
+            )
+            if edited is None:
+                continue
+            nxt: object = (
+                [p.strip() for p in edited.replace(";", ",").split(",") if p.strip()]
+                if field.kind == "list"
+                else edited.strip()
+            )
+            values[field.key] = nxt
+            _settings_save(field, nxt)
+            dirty = True
+
+    return dirty

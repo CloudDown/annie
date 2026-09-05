@@ -126,6 +126,20 @@ class ChromeTests(unittest.TestCase):
         self.assertTrue(strip_ansi(idle).startswith("  "))
         self.assertEqual(len(strip_ansi(selected)), 40)
         self.assertEqual(len(strip_ansi(idle)), 40)
+        numbered = select_row("Season 02", 40, selected=False, index=2)
+        self.assertTrue(strip_ansi(numbered).startswith("2 "))
+        self.assertIn("\033[7m", selected)  # reverse = thème terminal
+
+    def test_uses_ansi16_not_truecolor(self) -> None:
+        frame = chrome(
+            title="saison",
+            body=[select_row("x", 40, selected=True)],
+            footer="?",
+            cols=80,
+            rows=20,
+        )
+        self.assertNotIn("38;2;", frame)
+        self.assertNotIn("48;2;", frame)
 
 
 if __name__ == "__main__":

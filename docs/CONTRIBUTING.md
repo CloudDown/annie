@@ -62,12 +62,10 @@ annie/
   player.py           Commandes mpv/vlc/ffplay
   subtitles.py        OpenSubtitles.com
   ui.py               TUI & interface terminal
-  tui.py              Picker plein écran (filtre, preview)
-  tui_settings.py     Écran réglages (clés API, résolution)
+  tui.py              Picker, réglages, chrome (ANSI 16)
   net.py              HTTP + rate limit
-  cache.py            Cache disque JSON
+  cache.py            Cache disque JSON (+ ApiDiskCache)
   paths.py            Chemins multi-OS
-  preview.py          Aperçus (legacy)
   watch_history.py    Historique de visionnage
 tests/
   helpers.py          Factories & chargement fixtures

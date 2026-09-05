@@ -594,7 +594,7 @@ def interactive_loop(config: AnnieConfig) -> int:
         if lowered in {"settings", "config", "réglages", "reglages"}:
             from annie.config import reload_config
             from annie.settings import reload_settings
-            from annie.tui_settings import run_settings
+            from annie.tui import run_settings
 
             if run_settings():
                 config = reload_config()

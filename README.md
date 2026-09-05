@@ -136,14 +136,15 @@ Logo ASCII → invite `>` → tape un titre (**anglais** ou **romaji**, ex. `fri
 Pendant la lecture :
 
 ```
-◆ Frieren S02E06 …
 lecture      [SubsPlease] … mkv  mpv
 prêt         22 MiB contigu
 ```
 
-Connexion lente → `⏸ buffer insuffisant` puis reprise auto. Quitter mpv : **q** ou fermer la fenêtre.
+Connexion lente → `pause  buffer insuffisant` puis reprise auto. Quitter mpv : **q** ou fermer la fenêtre.
 
-Au prompt Annie : `settings` · `help` · `quit` / `q`
+Au prompt Annie : `settings` · `help` / `?` · `quit` / `q`
+
+Dans le TUI : `?` aide · `1–9` sélection rapide · `j`/`k` ou flèches · couleurs = thème du terminal.
 
 ---
 
