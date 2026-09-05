@@ -181,7 +181,7 @@ BANNER_HINT = shortcut_line(
         ("?", "aide TUI"),
         ("esc", "back"),
     ]
-) + stylize("  ·  frieren s2e10", C.MUTED)
+)
 
 HELP = BANNER_HINT
 
