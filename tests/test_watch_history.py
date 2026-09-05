@@ -41,6 +41,36 @@ class WatchHistoryTests(unittest.TestCase):
                     )
                 )
 
+    def test_mark_movie_without_episode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            history_path = Path(tmp) / "history.toml"
+            with patch("annie.watch_history.HISTORY_FILE", history_path):
+                history = WatchHistory()
+                section = MediaSection(
+                    key="movie",
+                    label="Legend of Crimson",
+                    kind=MediaKind.MOVIE,
+                    season=None,
+                    mal_id=99,
+                )
+                item = result_item(
+                    "[EMBER] KONOSUBA Legend of Crimson - Movie (2019)",
+                    episode=None,
+                    kind=MediaKind.MOVIE,
+                )
+                history.mark_item(section, item)
+                self.assertTrue(
+                    history.is_watched(
+                        mal_id=99, section_key="movie", season=None, episode=None
+                    )
+                )
+                self.assertEqual(
+                    watch_key(
+                        mal_id=99, section_key="movie", season=None, episode=None
+                    ),
+                    "mal:99:movie",
+                )
+
 
 class WatchedDotTests(unittest.TestCase):
     def test_dot_on_right_in_red(self) -> None:
@@ -60,6 +90,13 @@ class WatchedDotTests(unittest.TestCase):
         # Point après le numéro, pas avant.
         plain = line.replace("\033[0m", "")
         self.assertRegex(plain, r"03.*●")
+
+    def test_seeders_and_resolution_suffix(self) -> None:
+        item = result_item("[G] Anime - 03 [1080p]")
+        line = format_torrent_line(item)
+        plain = line.replace("\033[0m", "")
+        self.assertIn("50S", plain)
+        self.assertIn("1080p", plain)
 
 
 class PlaybackCompletionTests(unittest.TestCase):

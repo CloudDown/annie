@@ -35,11 +35,23 @@ class NyaaConfig:
         return max(1, self.cache_ttl_minutes) * 60
 
 
+def _metadata_mode_defaults(mode: str) -> tuple[bool, str, str]:
+    """Defaults (enabled, provider, structure) pour metadata.mode."""
+    if mode == "off":
+        return False, "anilist", "allanime"
+    if mode == "anilist":
+        return True, "anilist", "franchise"
+    if mode == "mal":
+        return True, "mal", "franchise"
+    return True, "anilist", "allanime"
+
+
 @dataclass
 class MetadataConfig:
     """Source métadonnées franchise (saisons / titres / synonymes)."""
 
     enabled: bool = True
+    mode: str = "auto"  # auto | anilist | mal | off
     provider: str = "anilist"  # anilist | mal
     # Découpe saisons/films : AllAnime (ani-cli) ou graphe AniList/MAL.
     structure: str = "allanime"  # allanime | franchise
@@ -205,25 +217,43 @@ class AnnieConfig:
             cache_ttl_hours=toml_util.int_val(mal_table.get("cache_ttl_hours"), 168),
         )
 
+        top_meta = data.get("metadata")
+        mode = toml_util.str_val(
+            os.environ.get("ANNIE_METADATA_MODE")
+            or (top_meta if isinstance(top_meta, str) else None)
+            or metadata_table.get("mode"),
+            "auto",
+        ).lower()
+        if mode not in {"auto", "anilist", "mal", "off"}:
+            mode = "auto"
+        enabled_default, provider_default, structure_default = (
+            _metadata_mode_defaults(mode)
+        )
         provider = toml_util.str_val(
             os.environ.get("ANNIE_METADATA_PROVIDER")
             or metadata_table.get("provider"),
-            "anilist",
+            provider_default,
         ).lower()
         if provider not in {"anilist", "mal"}:
-            provider = "anilist"
+            provider = provider_default
         structure = toml_util.str_val(
             os.environ.get("ANNIE_METADATA_STRUCTURE")
             or metadata_table.get("structure"),
-            "allanime",
+            structure_default,
         ).lower()
         if structure not in {"allanime", "franchise"}:
-            structure = "allanime"
+            structure = structure_default
         meta_enabled = metadata_table.get("enabled")
         if meta_enabled is None:
-            meta_enabled = mal.enabled
+            if mode == "off":
+                meta_enabled = False
+            elif mode in {"anilist", "mal"}:
+                meta_enabled = True
+            else:
+                meta_enabled = mal.enabled
         metadata = MetadataConfig(
-            enabled=toml_util.bool_val(meta_enabled, True),
+            enabled=toml_util.bool_val(meta_enabled, enabled_default),
+            mode=mode,
             provider=provider,
             structure=structure,
             fallback_mal=toml_util.bool_val(metadata_table.get("fallback_mal"), True),

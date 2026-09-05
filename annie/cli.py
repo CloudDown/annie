@@ -11,9 +11,9 @@ from annie.config import AnnieConfig
 from annie.catalog import (
     build_catalog,
     fill_section_gaps,
-    gather_catalog,
     resolve_catalog_target,
 )
+from annie.gather import format_catalog_status, gather_catalog
 from annie.parsing import kind_from_options, minimal_label, parse_inline_target
 from annie.scoring import pick_best, rank_entry
 from annie.types import MalRelease, MediaKind, MediaSection, ResultItem, WatchTarget
@@ -348,6 +348,11 @@ def try_direct_play(
                 target_season=season,
                 target_kind=kind_from_options(options),
             )
+            if catalog_options.get("scope_missed"):
+                print_status(
+                    format_catalog_status(catalog, catalog_options), kind="warn"
+                )
+                return 1
             item = resolve_catalog_target(
                 catalog,
                 season=season or catalog_options.get("season"),
@@ -492,6 +497,11 @@ def run_watch(
                 target_season=season,
                 target_kind=kind_from_options(options),
             )
+            if catalog_options.get("scope_missed"):
+                print_status(
+                    format_catalog_status(catalog, catalog_options), kind="warn"
+                )
+                return 1
             item = resolve_catalog_target(
                 catalog,
                 season=season,
@@ -593,12 +603,8 @@ def interactive_loop(config: AnnieConfig) -> int:
 
         try:
             query, options = parse_inline_target(raw_query)
-            # 1) AllAnime fzf (hors spinner) — comme ani-cli.
-            # 2) Esc / échec → pick AniList + franchise.
-            preselected_release = resolve_allanime_release(query, config)
-            preselected = None
-            if preselected_release is None:
-                preselected = resolve_anime_for_query(query, config)
+            # Un seul pick si vraiment ambigu — pas de menu AllAnime en plus.
+            preselected = resolve_anime_for_query(query, config)
             catalog, options = run_search_spinner(
                 query,
                 lambda: gather_catalog(
@@ -608,7 +614,6 @@ def interactive_loop(config: AnnieConfig) -> int:
                     target_kind=kind_from_options(options),
                     confirm_anime=False,
                     preselected=preselected,
-                    preselected_release=preselected_release,
                 ),
             )
         except KeyboardInterrupt:
@@ -618,8 +623,11 @@ def interactive_loop(config: AnnieConfig) -> int:
             continue
 
         if not catalog:
-            print_status("no results", kind="warn")
+            note = format_catalog_status([], options)
+            print_status(note if options.get("scope_missed") else "no results", kind="warn")
             continue
+
+        print_status(format_catalog_status(catalog, options), kind="info")
 
         inline_episode = options.get("episode")
         inline_season = options.get("season")
@@ -769,6 +777,14 @@ def interactive_loop(config: AnnieConfig) -> int:
                         else None
                     )
                     if next_item is not None:
+                        nxt_ep = next_item.parsed.episode
+                        nxt_s = next_item.parsed.season or (
+                            section.season if section is not None else None
+                        )
+                        if nxt_s is not None and nxt_ep is not None:
+                            print_status(
+                                f"→ S{nxt_s:02d}E{nxt_ep:02d}", kind="info"
+                            )
                         item = next_item
                         continue
                     break
@@ -787,7 +803,12 @@ def interactive_loop(config: AnnieConfig) -> int:
             if code not in (PLAY_COMPLETED, PLAY_INCOMPLETE) and code != 0:
                 print_status("playback interrupted", kind="warn")
 
-            require_episode_pick = True
+            # Saison finie → liste des saisons. Quitter mpv tôt → re-pick épisode.
+            if is_play_completed(code):
+                require_episode_pick = False
+                binge_season = None
+            else:
+                require_episode_pick = True
 
 
 def _add_player_flag(parser: argparse.ArgumentParser) -> None:

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from annie import toml_util
 from annie.paths import config_dir, ensure_directory
-from annie.types import MediaSection, ResultItem
+from annie.types import MediaKind, MediaSection, ResultItem
 
 HISTORY_FILE = config_dir() / "history.toml"
 
@@ -18,8 +18,12 @@ def watch_key(
     mal_id: int | None,
     section_key: str,
     season: int | None,
-    episode: int,
+    episode: int | None,
 ) -> str:
+    if episode is None:
+        if mal_id:
+            return f"mal:{mal_id}:movie"
+        return f"{section_key}:movie"
     season_num = season or 1
     if mal_id:
         return f"mal:{mal_id}:{season_num}:{episode}"
@@ -53,8 +57,6 @@ class WatchHistory:
         season: int | None,
         episode: int | None,
     ) -> bool:
-        if episode is None:
-            return False
         key = watch_key(
             mal_id=mal_id, section_key=section_key, season=season, episode=episode
         )
@@ -62,7 +64,10 @@ class WatchHistory:
 
     def mark_item(self, section: MediaSection, item: ResultItem) -> None:
         episode = item.parsed.episode
-        if episode is None:
+        is_movie = (
+            section.kind == MediaKind.MOVIE or item.parsed.kind == MediaKind.MOVIE
+        )
+        if episode is None and not is_movie:
             return
         key = watch_key(
             mal_id=section.mal_id,
@@ -77,7 +82,7 @@ class WatchHistory:
         ensure_directory(HISTORY_FILE.parent)
         lines = [
             "# Annie — historique de visionnage\n",
-            "# Clés : mal:<id>:<saison>:<épisode> ou <section>:<saison>:<épisode>\n",
+            "# Clés : mal:<id>:<saison>:<épisode> | mal:<id>:movie | <section>:…\n",
             "[watched]\n",
         ]
         for key in sorted(self.entries):

@@ -30,6 +30,7 @@ uv sync
 make test           # suite unitaire offline
 make test-offline   # régressions fixtures (sans réseau)
 make debug-rezero   # régression catalogue Re:Zero
+make smoke          # Tanya / Re:Zero / film Konosuba (offline)
 make run            # lance le CLI
 make clean          # supprime venv & artefacts
 ```
@@ -53,9 +54,11 @@ annie/
   parsing.py          Parsing titres Nyaa
   scoring.py          Scoring des releases
   catalog.py          Construction catalogue
+  gather.py           Orchestration métadonnées → Nyaa
   season_coherence.py Cohérence intra-saison
   nyaa.py             Client Nyaa & cache
   stream.py           libtorrent + lecteurs
+  buffer.py           Buffer / probes MKV-MP4 / lancement mpv
   player.py           Commandes mpv/vlc/ffplay
   subtitles.py        OpenSubtitles.com
   ui.py               fzf & interface terminal
@@ -73,6 +76,7 @@ packaging/
   aur/                PKGBUILD AUR
   debian/             build .deb
   windows/            install-windows.bat, install.ps1
+install.bat           Raccourci Windows → packaging/windows/
 ```
 
 ## Tests vs scripts de validation
@@ -81,6 +85,7 @@ packaging/
 |-------|--------|------|
 | `make test` | Non | Régression offline (fixtures) — **obligatoire avant commit**, CI |
 | `make debug-rezero` | Non | Régression catalogue Re:Zero via `scripts/debug_catalog.py --offline` |
+| `make smoke` | Non | Tanya / Re:Zero / film Konosuba |
 | `scripts/debug_franchise.py` | Oui | Zoom **un** anime : saisons MAL vs catalogue, épisodes manquants |
 | `scripts/validate_franchise.py` | Oui | Audit panel : couverture, seeders, qualité — **hors CI** |
 

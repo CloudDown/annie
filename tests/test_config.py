@@ -78,6 +78,74 @@ seeders_highlight = 100
         self.assertEqual(cfg.subtitles.fetch_timeout, 30.0)
         self.assertEqual(cfg.ui.seeders_highlight, 100)
 
+    def test_metadata_mode_off(self) -> None:
+        toml = """
+[metadata]
+mode = "off"
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.metadata.mode, "off")
+        self.assertFalse(cfg.metadata.enabled)
+
+    def test_metadata_mode_mal(self) -> None:
+        toml = """
+[metadata]
+mode = "mal"
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.metadata.mode, "mal")
+        self.assertTrue(cfg.metadata.enabled)
+        self.assertEqual(cfg.metadata.provider, "mal")
+        self.assertEqual(cfg.metadata.structure, "franchise")
+
+    def test_metadata_mode_anilist_override_structure(self) -> None:
+        toml = """
+[metadata]
+mode = "anilist"
+structure = "allanime"
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.metadata.provider, "anilist")
+        self.assertEqual(cfg.metadata.structure, "allanime")
+
+    def test_metadata_top_level_string_off(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text('metadata = "off"\n', encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.metadata.mode, "off")
+        self.assertFalse(cfg.metadata.enabled)
+
+    def test_metadata_mode_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text("[metadata]\nmode = \"auto\"\n", encoding="utf-8")
+            with (
+                mock.patch("annie.config.CONFIG_FILE", path),
+                mock.patch.dict("os.environ", {"ANNIE_METADATA_MODE": "off"}),
+            ):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.metadata.mode, "off")
+        self.assertFalse(cfg.metadata.enabled)
+
 
 class SettingsLoadTests(unittest.TestCase):
     def tearDown(self) -> None:

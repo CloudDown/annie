@@ -38,8 +38,11 @@ parallel = 10
 cache_ttl_hours = 168      # cache Jikan (7 jours)
 
 [metadata]
-provider = "anilist"       # anilist | mal  (pick initial)
-structure = "allanime"     # allanime (ani-cli) | franchise (graphe AniList/MAL)
+# auto = AniList + AllAnime · anilist = graphe AniList · mal = MAL/Jikan · off = Nyaa seul
+# Raccourci top-level : metadata = "off"
+mode = "auto"
+provider = "anilist"       # override : anilist | mal
+structure = "allanime"     # override : allanime | franchise
 enabled = true             # false = Nyaa seul
 fallback_mal = true        # si AniList échoue → MAL/Jikan
 confirm_ambiguous = true   # fzf « quel anime ? » si scores proches

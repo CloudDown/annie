@@ -573,6 +573,23 @@ def _compact_ep_label(item: ResultItem) -> str:
     return _clip(minimal_label(parsed), 28)
 
 
+def _item_is_watched(section, item, watch_history) -> bool:
+    if section is None or watch_history is None:
+        return False
+    episode = item.parsed.episode
+    is_movie = (
+        section.kind == MediaKind.MOVIE or item.parsed.kind == MediaKind.MOVIE
+    )
+    if episode is None and not is_movie:
+        return False
+    return watch_history.is_watched(
+        mal_id=section.mal_id,
+        section_key=section.key,
+        season=item.parsed.season or section.season,
+        episode=episode,
+    )
+
+
 def format_torrent_line(
     item: ResultItem,
     *,
@@ -580,16 +597,13 @@ def format_torrent_line(
     watch_history=None,
 ) -> str:
     label = stylize(_list_item_label(item), C.LIST, C.BOLD)
-    if section is None or watch_history is None or item.parsed.episode is None:
-        return label
-    if watch_history.is_watched(
-        mal_id=section.mal_id,
-        section_key=section.key,
-        season=item.parsed.season or section.season,
-        episode=item.parsed.episode,
-    ):
-        return f"{label} {stylize('●', C.RED)}"
-    return label
+    bits = [f"{item.entry.seeders}S"]
+    if item.parsed.resolution:
+        bits.append(item.parsed.resolution)
+    line = f"{label}  {stylize(' · '.join(bits), C.MUTED)}"
+    if _item_is_watched(section, item, watch_history):
+        return f"{line} {stylize('●', C.RED)}"
+    return line
 
 
 def format_section_line(section: MediaSection) -> str:
@@ -620,17 +634,7 @@ def format_preview_item(
         title = stylize(f"Episode {parsed.episode:02d}", C.LIST, C.BOLD)
     else:
         title = stylize(_compact_ep_label(item), C.LIST, C.BOLD)
-    if (
-        section is not None
-        and watch_history is not None
-        and parsed.episode is not None
-        and watch_history.is_watched(
-            mal_id=section.mal_id,
-            section_key=section.key,
-            season=parsed.season or section.season,
-            episode=parsed.episode,
-        )
-    ):
+    if _item_is_watched(section, item, watch_history):
         title = f"{title} {stylize('· vu', C.RED)}"
     seeds = item.entry.seeders
     seed_line = stylize(

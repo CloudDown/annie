@@ -1,4 +1,4 @@
-.PHONY: install dev run test test-offline debug-rezero clean help
+.PHONY: install dev run test test-offline debug-rezero smoke clean help
 
 UV ?= uv
 ANNIE := ./bin/annie.py
@@ -11,6 +11,7 @@ help:
 	@echo "  make test         suite unitaire (offline)"
 	@echo "  make test-offline régressions fixtures (sans réseau)"
 	@echo "  make debug-rezero régression catalogue Re:Zero offline"
+	@echo "  make smoke        Tanya / Re:Zero / Konosuba film (offline)"
 	@echo "  make clean        remove venv and build artifacts"
 
 install:
@@ -38,6 +39,15 @@ test-offline: install
 
 debug-rezero: install
 	$(UV) run python scripts/debug_catalog.py --offline
+
+smoke: install
+	$(UV) run python -m unittest \
+		tests.test_catalog.ReZeroCatalogFixtureTests \
+		tests.test_catalog.TanyaAllAnimeScopedTests \
+		tests.test_catalog.MovieSectionFilterTests \
+		-q
+	$(UV) run python scripts/debug_catalog.py --offline
+	$(UV) run python scripts/smoke_catalog.py
 
 clean:
 	rm -rf .venv build dist *.egg-info annie.egg-info

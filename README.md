@@ -67,7 +67,7 @@ Interface : terminal + menus **fzf** (↑↓, Entrée, Échap).
 
 1. GitHub → **Code** → **Download ZIP**
 2. Décompresse le dossier
-3. Double-clic sur **`packaging\windows\install-windows.bat`**
+3. Double-clic sur **`install.bat`** (à la racine du dossier)
 
 Le script installe **Python, uv, fzf et mpv** s’ils manquent, crée la commande **`annie`** dans ton PATH, et enregistre le lecteur dans `%APPDATA%\annie\config.toml`.
 
@@ -76,7 +76,7 @@ Le script installe **Python, uv, fzf et mpv** s’ils manquent, crée la command
 ```bat
 git clone https://github.com/CloudDown/annie.git
 cd annie
-packaging\windows\install-windows.bat
+install.bat
 ```
 
 | Après install | Commande |
@@ -85,14 +85,14 @@ packaging\windows\install-windows.bat
 | Depuis le dossier projet | `.\bin\annie.cmd` |
 | Nouveau terminal | `annie` (PATH mis à jour) |
 
-**Options :** `packaging\windows\install-windows.bat -SkipOptional` — n’installe pas fzf/mpv automatiquement.
+**Options :** `install.bat -SkipOptional` — n’installe pas fzf/mpv automatiquement.
 
 <details>
 <summary><strong>Windows — pièges courants</strong></summary>
 
-- **« Python was not found… Microsoft Store »** — Désactive les alias `python.exe` / `python3.exe` dans *Paramètres → Applications → Alias d’exécution d’applications*, puis relance `packaging\windows\install-windows.bat`.
+- **« Python was not found… Microsoft Store »** — Désactive les alias `python.exe` / `python3.exe` dans *Paramètres → Applications → Alias d’exécution d’applications*, puis relance `install.bat`.
 - **Ne pas faire** `python -m venv .` à la racine. Utilise **`annie`** ou **`bin\annie.cmd`**, pas `annie.exe` (pip).
-- **Lecture ou lecteur introuvable** — Relance `packaging\windows\install-windows.bat` (ou `git pull` puis relance si tu as cloné le dépôt).
+- **Lecture ou lecteur introuvable** — Relance `install.bat` (ou `git pull` puis relance si tu as cloné le dépôt).
 
 </details>
 
@@ -204,14 +204,14 @@ Sous-titres externes = **mpv** uniquement. Ne partage pas ce fichier (mot de pas
 <details>
 <summary><strong>« filename or extension is too long » (Windows)</strong></summary>
 
-Certains packs torrent ont des dossiers très longs. Annie utilise des chemins étendus (`\\?\`) pour contourner la limite de 260 caractères. Mets à jour Annie (`git pull` + `packaging\windows\install-windows.bat`) si tu vois encore cette erreur.
+Certains packs torrent ont des dossiers très longs. Annie utilise des chemins étendus (`\\?\`) pour contourner la limite de 260 caractères. Mets à jour Annie (`git pull` + `install.bat`) si tu vois encore cette erreur.
 
 </details>
 
 <details>
 <summary><strong>« fzf not found »</strong></summary>
 
-**Windows :** relance `packaging\windows\install-windows.bat`.
+**Windows :** relance `install.bat`.
 
 **Linux :**
 
@@ -225,7 +225,7 @@ sudo apt install fzf    # Debian/Ubuntu
 <details>
 <summary><strong>« no player found »</strong></summary>
 
-**Windows :** relance `packaging\windows\install-windows.bat` — détecte mpv, VLC ou ffplay et écrit le chemin dans `config.toml`.
+**Windows :** relance `install.bat` — détecte mpv, VLC ou ffplay et écrit le chemin dans `config.toml`.
 
 **Linux :** `sudo pacman -S mpv` (ou `apt install mpv`).
 
@@ -324,12 +324,14 @@ preferred_groups = ["SubsPlease", "Erai-raws"]
 | `[ui]` | `show_banner` | `false` = sans logo |
 | `[streaming]` | `seed_while_watching` | seed pendant la lecture |
 | `[catalog]` | `preferred_groups` | groupes favoris |
+| `[metadata]` | `mode` | `auto`, `anilist`, `mal`, `off` |
 
 **Variables d’environnement :**
 
 | Variable | Effet |
 |----------|--------|
 | `ANNIE_PLAYER=mpv` | Force le lecteur |
+| `ANNIE_METADATA_MODE=off` | Nyaa seul (sans AniList/MAL) |
 | `OPENSUBTITLES_API_KEY=…` | Clé API sous-titres |
 | `ANNIE_SEED_WHILE_WATCHING=0` | Pas de seed en lecture |
 
@@ -344,6 +346,7 @@ Modèle commenté : [`annie/templates/config.toml`](annie/templates/config.toml)
 | `[player.mpv]` / `[player.vlc]` | `cache_secs`, `hwdec`, `extra_args` |
 | `[nyaa]` | `category`, `search_pages`, `parallel`, `sort`, `order` |
 | `[mal]` | `enabled` — `false` = Nyaa seul |
+| `[metadata]` | `mode` — `auto`, `anilist`, `mal`, `off` |
 | `[catalog]` | `preferred_groups`, `min_seeders_strict`, `fill_gaps_on_search` |
 | `[subtitles]` | `enabled`, `default_lang`, `api_key`, `fetch_timeout` |
 | `[ui]` | `show_banner`, `show_download_progress`, `seeders_highlight` |
