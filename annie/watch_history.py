@@ -82,7 +82,7 @@ class WatchHistory:
         ensure_directory(HISTORY_FILE.parent)
         lines = [
             "# Annie — historique de visionnage\n",
-            "# Clés : mal:<id>:<saison>:<épisode> | mal:<id>:movie | <section>:…\n",
+            "# Keys: mal:<id>:<season>:<episode> | mal:<id>:movie | <section>:…\n",
             "[watched]\n",
         ]
         for key in sorted(self.entries):

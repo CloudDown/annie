@@ -975,7 +975,7 @@ def _launch_and_stream(
     if active_sub is not None and player_name != "mpv":
         stream_log_err(
             "subtitles",
-            "externes supportés uniquement avec mpv",
+            "external subs supported with mpv only",
             tone="warn",
         )
         active_sub = None

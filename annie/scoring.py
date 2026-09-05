@@ -320,7 +320,7 @@ def _format_episode_issue(assessment: EpisodeAssessment) -> str:
         parts.append(f"{assessment.seeders}S (min {min_strict})")
     if "low_quality" in assessment.flags or "sd_quality" in assessment.flags:
         res = assessment.resolution or "?"
-        parts.append(f"qualité {res}/{assessment.quality}")
+        parts.append(f"quality {res}/{assessment.quality}")
     for flag in ("directors_cut", "new_edition", "suspect_source", "season_unmarked"):
         if flag in assessment.flags:
             parts.append(flag.replace("_", " "))
@@ -359,7 +359,7 @@ def assess_tv_catalog(
         )
 
         if expected and found < expected:
-            issues.append(f"{section.label}: {found}/{expected} épisodes")
+            issues.append(f"{section.label}: {found}/{expected} episodes")
             if found < max(1, int(expected * coverage_relaxed)):
                 report.issues.append(f"{section.label}: couverture {found}/{expected}")
 

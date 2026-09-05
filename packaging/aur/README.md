@@ -1,47 +1,47 @@
-# Annie — paquet AUR (Arch Linux)
+# Annie — AUR package (Arch Linux)
 
-## Installation (utilisateur)
+## Install (end user)
 
-Une fois publié sur l’AUR :
+Once published on the AUR:
 
 ```bash
 yay -S annie
-# ou
+# or
 paru -S annie
 ```
 
-**Dépendances :** `python`, `python-libtorrent`  
-**Recommandé :** `mpv`
+**Depends:** `python`, `python-libtorrent`  
+**Recommended:** `mpv`
 
-## Build local depuis le dépôt
+## Local build from the repo
 
-Depuis la racine du projet clone :
+From the cloned project root:
 
 ```bash
 cd packaging/aur
 ./build-local.sh
-# ou : makepkg -si
+# or: makepkg -si
 ```
 
-Le `prepare()` copie automatiquement le dépôt parent (pas besoin de re-cloner GitHub).
+`prepare()` copies the parent repo automatically (no need to re-clone from GitHub).
 
-## Publication AUR
+## AUR publish
 
-1. Dans [PKGBUILD](PKGBUILD), remplacer `source=()` par :
+1. In [PKGBUILD](PKGBUILD), replace `source=()` with:
    ```bash
-   source=("git+https://github.com/CloudDown/annie.git?signed#commit=VOTRE_COMMIT")
+   source=("git+https://github.com/CloudDown/annie.git?signed#commit=YOUR_COMMIT")
    sha256sums=('SKIP')
    ```
-2. Mettre à jour `pkgrel` si besoin.
+2. Bump `pkgrel` if needed.
 
 ```bash
 cd packaging/aur
 makepkg --printsrcinfo > .SRCINFO
 ```
 
-3. Pousser sur un dépôt AUR `annie` (compte AUR requis).
+3. Push to an AUR `annie` package (AUR account required).
 
 ## Notes
 
-- `pip install` **n’installe pas** `libtorrent` dans le paquet : c’est `python-libtorrent` système.
-- Les tests unitaires (`check()`) restent dans le tarball source.
+- `pip install` does **not** ship `libtorrent` in the package: use system `python-libtorrent`.
+- Unit tests (`check()`) stay in the source tarball.

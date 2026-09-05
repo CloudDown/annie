@@ -12,8 +12,8 @@ pkgbase = annie
 	makedepends = python-wheel
 	depends = python
 	depends = python-libtorrent
-	optdepends = mpv: lecteur vidéo recommandé
-	optdepends = vlc: lecteur alternatif
-	optdepends = ffmpeg: pour ffplay
+	optdepends = mpv: recommended video player
+	optdepends = vlc: alternative player
+	optdepends = ffmpeg: for ffplay
 
 pkgname = annie

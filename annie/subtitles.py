@@ -155,7 +155,7 @@ def _opensubtitles_config_hint() -> str:
 
     config_path = config_dir() / "config.toml"
     return (
-        "clé API OpenSubtitles manquante — ajoutez api_key dans [subtitles] de "
+        "OpenSubtitles API key missing — add api_key under [subtitles] in "
         f"{config_path} (free: https://www.opensubtitles.com/en/consumers)"
     )
 
@@ -567,7 +567,7 @@ def _fetch_download_link(
     )
     link = payload.get("link")
     if not link:
-        raise SubtitlesError("OpenSubtitles: lien de téléchargement absent")
+        raise SubtitlesError("OpenSubtitles: download link missing")
     return str(link)
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Construit un paquet .deb depuis la racine du dépôt (Debian / Ubuntu).
+# Build a .deb package from the repo root (Debian / Ubuntu).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -47,4 +47,4 @@ EOF
 OUT="$ROOT/dist/${PKG}.deb"
 mkdir -p "$ROOT/dist"
 dpkg-deb --build --root-owner-group "$STAGING/$PKG" "$OUT"
-echo "==> Paquet créé : $OUT"
+echo "==> Package built: $OUT"

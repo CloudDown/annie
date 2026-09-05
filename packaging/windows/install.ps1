@@ -1,4 +1,4 @@
-﻿# Installation Annie sur Windows (appele par install-windows.bat).
+﻿# Annie Windows installer (called by install-windows.bat).
 param(
     [switch]$SkipOptional
 )
@@ -49,10 +49,10 @@ function Install-WingetPackage {
         [string]$Label
     )
     if (-not (Test-Winget)) {
-        Write-Warning "winget absent - impossible d installer $Label automatiquement."
+        Write-Warning "winget missing - cannot install $Label automatically."
         return $false
     }
-    Write-Host "==> Installation $Label ($Id) via winget..."
+    Write-Host "==> Installing $Label ($Id) via winget..."
     winget install --id $Id -e --accept-package-agreements --accept-source-agreements --disable-interactivity --scope user 2>$null
     $code = $LASTEXITCODE
     if ($code -ne 0 -and $code -ne -1978335189 -and $code -ne 2316632107) {
@@ -62,7 +62,7 @@ function Install-WingetPackage {
     if ($code -eq 0 -or $code -eq -1978335189 -or $code -eq 2316632107) {
         return $true
     }
-    Write-Warning "winget $Id code sortie $code"
+    Write-Warning "winget $Id exit code $code"
     return $false
 }
 
@@ -144,15 +144,15 @@ function Get-PythonVersion {
 function Install-Python {
     if (-not (Test-Winget)) {
         Write-Error @"
-Python 3.11+ introuvable et winget absent.
-Installez Python : https://www.python.org/downloads/  (cochez Add to PATH)
-Ou installez App Installer depuis le Microsoft Store pour obtenir winget.
-Desactivez aussi les alias Python dans :
-  Parametres > Applications > Parametres avances > Alias d execution d applications
+Python 3.11+ not found and winget is missing.
+Install Python: https://www.python.org/downloads/  (check Add to PATH)
+Or install App Installer from the Microsoft Store to get winget.
+Also disable Python aliases under:
+  Settings > Apps > Advanced app settings > App execution aliases
 "@
     }
 
-    Write-Host "==> Python introuvable - installation automatique..."
+    Write-Host "==> Python not found - installing automatically..."
     $installed = $false
     foreach ($id in @("Python.Python.3.12", "Python.Python.3.11")) {
         if (Install-WingetPackage -Id $id -Label "Python") {
@@ -161,7 +161,7 @@ Desactivez aussi les alias Python dans :
         }
     }
     if (-not $installed) {
-        Write-Error "Echec installation Python via winget."
+        Write-Error "Failed to install Python via winget."
     }
 
     Refresh-SessionPath
@@ -176,20 +176,20 @@ function Ensure-Python {
     }
     if (-not $script:PythonExe) {
         Write-Error @"
-Python toujours introuvable apres installation.
-1. Fermez ce terminal, rouvrez PowerShell
-2. Relancez install-windows.bat
-3. Si le message Microsoft Store apparait, desactivez les alias python.exe dans
-   Parametres > Applications > Alias d execution d applications
+Python still not found after install.
+1. Close this terminal, reopen PowerShell
+2. Rerun install-windows.bat
+3. If the Microsoft Store message appears, disable the python.exe aliases under
+   Settings > Apps > App execution aliases
 "@
     }
 
     $ver = Get-PythonVersion $script:PythonExe
     if (-not $ver) {
-        Write-Error "Python detecte mais ne repond pas : $script:PythonExe"
+        Write-Error "Python found but not responding: $script:PythonExe"
     }
     if ($ver.Major -lt 3 -or ($ver.Major -eq 3 -and $ver.Minor -lt 11)) {
-        Write-Error "Python 3.11+ requis (trouve $($ver.Text))."
+        Write-Error "Python 3.11+ required (found $($ver.Text))."
     }
     Write-Host "==> Python $($ver.Text) : $script:PythonExe"
 }
@@ -205,16 +205,16 @@ function Invoke-AnniePython {
 function Test-PythonStdlib {
     $prefix = & $script:PythonExe -c "import sys; print(sys.base_prefix)" 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Impossible de lire sys.base_prefix."
+        Write-Warning "Could not read sys.base_prefix."
         return
     }
     $prefix = ($prefix | Out-String).Trim()
     $encodings = Join-Path $prefix "Lib\encodings\__init__.py"
     if (-not (Test-Path -LiteralPath $encodings)) {
         Write-Warning @"
-Python corrompu (Lib\encodings manquant dans $prefix).
-Reinstallez : winget uninstall --id Python.Python.3.12
-              winget install --id Python.Python.3.12
+Broken Python install (Lib\encodings missing in $prefix).
+Reinstall: winget uninstall --id Python.Python.3.12
+           winget install --id Python.Python.3.12
 "@
     }
 }
@@ -224,7 +224,7 @@ function Repair-BrokenRootVenv {
     if (-not (Test-Path -LiteralPath $rootCfg)) {
         return
     }
-    Write-Warning "pyvenv.cfg a la racine - suppression (Annie utilise .venv\)..."
+    Write-Warning "pyvenv.cfg at repo root - removing (Annie uses .venv\)..."
     foreach ($name in @("pyvenv.cfg", "Lib", "Scripts", "Include", "share")) {
         $path = Join-Path $Root $name
         if (Test-Path -LiteralPath $path) {
@@ -245,12 +245,12 @@ function Ensure-Uv {
         Refresh-SessionPath
         $uv = Get-Command uv -ErrorAction SilentlyContinue
         if ($uv) {
-            Write-Host "==> uv installe : $($uv.Source)"
+            Write-Host "==> uv installed: $($uv.Source)"
             return
         }
     }
 
-    Write-Host "==> Installation uv via pip..."
+    Write-Host "==> Installing uv via pip..."
     Invoke-AnniePython -PythonArgs @("-m", "pip", "install", "--upgrade", "uv")
     Refresh-SessionPath
     $uv = Get-Command uv -ErrorAction SilentlyContinue
@@ -260,7 +260,7 @@ function Ensure-Uv {
         $uv = Get-Command uv -ErrorAction SilentlyContinue
     }
     if (-not $uv) {
-        Write-Warning "uv non trouve - repli sur pip."
+        Write-Warning "uv not found - falling back to pip."
     } else {
         Write-Host "==> uv : $($uv.Source)"
     }
@@ -277,12 +277,12 @@ function Install-Annie {
         return
     }
 
-    Write-Host "==> pip install (sans uv)"
+    Write-Host "==> pip install (without uv)"
     Invoke-AnniePython -PythonArgs @("-m", "pip", "install", "--upgrade", "pip", "build")
     Invoke-AnniePython -PythonArgs @("-m", "build", "--wheel")
     $wheel = Get-ChildItem dist\*.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $wheel) {
-        Write-Error "Wheel introuvable dans dist\"
+        Write-Error "Wheel not found in dist\"
     }
     Invoke-AnniePython -PythonArgs @("-m", "pip", "install", "--force-reinstall", $wheel.FullName)
     Invoke-AnniePython -PythonArgs @("-c", "from annie.user_config import ensure_user_config; ensure_user_config()")
@@ -300,7 +300,7 @@ function Remove-ConflictingAnnieExe {
     }
     foreach ($exe in $candidates) {
         Remove-Item -LiteralPath $exe -Force
-        Write-Host "==> Supprime $exe (utilisez annie.cmd)"
+        Write-Host "==> Removed $exe (use annie.cmd)"
     }
 }
 
@@ -323,7 +323,7 @@ function Annie-CmdLines {
         '  call "%PY%" "%ROOT%\bin\annie.py" %*'
         '  exit /b %ERRORLEVEL%'
         ')'
-        'echo Python introuvable. Relancez packaging\windows\install-windows.bat'
+        'echo Python not found. Rerun packaging\windows\install-windows.bat'
         'exit /b 1'
     )
 }
@@ -345,11 +345,11 @@ function Install-AnnieCommand {
     if ($env:Path.Split(";") -notcontains $binDir) {
         $env:Path = "$binDir;$env:Path"
     }
-    Write-Host "==> Commande annie : $binDir\annie.cmd"
+    Write-Host "==> annie command: $binDir\annie.cmd"
     if ($userPath.Split(";") -notcontains $binDir) {
-        Write-Host "    (ajoutee au PATH utilisateur)"
+        Write-Host "    (added to user PATH)"
     } else {
-        Write-Host "    (deja dans le PATH utilisateur)"
+        Write-Host "    (already on user PATH)"
     }
 }
 
@@ -384,7 +384,7 @@ function Add-UserPathEntry {
     if ($env:Path.Split(";") -notcontains $Directory) {
         $env:Path = "$Directory;$env:Path"
     }
-    Write-Host "==> Ajoute au PATH utilisateur : $Directory"
+    Write-Host "==> Added to user PATH: $Directory"
 }
 
 function Test-ProgramRunnable {
@@ -513,7 +513,7 @@ function Install-ViaChocolatey {
     if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
         return $false
     }
-    Write-Host "==> Installation $Package via Chocolatey..."
+    Write-Host "==> Installing $Package via Chocolatey..."
     choco install $Package -y --no-progress 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Refresh-SessionPath
@@ -527,7 +527,7 @@ function Install-ViaScoop {
     if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
         return $false
     }
-    Write-Host "==> Installation $Package via Scoop..."
+    Write-Host "==> Installing $Package via Scoop..."
     scoop install $Package 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Refresh-SessionPath
@@ -546,14 +546,14 @@ function Ensure-ProgramOnPath {
     Refresh-SessionPath
     $exe = Find-ProgramExe -Name $Name
     if ($exe) {
-        Write-Host "==> $Name deja installe : $exe"
+        Write-Host "==> $Name already installed: $exe"
         Add-UserPathEntry -Directory (Split-Path $exe -Parent)
         return $exe
     }
     if ($WingetIds -and (Install-WingetPackages -Label $Name -Ids $WingetIds)) {
         $exe = Find-ProgramExe -Name $Name
         if ($exe) {
-            Write-Host "==> $Name installe : $exe"
+            Write-Host "==> $Name installed: $exe"
             Add-UserPathEntry -Directory (Split-Path $exe -Parent)
             return $exe
         }
@@ -562,7 +562,7 @@ function Ensure-ProgramOnPath {
         if (Install-ViaChocolatey -Package $pkg) {
             $exe = Find-ProgramExe -Name $Name
             if ($exe) {
-                Write-Host "==> $Name installe (Chocolatey) : $exe"
+                Write-Host "==> $Name installed (Chocolatey): $exe"
                 Add-UserPathEntry -Directory (Split-Path $exe -Parent)
                 return $exe
             }
@@ -572,7 +572,7 @@ function Ensure-ProgramOnPath {
         if (Install-ViaScoop -Package $pkg) {
             $exe = Find-ProgramExe -Name $Name
             if ($exe) {
-                Write-Host "==> $Name installe (Scoop) : $exe"
+                Write-Host "==> $Name installed (Scoop): $exe"
                 Add-UserPathEntry -Directory (Split-Path $exe -Parent)
                 return $exe
             }
@@ -584,12 +584,12 @@ function Ensure-ProgramOnPath {
 function Ensure-MediaPlayer {
     $player = Find-BestMediaPlayer
     if ($player) {
-        Write-Host "==> Lecteur detecte : $($player.Name) -> $($player.Exe)"
+        Write-Host "==> Player detected: $($player.Name) -> $($player.Exe)"
         Add-UserPathEntry -Directory (Split-Path $player.Exe -Parent)
         return $player
     }
 
-    Write-Host "==> Aucun lecteur detecte - installation automatique..."
+    Write-Host "==> No player detected - installing automatically..."
     $null = Ensure-ProgramOnPath -Name "mpv" -WingetIds @(
         "shinchiro.mpv",
         "mpv.mpv",
@@ -598,7 +598,7 @@ function Ensure-MediaPlayer {
     ) -ChocolateyPackages @("mpv") -ScoopPackages @("mpv")
     $player = Find-BestMediaPlayer
     if ($player) {
-        Write-Host "==> Lecteur installe : $($player.Name) -> $($player.Exe)"
+        Write-Host "==> Player installed: $($player.Name) -> $($player.Exe)"
         return $player
     }
 
@@ -607,7 +607,7 @@ function Ensure-MediaPlayer {
     ) -ChocolateyPackages @("vlc") -ScoopPackages @("vlc")
     $player = Find-BestMediaPlayer
     if ($player) {
-        Write-Host "==> Lecteur de repli : $($player.Name) -> $($player.Exe)"
+        Write-Host "==> Fallback player: $($player.Name) -> $($player.Exe)"
         return $player
     }
 
@@ -617,7 +617,7 @@ function Ensure-MediaPlayer {
     ) -ChocolateyPackages @("ffmpeg") -ScoopPackages @("ffmpeg")
     $player = Find-BestMediaPlayer
     if ($player) {
-        Write-Host "==> Lecteur de repli : $($player.Name) -> $($player.Exe)"
+        Write-Host "==> Fallback player: $($player.Name) -> $($player.Exe)"
         return $player
     }
 
@@ -649,29 +649,29 @@ found = find_best_media_player()
 print(kind, found[1] if found else "")
 '@
     if (-not (Invoke-AnnieUvPython -Code $code)) {
-        Write-Warning "Lecteur video non configure."
-        Write-Warning "  Installez mpv : winget install -e --id shinchiro.mpv"
-        Write-Warning "  Puis relancez install-windows.bat"
+        Write-Warning "Video player not configured."
+        Write-Warning "  Install mpv: winget install -e --id shinchiro.mpv"
+        Write-Warning "  Then rerun install-windows.bat"
         return $false
     }
-    Write-Host "==> Lecteur video : OK"
+    Write-Host "==> Video player: OK"
     return $true
 }
 
 function Install-OptionalTools {
     if ($SkipOptional) {
-        Write-Host "==> Outils optionnels ignores (-SkipOptional)"
+        Write-Host "==> Optional tools skipped (-SkipOptional)"
         return
     }
-    Write-Host "==> Lecteur video"
+    Write-Host "==> Video player"
     $player = Ensure-MediaPlayer
     if ($player) {
         if (-not (Configure-AnnieMediaPlayer)) {
-            Write-Warning "Lecteur trouve mais configuration Annie echouee."
+            Write-Warning "Player found but Annie configuration failed."
         }
     } else {
-        Write-Warning "Aucun lecteur video installe (mpv, vlc ou ffmpeg/ffplay)."
-        Write-Warning "Annie fonctionnera mais ne pourra pas lire les episodes."
+        Write-Warning "No video player installed (mpv, vlc, or ffmpeg/ffplay)."
+        Write-Warning "Annie will run but cannot play episodes."
     }
 }
 
@@ -684,13 +684,13 @@ function Test-AnnieLaunch {
         Invoke-AnniePython -PythonArgs @("-c", $pyCheck)
     }
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Import Annie echoue."
+        Write-Error "Annie import failed."
     }
     Write-Host "==> Import Annie : OK"
 }
 
 Write-Host "========================================"
-Write-Host " Installation Annie (Windows)"
+Write-Host " Annie install (Windows)"
 Write-Host "========================================"
 Write-Host ""
 
@@ -708,11 +708,11 @@ Test-MediaPlayerReady
 
 Write-Host ""
 Write-Host "========================================"
-Write-Host " Installation terminee."
+Write-Host " Install complete."
 Write-Host ""
-Write-Host " Lancer Annie tout de suite :"
+Write-Host " Launch Annie now:"
 Write-Host "   annie"
 Write-Host "   .\bin\annie.cmd"
 Write-Host ""
-Write-Host " Nouveau terminal : fermez celui-ci, rouvrez, puis : annie"
+Write-Host " New terminal: close this one, reopen, then: annie"
 Write-Host "========================================"

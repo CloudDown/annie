@@ -18,59 +18,59 @@
 
 # Annie
 
-**Anime depuis le terminal — recherche, choix, lecture.**
+**Anime from the terminal — search, pick, play.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![libtorrent](https://img.shields.io/badge/libtorrent-2.0+-green.svg)](https://libtorrent.org/)
 
-[Installation](#installation) · [Utilisation](#utilisation) · [Raccourcis](#raccourcis) · [Sous-titres](#sous-titres) · [Dépannage](#dépannage) · [Config](#configuration)
+[Install](#install) · [Usage](#usage) · [Shortcuts](#shortcuts) · [Subtitles](#subtitles) · [Troubleshooting](#troubleshooting) · [Config](#configuration)
 
 </div>
 
 ---
 
-## En bref
+## Overview
 
-Annie enchaîne tout le parcours pour toi :
+Annie walks you through the full flow:
 
-| Étape | Détail |
-|-------|--------|
-| **Catalogue** | Saisons et épisodes via MyAnimeList |
-| **Recherche** | Meilleurs torrents sur [Nyaa.si](https://nyaa.si) (seeders, qualité, groupe) |
-| **Lecture** | Streaming pendant le téléchargement — pas d’attente |
-| **Sous-titres** | Optionnel via OpenSubtitles (mpv) |
+| Step | Detail |
+|------|--------|
+| **Catalog** | Seasons and episodes via MyAnimeList |
+| **Search** | Best torrents on [Nyaa.si](https://nyaa.si) (seeders, quality, group) |
+| **Playback** | Stream while downloading — no full wait |
+| **Subtitles** | Optional via OpenSubtitles (mpv) |
 
-Interface : **TUI** dans le terminal (↑↓, filtre, Entrée, Échap).
+UI: in-terminal **TUI** (↑↓, filter, Enter, Esc).
 
-> Outil personnel — respecte les lois sur le droit d’auteur de ton pays.
-
----
-
-## Prérequis
-
-| Programme | Rôle | Requis |
-|-----------|------|--------|
-| **Annie** | CLI principale | oui |
-| **mpv** | Lecteur vidéo | oui* |
-| vlc / ffplay | Alternative | optionnel |
-
-\* Sans lecteur, Annie ne peut pas lire. L’installateur Windows installe tout automatiquement.
+> Personal tool — follow copyright law in your country.
 
 ---
 
-## Installation
+## Requirements
+
+| Program | Role | Required |
+|---------|------|----------|
+| **Annie** | Main CLI | yes |
+| **mpv** | Video player | yes* |
+| vlc / ffplay | Alternative | optional |
+
+\* Without a player, Annie cannot play. The Windows installer sets everything up automatically.
+
+---
+
+## Install
 
 ### Windows
 
-**Méthode la plus simple** — sans git :
+**Easiest method** — no git:
 
 1. GitHub → **Code** → **Download ZIP**
-2. Décompresse le dossier
-3. Double-clic sur **`install.bat`** (à la racine du dossier)
+2. Unzip the folder
+3. Double-click **`install.bat`** (at the folder root)
 
-Le script installe **Python, uv et mpv** s’ils manquent, crée la commande **`annie`** dans ton PATH, et enregistre le lecteur dans `%APPDATA%\annie\config.toml`.
+The script installs **Python, uv, and mpv** if missing, adds the **`annie`** command to your PATH, and writes the player into `%APPDATA%\annie\config.toml`.
 
-**Avec git :**
+**With git:**
 
 ```bat
 git clone https://github.com/CloudDown/annie.git
@@ -78,31 +78,31 @@ cd annie
 install.bat
 ```
 
-| Après install | Commande |
-|---------------|----------|
-| Terminal courant | `annie` |
-| Depuis le dossier projet | `.\bin\annie.cmd` |
-| Nouveau terminal | `annie` (PATH mis à jour) |
+| After install | Command |
+|---------------|---------|
+| Current terminal | `annie` |
+| From the project folder | `.\bin\annie.cmd` |
+| New terminal | `annie` (PATH updated) |
 
-**Options :** `install.bat -SkipOptional` — n’installe pas mpv automatiquement.
+**Options:** `install.bat -SkipOptional` — does not install mpv automatically.
 
 <details>
-<summary><strong>Windows — pièges courants</strong></summary>
+<summary><strong>Windows — common pitfalls</strong></summary>
 
-- **« Python was not found… Microsoft Store »** — Désactive les alias `python.exe` / `python3.exe` dans *Paramètres → Applications → Alias d’exécution d’applications*, puis relance `install.bat`.
-- **Ne pas faire** `python -m venv .` à la racine. Utilise **`annie`** ou **`bin\annie.cmd`**, pas `annie.exe` (pip).
-- **Lecture ou lecteur introuvable** — Relance `install.bat` (ou `git pull` puis relance si tu as cloné le dépôt).
+- **“Python was not found… Microsoft Store”** — Disable the `python.exe` / `python3.exe` aliases under *Settings → Apps → App execution aliases*, then rerun `install.bat`.
+- **Do not** run `python -m venv .` at the repo root. Use **`annie`** or **`bin\annie.cmd`**, not `annie.exe` (pip).
+- **Playback or player missing** — Rerun `install.bat` (or `git pull` then rerun if you cloned the repo).
 
 </details>
 
 ### Arch Linux
 
 ```bash
-yay -S annie          # ou paru -S annie
-sudo pacman -S mpv   # si manquant
+yay -S annie          # or paru -S annie
+sudo pacman -S mpv   # if missing
 ```
 
-### Linux / macOS (sources)
+### Linux / macOS (from source)
 
 ```bash
 git clone https://github.com/CloudDown/annie.git
@@ -111,29 +111,29 @@ make install
 ./bin/annie.py
 ```
 
-Config créée au premier lancement : `~/.config/annie/config.toml`
+Config created on first run: `~/.config/annie/config.toml`
 
 ---
 
-## Utilisation
+## Usage
 
-### Lancer
+### Launch
 
 ```bash
-annie          # après install
-./bin/annie.py     # depuis les sources
+annie          # after install
+./bin/annie.py     # from source
 ```
 
-Logo ASCII → invite `>` → tape un titre (**anglais** ou **romaji**, ex. `frieren`).
+ASCII logo → `>` prompt → type a title (**English** or **romaji**, e.g. `frieren`).
 
-### Parcours type
+### Typical flow
 
-1. **Saison** — liste TUI, choisis ex. `Season 2`
-2. **Épisode** — même menu
-3. **Sous-titres** — langue ou *Aucun* (si activé)
-4. **Lecture** — mpv s’ouvre, téléchargement en arrière-plan
+1. **Season** — TUI list, pick e.g. `Season 2`
+2. **Episode** — same menu
+3. **Subtitles** — language or *None* (if enabled)
+4. **Playback** — mpv opens, download continues in the background
 
-Pendant la lecture :
+During playback:
 
 ```
 playing      [SubsPlease] … mkv  mpv
@@ -142,107 +142,107 @@ ready        22 MiB contiguous
 
 Slow connection → `pause  buffer too low` then auto-resume. Quit mpv: **q** or close the window.
 
-Au prompt Annie: `help` · `settings` (shortcut chips under the logo). Ctrl+C to exit.
+At the Annie prompt: `help` · `settings` (shortcut chips under the logo). Ctrl+C to exit.
 
 In the TUI: Omarchy-style shortcut bar · colors follow the terminal theme.
 
 ---
 
-## Raccourcis
+## Shortcuts
 
-### Recherche directe (sans menus)
+### Direct search (no menus)
 
-| Tu tapes | Résultat |
-|----------|----------|
-| `frieren` | Catalogue (saisons) |
-| `frieren s2` | Saison 2 |
-| `frieren s2e6` | S02E06 + sous-titres |
-| `frieren 2 6` | Idem (forme courte) |
-| `frieren movie 3` | 3ᵉ film |
-| `frieren --batch` | Privilégie les packs saison |
+| You type | Result |
+|----------|--------|
+| `frieren` | Catalog (seasons) |
+| `frieren s2` | Season 2 |
+| `frieren s2e6` | S02E06 + subtitles |
+| `frieren 2 6` | Same (short form) |
+| `frieren movie 3` | 3rd movie |
+| `frieren --batch` | Prefer season packs |
 
-### Dans le TUI
+### In the TUI
 
-| Touche | Action |
-|--------|--------|
-| ↑ / ↓ | Naviguer |
-| lettres | Filtrer la liste |
-| **Entrée** | Valider / lire |
-| **Ctrl-O** | Copier le magnet |
-| **←** | Écran précédent |
-| **Échap** | Retour / annuler |
+| Key | Action |
+|-----|--------|
+| ↑ / ↓ | Navigate |
+| letters | Filter the list |
+| **Enter** | Confirm / play |
+| **Ctrl-O** | Copy magnet |
+| **←** | Previous screen |
+| **Esc** | Back / cancel |
 
 ---
 
-## Sous-titres
+## Subtitles
 
-Source : [OpenSubtitles.com](https://www.opensubtitles.com) — clé API gratuite requise.
+Source: [OpenSubtitles.com](https://www.opensubtitles.com) — free API key required.
 
-1. Compte sur [opensubtitles.com](https://www.opensubtitles.com)
+1. Account on [opensubtitles.com](https://www.opensubtitles.com)
 2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**
-3. Dans Annie, tape `settings` — ou édite la config :
+3. In Annie, type `settings` — or edit the config:
 
-   | OS | Fichier |
-   |----|---------|
+   | OS | File |
+   |----|------|
    | Linux | `~/.config/annie/config.toml` |
    | Windows | `%APPDATA%\annie\config.toml` |
 
 ```toml
 [subtitles]
 enabled = true
-api_key = "ta_cle_ici"
-username = "ton_pseudo"
-password = "ton_mot_de_passe"
-default_lang = "fr"    # optionnel : saute le menu langue
+api_key = "your_key_here"
+username = "your_username"
+password = "your_password"
+default_lang = "en"    # optional: skip language menu
 ```
 
-Sous-titres externes = **mpv** uniquement. Ne partage pas ce fichier (mot de passe inclus).
+External subtitles require **mpv** only. Do not share this file (password included).
 
 ---
 
-## Dépannage
+## Troubleshooting
 
 <details>
-<summary><strong>« filename or extension is too long » (Windows)</strong></summary>
+<summary><strong>“filename or extension is too long” (Windows)</strong></summary>
 
-Certains packs torrent ont des dossiers très longs. Annie utilise des chemins étendus (`\\?\`) pour contourner la limite de 260 caractères. Mets à jour Annie (`git pull` + `install.bat`) si tu vois encore cette erreur.
+Some torrent packs have very long folder names. Annie uses extended paths (`\\?\`) to work around the 260-character limit. Update Annie (`git pull` + `install.bat`) if you still see this error.
 
 </details>
 
 <details>
-<summary><strong>« interactive mode requires a TTY »</strong></summary>
+<summary><strong>“interactive mode requires a TTY”</strong></summary>
 
-Lance Annie dans un vrai terminal (Windows Terminal, Alacritty, kitty…), pas un bouton IDE sans console.
-
-</details>
-
-<details>
-<summary><strong>« no player found »</strong></summary>
-
-**Windows :** relance `install.bat` — détecte mpv, VLC ou ffplay et écrit le chemin dans `config.toml`.
-
-**Linux :** `sudo pacman -S mpv` (ou `apt install mpv`).
+Run Annie in a real terminal (Windows Terminal, Alacritty, kitty…), not an IDE button with no console.
 
 </details>
 
 <details>
-<summary><strong>Pas de sous-titres / erreur OpenSubtitles</strong></summary>
+<summary><strong>“no player found”</strong></summary>
 
-- Vérifie `api_key`, `username`, `password` dans `config.toml`
-- Lecteur = **mpv** (`[player] command = "mpv"` ou `auto`)
-- Teste la clé sur le site OpenSubtitles
+**Windows:** rerun `install.bat` — detects mpv, VLC, or ffplay and writes the path into `config.toml`.
 
-</details>
-
-<details>
-<summary><strong>Lecture saccadée ou pauses</strong></summary>
-
-Peu de seeders ou connexion lente. Annie met mpv en pause (`buffer insuffisant`) et reprend seul. Ajuste `[buffer]` si besoin (voir [Configuration](#configuration)).
+**Linux:** `sudo pacman -S mpv` (or `apt install mpv`).
 
 </details>
 
 <details>
-<summary><strong>Logo ASCII absent</strong></summary>
+<summary><strong>No subtitles / OpenSubtitles error</strong></summary>
+
+- Check `api_key`, `username`, `password` in `config.toml`
+- Player = **mpv** (`[player] command = "mpv"` or `auto`)
+- Test the key on the OpenSubtitles site
+
+</details>
+
+<details>
+<summary><strong>Stuttering or pauses</strong></summary>
+
+Few seeders or a slow connection. Annie pauses mpv (`buffer too low`) and resumes on its own. Tweak `[buffer]` if needed (see [Configuration](#configuration)).
+
+</details>
+
+<details>
+<summary><strong>ASCII logo missing</strong></summary>
 
 ```toml
 [ui]
@@ -252,26 +252,26 @@ show_banner = true
 </details>
 
 <details>
-<summary><strong>Aucun résultat pour mon anime</strong></summary>
+<summary><strong>No results for my anime</strong></summary>
 
-- Titre en **anglais** ou **romaji** (`Made in Abyss`, pas la traduction locale)
-- Vérifie la connexion
-- MAL en panne → Annie bascule sur Nyaa seul (message discret)
+- Title in **English** or **romaji** (`Made in Abyss`, not a local translation)
+- Check your connection
+- If MAL is down → Annie falls back to Nyaa only (quiet message)
 
 </details>
 
 ---
 
-## Ligne de commande
+## Command line
 
-Sans menus interactifs :
+Without interactive menus:
 
 ```bash
 annie search "frieren" -l 5
 annie watch "frieren" -s 2 -e 6
-annie watch "frieren" -s 2 -e 6 --sub-lang fr
+annie watch "frieren" -s 2 -e 6 --sub-lang en
 annie play "magnet:?xt=…" -q "01"
-annie ls fichier.torrent
+annie ls file.torrent
 annie watch "…" --no-banner
 ```
 
@@ -279,14 +279,14 @@ annie watch "…" --no-banner
 
 ## Configuration
 
-Créée au **premier lancement**, jamais écrasée :
+Created on **first launch**, never overwritten:
 
-| OS | Emplacement |
-|----|-------------|
+| OS | Location |
+|----|----------|
 | Linux / macOS | `~/.config/annie/config.toml` |
 | Windows | `%APPDATA%\annie\config.toml` |
 
-### Exemple minimal
+### Minimal example
 
 ```toml
 [player]
@@ -294,53 +294,53 @@ command = "mpv"
 
 [subtitles]
 enabled = true
-api_key = "ta_cle_opensubtitles"
-default_lang = "fr"
+api_key = "your_opensubtitles_key"
+default_lang = "en"
 
 [catalog]
 preferred_groups = ["SubsPlease", "Erai-raws"]
 ```
 
-### Réglages courants
+### Common settings
 
-| Section | Clé | Effet |
+| Section | Key | Effect |
 |---------|-----|--------|
 | `[player]` | `command` | `auto`, `mpv`, `vlc`, `ffplay` |
-| `[subtitles]` | `default_lang` | `"fr"` = français par défaut |
-| `[subtitles]` | `enabled` | `false` = pas de menu sous-titres |
-| `[ui]` | `show_banner` | `false` = sans logo |
-| `[streaming]` | `seed_while_watching` | seed pendant la lecture |
-| `[catalog]` | `preferred_groups` | groupes favoris |
+| `[subtitles]` | `default_lang` | `"en"` = English by default |
+| `[subtitles]` | `enabled` | `false` = no subtitle menu |
+| `[ui]` | `show_banner` | `false` = no logo |
+| `[streaming]` | `seed_while_watching` | seed while watching |
+| `[catalog]` | `preferred_groups` | favorite groups |
 | `[catalog]` | `preferred_resolution` | `auto`, `720p`, `1080p`, `2160p` |
 | `[metadata]` | `mode` | `auto`, `anilist`, `mal`, `off` |
 
-**Variables d’environnement :**
+**Environment variables:**
 
-| Variable | Effet |
+| Variable | Effect |
 |----------|--------|
-| `ANNIE_PLAYER=mpv` | Force le lecteur |
-| `ANNIE_METADATA_MODE=off` | Nyaa seul (sans AniList/MAL) |
-| `OPENSUBTITLES_API_KEY=…` | Clé API sous-titres |
-| `ANNIE_SEED_WHILE_WATCHING=0` | Pas de seed en lecture |
+| `ANNIE_PLAYER=mpv` | Force player |
+| `ANNIE_METADATA_MODE=off` | Nyaa only (no AniList/MAL) |
+| `OPENSUBTITLES_API_KEY=…` | Subtitles API key |
+| `ANNIE_SEED_WHILE_WATCHING=0` | No seeding while watching |
 
 <details>
-<summary><strong>Référence complète <code>config.toml</code></strong></summary>
+<summary><strong>Full <code>config.toml</code> reference</strong></summary>
 
-Modèle commenté : [`annie/templates/config.toml`](annie/templates/config.toml)
+Commented template: [`annie/templates/config.toml`](annie/templates/config.toml)
 
-| Section | Clés notables |
-|---------|---------------|
-| `[player]` | `command` — `auto`, nom ou chemin exécutable |
+| Section | Notable keys |
+|---------|--------------|
+| `[player]` | `command` — `auto`, name, or executable path |
 | `[player.mpv]` / `[player.vlc]` | `cache_secs`, `hwdec`, `extra_args` |
 | `[nyaa]` | `category`, `search_pages`, `parallel`, `sort`, `order` |
-| `[mal]` | `enabled` — `false` = Nyaa seul |
+| `[mal]` | `enabled` — `false` = Nyaa only |
 | `[metadata]` | `mode` — `auto`, `anilist`, `mal`, `off` |
 | `[catalog]` | `preferred_groups`, `min_seeders_strict`, `fill_gaps_on_search` |
 | `[subtitles]` | `enabled`, `default_lang`, `api_key`, `fetch_timeout` |
 | `[ui]` | `show_banner`, `show_download_progress`, `seeders_highlight` |
-| `[streaming]` / `[buffer]` / `[torrent]` | téléchargement, pauses mpv, session torrent |
+| `[streaming]` / `[buffer]` / `[torrent]` | download, mpv pauses, torrent session |
 
-**Connexion lente :**
+**Slow connection:**
 
 ```toml
 [buffer]
@@ -349,7 +349,7 @@ mkv_start_mib = 24
 stream_margin_mib = 16
 ```
 
-Les anciennes clés plates (`player = "mpv"`) restent supportées ; les sections `[…]` priment.
+Legacy flat keys (`player = "mpv"`) still work; `[…]` sections take precedence.
 
 </details>
 
@@ -359,27 +359,27 @@ Les anciennes clés plates (`player = "mpv"`) restent supportées ; les sections
 
 ```mermaid
 flowchart LR
-    A[Titre] --> B[MAL]
-    B --> C[Catalogue]
+    A[Title] --> B[MAL]
+    B --> C[Catalog]
     C --> D[Nyaa.si]
     D --> E[TUI]
-    E --> F[Sous-titres]
+    E --> F[Subtitles]
     F --> G[Stream]
     G --> H[mpv]
 ```
 
 ---
 
-## Développeurs
+## Developers
 
-[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) · `make test` (tests unitaires hors réseau)
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) · `make test` (offline unit tests)
 
 ---
 
 <div align="center">
 
-**Annie** — usage personnel
+**Annie** — personal use
 
-<sub>Respecte les lois sur le droit d’auteur de ton pays.</sub>
+<sub>Follow copyright law in your country.</sub>
 
 </div>

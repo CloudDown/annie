@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build du paquet depuis le dépôt local (sans clone GitHub).
+# Build the package from the local repo (no GitHub clone).
 set -euo pipefail
 cd "$(dirname "$0")"
 makepkg -sr --nodeps "$@"
