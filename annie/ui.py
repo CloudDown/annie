@@ -160,20 +160,52 @@ BANNER_ART = [
 ]
 
 
-HELP = f"""
-  {stylize("↑↓ j k", C.FG)}      move
-  {stylize("enter →", C.FG)}      open
-  {stylize("1–9", C.FG)}         jump (no filter)
-  {stylize("type", C.FG)}         filter
-  {stylize("?", C.FG)}            help overlay
-  {stylize("ctrl-o", C.FG)}       magnet
-  {stylize("← esc", C.MUTED)}       back / search
+# Une ligne sous le logo — tout ce qu’il faut à l’arrivée.
+BANNER_HINT = (
+    f"  {stylize('/help', C.BLUE)}  "
+    f"{stylize('/settings', C.BLUE)}  "
+    f"{stylize('/quit', C.BLUE)}"
+    f"{stylize('   ·   tape un titre  (frieren · frieren s2e10)', C.MUTED)}"
+)
 
-  {stylize("frieren s2e10", C.MUTED)}
-  {stylize("settings · help · quit", C.MUTED)}
-"""
+# /help réaffiche la même ligne.
+HELP = BANNER_HINT
 
 SEP = "\x1f"
+
+# Commandes slash du prompt (sans le « / »).
+SLASH_COMMANDS = {
+    "help": "help",
+    "?": "help",
+    "h": "help",
+    "settings": "settings",
+    "config": "settings",
+    "reglages": "settings",
+    "réglages": "settings",
+    "quit": "quit",
+    "exit": "quit",
+    "q": "quit",
+}
+
+
+def parse_slash_command(raw: str) -> str | None:
+    """Retourne help|settings|quit, ou None si ce n'est pas une commande.
+
+    Accepte ``/help`` (préféré) et les alias sans slash pour ne pas bloquer.
+    Une saisie ``/…`` inconnue n'est pas une recherche.
+    """
+    text = raw.strip()
+    if not text:
+        return None
+    lowered = text.casefold()
+    if lowered.startswith("/"):
+        name = lowered[1:].split(None, 1)[0] if lowered[1:] else ""
+        if name in SLASH_COMMANDS:
+            return SLASH_COMMANDS[name]
+        return "unknown"
+    if lowered in SLASH_COMMANDS and " " not in lowered:
+        return SLASH_COMMANDS[lowered]
+    return None
 
 
 def _tty_streams() -> list[Any]:
@@ -249,7 +281,7 @@ def print_banner() -> None:
     for line in BANNER_ART:
         print(stylize(line, C.BLUE))
     print()
-    print(stylize("  settings", C.MUTED))
+    print(BANNER_HINT)
     print()
 
 

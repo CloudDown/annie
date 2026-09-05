@@ -41,6 +41,7 @@ from annie.ui import (
     print_banner,
     print_help,
     print_status,
+    parse_slash_command,
     stylize,
     is_user_cancel,
 )
@@ -587,11 +588,11 @@ def interactive_loop(config: AnnieConfig) -> int:
         if not raw_query:
             continue
 
-        lowered = raw_query.lower()
-        if lowered in {"help", "?", "/help"}:
+        cmd = parse_slash_command(raw_query)
+        if cmd == "help":
             print_help()
             continue
-        if lowered in {"settings", "config", "réglages", "reglages"}:
+        if cmd == "settings":
             from annie.config import reload_config
             from annie.settings import reload_settings
             from annie.tui import run_settings
@@ -601,8 +602,11 @@ def interactive_loop(config: AnnieConfig) -> int:
                 reload_settings()
                 print_status("réglages enregistrés", kind="ok")
             continue
-        if lowered in {"quit", "exit", "q"}:
+        if cmd == "quit":
             return 0
+        if cmd == "unknown":
+            print_status("commande inconnue — /help  /settings  /quit", kind="warn")
+            continue
 
         direct = try_direct_play(raw_query, config)
         if direct is not None:

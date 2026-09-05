@@ -55,9 +55,9 @@ HELP_OVERLAY = [
     "  ?            fermer cette aide",
     "",
     "prompt",
-    "  settings     clés API, résolution, lecteur",
-    "  help / ?     aide",
-    "  quit         quitter",
+    "  /settings    clés API, résolution, lecteur",
+    "  /help        aide",
+    "  /quit        quitter",
 ]
 
 
