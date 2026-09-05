@@ -26,11 +26,7 @@ if ($uv) {
 }
 
 Write-Host ""
-Write-Host "==> Outils interactifs (requis pour le menu fzf)"
-if (-not (Check-Command fzf)) {
-    $failures++
-    Write-Host "       winget install junegunn.fzf"
-}
+Write-Host "==> Lecteur video"
 if (-not (Check-Command mpv)) {
     Write-Host "[warn] mpv absent du PATH (Annie peut utiliser un chemin configure)"
 }
@@ -90,7 +86,7 @@ if (-not (Test-Path (Join-Path $Root "bin\annie.cmd"))) {
 } else {
     & cmd /c "bin\annie.cmd --help" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[warn] bin\annie.cmd --help a echoue (peut etre normal sans fzf)"
+        Write-Host "[warn] bin\annie.cmd --help a echoue"
     } else {
         Write-Host "[ok] bin\annie.cmd"
     }

@@ -45,7 +45,7 @@ provider = "anilist"       # override : anilist | mal
 structure = "allanime"     # override : allanime | franchise
 enabled = true             # false = Nyaa seul
 fallback_mal = true        # si AniList échoue → MAL/Jikan
-confirm_ambiguous = true   # fzf « quel anime ? » si scores proches
+confirm_ambiguous = true   # TUI « quel anime ? » si scores proches
 parallel = 8
 cache_ttl_hours = 168
 
@@ -72,7 +72,7 @@ coherence_min_share = 0.60
 
 [subtitles]
 enabled = true
-default_lang = ""            # ex. "fr" — saute le menu fzf si défini
+default_lang = ""            # ex. "fr" — saute le menu langue si défini
 fetch_timeout = 20.0
 api_key = ""                 # https://www.opensubtitles.com/en/consumers
 username = ""

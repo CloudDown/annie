@@ -10,7 +10,7 @@ yay -S annie
 paru -S annie
 ```
 
-**Dépendances :** `python`, `python-libtorrent`, `fzf`  
+**Dépendances :** `python`, `python-libtorrent`  
 **Recommandé :** `mpv`
 
 ## Build local depuis le dépôt

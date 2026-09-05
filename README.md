@@ -40,7 +40,7 @@ Annie enchaîne tout le parcours pour toi :
 | **Lecture** | Streaming pendant le téléchargement — pas d’attente |
 | **Sous-titres** | Optionnel via OpenSubtitles (mpv) |
 
-Interface : terminal + menus **fzf** (↑↓, Entrée, Échap).
+Interface : **TUI** dans le terminal (↑↓, filtre, Entrée, Échap).
 
 > Outil personnel — respecte les lois sur le droit d’auteur de ton pays.
 
@@ -51,7 +51,6 @@ Interface : terminal + menus **fzf** (↑↓, Entrée, Échap).
 | Programme | Rôle | Requis |
 |-----------|------|--------|
 | **Annie** | CLI principale | oui |
-| **fzf** | Menus interactifs | oui |
 | **mpv** | Lecteur vidéo | oui* |
 | vlc / ffplay | Alternative | optionnel |
 
@@ -69,7 +68,7 @@ Interface : terminal + menus **fzf** (↑↓, Entrée, Échap).
 2. Décompresse le dossier
 3. Double-clic sur **`install.bat`** (à la racine du dossier)
 
-Le script installe **Python, uv, fzf et mpv** s’ils manquent, crée la commande **`annie`** dans ton PATH, et enregistre le lecteur dans `%APPDATA%\annie\config.toml`.
+Le script installe **Python, uv et mpv** s’ils manquent, crée la commande **`annie`** dans ton PATH, et enregistre le lecteur dans `%APPDATA%\annie\config.toml`.
 
 **Avec git :**
 
@@ -85,7 +84,7 @@ install.bat
 | Depuis le dossier projet | `.\bin\annie.cmd` |
 | Nouveau terminal | `annie` (PATH mis à jour) |
 
-**Options :** `install.bat -SkipOptional` — n’installe pas fzf/mpv automatiquement.
+**Options :** `install.bat -SkipOptional` — n’installe pas mpv automatiquement.
 
 <details>
 <summary><strong>Windows — pièges courants</strong></summary>
@@ -100,7 +99,7 @@ install.bat
 
 ```bash
 yay -S annie          # ou paru -S annie
-sudo pacman -S mpv fzf   # si manquants
+sudo pacman -S mpv   # si manquant
 ```
 
 ### Linux / macOS (sources)
@@ -129,7 +128,7 @@ Logo ASCII → invite `>` → tape un titre (**anglais** ou **romaji**, ex. `fri
 
 ### Parcours type
 
-1. **Saison** — menu fzf, choisis ex. `Season 2`
+1. **Saison** — liste TUI, choisis ex. `Season 2`
 2. **Épisode** — même menu
 3. **Sous-titres** — langue ou *Aucun* (si activé)
 4. **Lecture** — mpv s’ouvre, téléchargement en arrière-plan
@@ -161,14 +160,15 @@ Au prompt Annie : `help` · `quit` / `q`
 | `frieren movie 3` | 3ᵉ film |
 | `frieren --batch` | Privilégie les packs saison |
 
-### Dans fzf
+### Dans le TUI
 
 | Touche | Action |
 |--------|--------|
 | ↑ / ↓ | Naviguer |
+| lettres | Filtrer la liste |
 | **Entrée** | Valider / lire |
 | **Ctrl-O** | Copier le magnet |
-| **Ctrl-N** / **Ctrl-P** | Épisode suivant / précédent |
+| **←** | Écran précédent |
 | **Échap** | Retour / annuler |
 
 ---
@@ -209,16 +209,9 @@ Certains packs torrent ont des dossiers très longs. Annie utilise des chemins �
 </details>
 
 <details>
-<summary><strong>« fzf not found »</strong></summary>
+<summary><strong>« interactive mode requires a TTY »</strong></summary>
 
-**Windows :** relance `install.bat`.
-
-**Linux :**
-
-```bash
-sudo pacman -S fzf      # Arch
-sudo apt install fzf    # Debian/Ubuntu
-```
+Lance Annie dans un vrai terminal (Windows Terminal, Alacritty, kitty…), pas un bouton IDE sans console.
 
 </details>
 
@@ -228,13 +221,6 @@ sudo apt install fzf    # Debian/Ubuntu
 **Windows :** relance `install.bat` — détecte mpv, VLC ou ffplay et écrit le chemin dans `config.toml`.
 
 **Linux :** `sudo pacman -S mpv` (ou `apt install mpv`).
-
-</details>
-
-<details>
-<summary><strong>« interactive mode requires a TTY »</strong></summary>
-
-Lance Annie dans un vrai terminal (PowerShell, Windows Terminal, pas un bouton IDE sans console).
 
 </details>
 
@@ -374,7 +360,7 @@ flowchart LR
     A[Titre] --> B[MAL]
     B --> C[Catalogue]
     C --> D[Nyaa.si]
-    D --> E[fzf]
+    D --> E[TUI]
     E --> F[Sous-titres]
     F --> G[Stream]
     G --> H[mpv]

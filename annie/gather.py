@@ -79,7 +79,7 @@ def gather_catalog(
 ) -> tuple[list[MediaSection], dict]:
     """AllAnime/MAL → Nyaa → sections. options contient catalog_source / scope."""
     from annie import metadata as meta
-    from annie.ui import C, fzf_available, pick_anime_candidate, stylize
+    from annie.ui import C, pick_anime_candidate, stylize, tui_available
 
     query, options = parse_inline_target(raw_query)
     category = overrides.get("category") or config.category
@@ -89,7 +89,7 @@ def gather_catalog(
     target_kind = overrides.get("target_kind", kind_from_options(options))
     confirm_anime = overrides.get("confirm_anime")
     if confirm_anime is None:
-        confirm_anime = bool(sys.stdin.isatty() and fzf_available())
+        confirm_anime = bool(sys.stdin.isatty() and tui_available())
     preselected = overrides.get("preselected")
     preselected_release: MalRelease | None = overrides.get("preselected_release")
     options["target_season"] = target_season

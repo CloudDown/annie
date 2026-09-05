@@ -32,7 +32,7 @@ python scripts/debug_parse.py --fixture parse_titles
 | `debug_match.py` | Non | Teste `match_episode_filename` (batch SubsPlease, etc.) |
 | `debug_subtitles.py` | Optionnel | Variantes de titre + probe OpenSubtitles par épisode |
 | `debug_catalog.py` | Optionnel | Catalogue offline via `tests/fixtures/catalog_re_zero.json` |
-| `test_fzf_nav.py` | Non (sauf `--query`) | Aller-retour ←/→ : listes fzf identiques au retour |
+| `test_fzf_nav.py` | Non (sauf `--query`) | Aller-retour ←/→ : listes TUI identiques au retour |
 | `debug_franchise.py` | Oui | Rapport détaillé MAL ↔ catalogue pour **un** anime |
 | `validate_franchise.py` | Oui | Couverture MAL + **seeders/qualité** par épisode (100 anime par défaut) |
 | `survey_nyaa_titles.py` | Oui | Collecte masse titres Nyaa + rapport patterns parsing (JSON + MD) |

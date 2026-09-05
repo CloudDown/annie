@@ -1,4 +1,4 @@
-"""Interface Annie (fzf + console)."""
+"""Interface Annie (TUI in-process + console)."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ class C:
     BLUE = "\033[38;5;117m"
     WHITE = "\033[38;5;255m"
 
-    # fzf list — restrained palette
+    # TUI list — restrained palette
     LIST = "\033[38;5;252m"
     META = "\033[38;5;243m"
     CHROME = "\033[38;5;245m"
@@ -147,14 +147,6 @@ class BufferStatusDisplay:
             sys.stdout.flush()
 
 
-# fzf chrome — explicit selection bg so light terminals stay readable
-FZF_COLOR = (
-    "fg:-1,bg:-1,hl:#7aa2f7,"
-    "fg+:#f4f6ff,bg+:#3a4a6b,hl+:#a8c4ff,"
-    "prompt:#9aa0a6,pointer:#f0a8d0,marker:#7aa2f7,"
-    "spinner:#6b7280,header:#6b7280,info:#6b7280,border:#4b5563"
-)
-
 BANNER_ART = [
     "⣿⠛⠛⠛⠛⠻⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
     "⠛⢛⣿⠋⢀⡾⠃⠀⠀⠀⠀⢀⣤⣤⠤⠤⣤⣤⣀⣀⣀⣠⠶⡶⣤⣀⣠⠾⡷⣦⣀⣤⣤⡤⠤⠦⢤⣤⣄⡀⠀⢠⡶⢶⡄⠀⠀",
@@ -176,7 +168,7 @@ HELP = f"""
 {stylize("Navigation", C.PALE_PINK, C.BOLD)}
   {stylize("①", C.PALE_PINK)} season / movie / ova
   {stylize("②", C.PALE_PINK)} episode (best torrent)
-  {stylize("Enter/→", C.GREEN)} select · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back · {stylize("Esc", C.YELLOW)} search / none
+  {stylize("↑↓ Enter", C.GREEN)} select · {stylize("tape", C.CYAN)} filtre · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back · {stylize("Esc", C.YELLOW)} search / none
 
 {stylize("Shortcuts", C.PALE_PINK, C.BOLD)}
   frieren s2e10        stream directly
@@ -399,14 +391,14 @@ def log_buffer_resume() -> None:
 
 _T = TypeVar("_T")
 _SEARCH_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-# Mis à False pendant fzf pour ne pas écraser l'UI interactive.
+# Mis à False pendant le TUI pour ne pas écraser l'UI interactive.
 _spinner_active = threading.Event()
 _spinner_active.set()
 
 
 @contextmanager
 def pause_search_spinner():
-    """Coupe le spinner Searching pendant un fzf (sinon lignes « Searching » au-dessus)."""
+    """Coupe le spinner Searching pendant un picker (sinon lignes au-dessus)."""
     was_set = _spinner_active.is_set()
     _spinner_active.clear()
     try:
@@ -419,7 +411,7 @@ def pause_search_spinner():
 
 def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
     """Run *fn* while showing a braille spinner on the current line."""
-    del query  # titre affiché ailleurs (fzf) — spinner volontairement minimal
+    del query  # titre affiché ailleurs (TUI) — spinner volontairement minimal
 
     if not sys.stdout.isatty():
         print(_s("Searching", C.MAGENTA), flush=True)
@@ -463,37 +455,19 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
     return result[0]
 
 
-def _stop_subprocess(proc: subprocess.Popen[bytes]) -> None:
-    try:
-        proc.kill()
-    except OSError:
-        pass
-    try:
-        proc.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        try:
-            proc.kill()
-        except OSError:
-            pass
+def tui_available() -> bool:
+    from annie.tui import available
 
-
-def _fzf_binary() -> str | None:
-    """Chemin de fzf — cherche aussi hors PATH sous Windows (winget, scoop…)."""
-    from annie.paths import find_program
-
-    return find_program("fzf")
+    return available()
 
 
 def fzf_available() -> bool:
-    return _fzf_binary() is not None
+    """Compat : l'UI interactive est le TUI natif, plus fzf."""
+    return tui_available()
 
 
 def fzf_install_hint() -> str:
-    if sys.platform == "win32":
-        return "relancez packaging\\windows\\install-windows.bat  (ou : winget install junegunn.fzf)"
-    if sys.platform == "darwin":
-        return "brew install fzf"
-    return "pacman -S fzf  (Debian/Ubuntu: sudo apt install fzf)"
+    return "lancez Annie dans un vrai terminal (TTY)"
 
 
 def _terminal_size() -> tuple[int, int]:
@@ -535,24 +509,6 @@ def _seed_color(seeders: int) -> str:
     if seeders >= 20:
         return C.SEED_MID
     return C.SEED_LOW
-
-
-def _fzf_height() -> str:
-    _, rows = _terminal_size()
-    if rows < 28:
-        return "100%"
-    if rows < 40:
-        return "92%"
-    return "85%"
-
-
-def _preview_window() -> str:
-    _, rows = _terminal_size()
-    if rows < 28:
-        return "down:7:wrap:border-top"
-    if _compact_ui():
-        return "down:30%:wrap:border-top"
-    return "down:35%:wrap:border-top"
 
 
 def _list_item_label(item: ResultItem) -> str:
@@ -670,72 +626,7 @@ def format_preview_section(section: MediaSection) -> str:
     return "\n".join(lines)
 
 
-def _run_fzf(
-    lines: list[str] | None,
-    *,
-    prompt: str,
-    header: str,
-    preview: bool = False,
-    expect: str | None = None,
-    query: str = "",
-) -> tuple[int, str]:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    command = [
-        _fzf_binary() or "fzf",
-        "--ansi",
-        "--no-sort",
-        "--cycle",
-        "--layout=reverse",
-        f"--height={_fzf_height()}",
-        "--border=rounded",
-        "--margin=0,1",
-        f"--color={FZF_COLOR}",
-        f"--prompt={prompt}",
-        f"--header={header}",
-    ]
-    if lines:
-        command.append(f"--delimiter={SEP}")
-    if query:
-        command.extend([f"--query={query}"])
-    if preview:
-        preview_cmd = _preview_command()
-        command.extend(
-            [
-                "--with-nth=2..",
-                "--preview",
-                preview_cmd,
-                f"--preview-window={_preview_window()}",
-            ]
-        )
-    if expect:
-        command.extend(["--expect", expect])
-
-    text_in = "\n".join(lines or [])
-    with pause_search_spinner():
-        proc = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        try:
-            stdout_bytes, _ = proc.communicate(input=text_in.encode("utf-8"))
-        except KeyboardInterrupt:
-            _stop_subprocess(proc)
-            return EXIT_CANCELLED, ""
-
-    stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
-    return proc.returncode or 0, stdout
-
-
-def _extend_expect(expect: str) -> str:
-    keys = [key.strip() for key in expect.split(",") if key.strip()]
-    if "right" not in keys:
-        keys.append("right")
-    return ",".join(keys)
-
-
-def _fzf_choose(
+def _tui_choose(
     indexed: dict[str, Any],
     previews: dict[str, str],
     lines: list[str],
@@ -744,32 +635,31 @@ def _fzf_choose(
     header: str,
     expect: str = "ctrl-o,enter",
     query: str = "",
+    cursor_key: str | None = None,
 ) -> tuple[str, Any] | None:
     if not lines:
         return None
 
-    _write_previews(previews)
-    code, output = _run_fzf(
-        lines,
-        prompt=prompt,
-        header=header,
-        preview=True,
-        expect=_extend_expect(expect),
-        query=query,
-    )
-    if code != 0 or not output.strip():
+    from annie.tui import choose, parse_expect
+
+    rows: list[tuple[str, str, str, Any]] = []
+    for line in lines:
+        key, _, label = line.partition(SEP)
+        if key not in indexed:
+            continue
+        rows.append((key, label, previews.get(key, ""), indexed[key]))
+    if not rows:
         return None
 
-    parts = output.splitlines()
-    payload = parts[-1]
-    key = payload.split(SEP, 1)[0]
-    value = indexed.get(key)
-    if value is None:
-        return None
-    action = "enter" if len(parts) == 1 else parts[0]
-    if action == "right":
-        action = "enter"
-    return action, value
+    with pause_search_spinner():
+        return choose(
+            rows,
+            prompt=prompt,
+            header=header,
+            actions=parse_expect(expect) | {"enter", "right"},
+            query=query,
+            cursor_key=cursor_key,
+        )
 
 
 def read_query() -> str | None:
@@ -805,7 +695,7 @@ def _group_sections(sections: list[MediaSection]) -> dict[str, list[MediaSection
 
 
 def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
-    """fzf : confirmer quel anime correspond à la recherche."""
+    """TUI : confirmer quel anime correspond à la recherche."""
     if not candidates:
         return None
     if len(candidates) == 1:
@@ -843,12 +733,12 @@ def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
             f"{stylize(detail, C.META)}"
         )
 
-    picked = _fzf_choose(
+    picked = _tui_choose(
         indexed,
         previews,
         lines,
         prompt="anime> ",
-        header=_fzf_header("→ Enter · Esc cancel"),
+        header=_fzf_header("↑↓ Enter · tape pour filtrer · Esc"),
         expect="enter",
     )
     if picked is None:
@@ -906,12 +796,12 @@ def pick_allanime_show(shows: list, query: str = "") -> Any | None:
             f"{stylize(detail, C.META)}"
         )
 
-    picked = _fzf_choose(
+    picked = _tui_choose(
         indexed,
         previews,
         lines,
         prompt="show> ",
-        header=_fzf_header("→ Enter · Esc → fallback AniList"),
+        header=_fzf_header("↑↓ Enter · Esc → AniList"),
         expect="enter",
     )
     if picked is None:
@@ -940,12 +830,12 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
             f"{stylize(f'{len(items)}', C.META)}"
         )
 
-    picked = _fzf_choose(
+    picked = _tui_choose(
         indexed,
         previews,
         lines,
         prompt="group> ",
-        header=_fzf_header("→ Enter · ← group · Esc search"),
+        header=_fzf_header("↑↓ Enter · ← retour · Esc"),
         expect="left,enter",
     )
     if picked is None:
@@ -968,8 +858,8 @@ def _pick_section_flat(
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = _fzf_header(f"→ Enter · ← {back_label} · Esc search")
-    picked = _fzf_choose(
+    header = _fzf_header(f"↑↓ Enter · ← {back_label} · Esc")
+    picked = _tui_choose(
         indexed,
         previews,
         lines,
@@ -993,7 +883,7 @@ def pick_section(
 ) -> MediaSection | None:
     """Choisit une section (groupe → liste).
 
-    ``force_interactive`` : afficher fzf même pour une seule section (retour ←).
+    ``force_interactive`` : afficher le TUI même pour une seule section (retour ←).
     ``resume_from`` : au retour depuis les épisodes, rouvrir le même groupe
     (Seasons / Movies / Other) pour que la liste soit identique à l'aller.
     """
@@ -1040,12 +930,6 @@ def pick_section(
         return None
 
 
-def _episode_query(item: ResultItem) -> str:
-    if item.parsed.episode is not None:
-        return f"{item.parsed.episode:02d}"
-    return minimal_label(item.parsed)
-
-
 def pick_episode(
     section: MediaSection,
     *,
@@ -1072,35 +956,21 @@ def pick_episode(
         )
 
     prompt = f"{_clip(section.label, 18)}> "
-    header = _fzf_header("→ Enter · Ctrl-N/P · Ctrl-O · ← back · Esc search")
-    index = 0
-    jumped = False
-    while 0 <= index < len(items):
-        # fzf --query filters the list; only pass a query after Ctrl-N/P navigation.
-        picked = _fzf_choose(
-            indexed,
-            previews,
-            lines,
-            prompt=prompt,
-            header=header,
-            expect="ctrl-n,ctrl-p,ctrl-o,enter,left",
-            query=_episode_query(items[index]) if jumped else "",
-        )
-        if picked is None:
-            return None
-        action, item = picked
-        if action == "left":
-            return "left", None
-        if action == "ctrl-n":
-            index = min(index + 1, len(items) - 1)
-            jumped = True
-            continue
-        if action == "ctrl-p":
-            index = max(index - 1, 0)
-            jumped = True
-            continue
-        return action, item
-    return None
+    header = _fzf_header("↑↓ Enter · Ctrl-O magnet · ← retour · Esc")
+    picked = _tui_choose(
+        indexed,
+        previews,
+        lines,
+        prompt=prompt,
+        header=header,
+        expect="ctrl-o,enter,left",
+    )
+    if picked is None:
+        return None
+    action, item = picked
+    if action == "left":
+        return "left", None
+    return action, item
 
 
 class _SkipSubs:
@@ -1117,7 +987,7 @@ BackToEpisode = _BackToEpisode
 
 
 def pick_subtitle_language() -> str | None | _BackToEpisode:
-    """fzf : langues + Aucun. Retourne code ISO, None (sans subs), ou BACK_TO_EPISODE."""
+    """TUI : langues + Aucun. Retourne code ISO, None (sans subs), ou BACK_TO_EPISODE."""
     from annie.subtitles import languages, subtitles_api_available, _opensubtitles_config_hint
 
     if not subtitles_api_available():
@@ -1138,12 +1008,12 @@ def pick_subtitle_language() -> str | None | _BackToEpisode:
     previews["lang99"] = stylize("Lecture sans sous-titres externes", C.META)
     lines.append(f"lang99{SEP}{stylize('Aucun', C.MUTED)}")
 
-    picked = _fzf_choose(
+    picked = _tui_choose(
         indexed,
         previews,
         lines,
         prompt="langue> ",
-        header=_fzf_header("→ Enter · ← episodes · Esc = none"),
+        header=_fzf_header("↑↓ Enter · ← épisodes · Esc = aucun"),
         expect="left,enter",
     )
     if picked is None:

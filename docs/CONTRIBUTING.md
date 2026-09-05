@@ -4,7 +4,7 @@ Guide pour contribuer ou travailler depuis les sources du dépôt.
 
 ## Installation depuis Git
 
-Prérequis : [uv](https://docs.astral.sh/uv/), Python **3.11+** (géré par uv), [fzf](https://github.com/junegunn/fzf), lecteur vidéo pour les tests manuels.
+Prérequis : [uv](https://docs.astral.sh/uv/), Python **3.11+** (géré par uv), un TTY, lecteur vidéo pour les tests manuels.
 
 ```bash
 git clone https://github.com/CloudDown/annie.git
@@ -61,11 +61,12 @@ annie/
   buffer.py           Buffer / probes MKV-MP4 / lancement mpv
   player.py           Commandes mpv/vlc/ffplay
   subtitles.py        OpenSubtitles.com
-  ui.py               fzf & interface terminal
+  ui.py               TUI & interface terminal
+  tui.py              Picker plein écran (filtre, preview)
   net.py              HTTP + rate limit
   cache.py            Cache disque JSON
   paths.py            Chemins multi-OS
-  preview.py          Aperçus fzf
+  preview.py          Aperçus (legacy)
   watch_history.py    Historique de visionnage
 tests/
   helpers.py          Factories & chargement fixtures

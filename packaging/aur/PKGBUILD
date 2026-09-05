@@ -2,14 +2,13 @@
 pkgname=annie
 pkgver=0.5.0
 pkgrel=1
-pkgdesc="Anime torrent CLI — Nyaa, MAL catalog, fzf, libtorrent streaming"
+pkgdesc="Anime torrent CLI — Nyaa, MAL catalog, TUI, libtorrent streaming"
 arch=('any')
 url="https://github.com/CloudDown/annie"
 license=('MIT')
 depends=(
   'python'
   'python-libtorrent'
-  'fzf'
 )
 optdepends=(
   'mpv: lecteur vidéo recommandé'

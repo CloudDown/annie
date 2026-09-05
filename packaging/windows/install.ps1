@@ -663,10 +663,7 @@ function Install-OptionalTools {
         Write-Host "==> Outils optionnels ignores (-SkipOptional)"
         return
     }
-    Write-Host "==> Outils interactifs (fzf, lecteur video)"
-    Ensure-ProgramOnPath -Name "fzf" -WingetIds @(
-        "junegunn.fzf"
-    ) -ChocolateyPackages @("fzf") -ScoopPackages @("fzf") | Out-Null
+    Write-Host "==> Lecteur video"
     $player = Ensure-MediaPlayer
     if ($player) {
         if (-not (Configure-AnnieMediaPlayer)) {

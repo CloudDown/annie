@@ -28,8 +28,8 @@ from annie.ui import (
     EXIT_CANCELLED,
     PLAY_COMPLETED,
     PLAY_INCOMPLETE,
-    fzf_available,
     fzf_install_hint,
+    tui_available,
     is_play_completed,
     pick_allanime_show,
     pick_anime_candidate,
@@ -116,7 +116,7 @@ def _pick_for_options(entries, query: str, options: dict, config: AnnieConfig):
 def resolve_anime_for_query(
     query: str, config: AnnieConfig
 ):
-    """Recherche + confirmation fzf sur le thread principal (hors spinner)."""
+    """Recherche + confirmation TUI sur le thread principal (hors spinner)."""
     if not meta.metadata_enabled(config):
         return None
     try:
@@ -128,7 +128,7 @@ def resolve_anime_for_query(
     if (
         config.metadata.confirm_ambiguous
         and sys.stdin.isatty()
-        and fzf_available()
+        and tui_available()
         and meta.is_ambiguous_pick(candidates, query)
     ):
         picked = pick_anime_candidate(candidates, query)
@@ -145,7 +145,7 @@ def resolve_allanime_release(
         return None
     if config.metadata.structure != "allanime":
         return None
-    if not (sys.stdin.isatty() and fzf_available()):
+    if not (sys.stdin.isatty() and tui_available()):
         return None
     try:
         shows = allanime.search_shows(query, limit=40)
@@ -245,7 +245,7 @@ def _resolve_subtitle_lang(
         return cli_lang
     if config.default_sub_lang:
         return config.default_sub_lang
-    if interactive and fzf_available():
+    if interactive and tui_available():
         result = pick_subtitle_language()
         if result is BACK_TO_EPISODE:
             return BACK_TO_EPISODE
@@ -571,11 +571,10 @@ def run_watch(
 
 
 def interactive_loop(config: AnnieConfig) -> int:
-    if not fzf_available():
-        print_status(f"fzf not found — install with: {fzf_install_hint()}", kind="err")
-        return 1
-    if not sys.stdout.isatty():
-        print_status("interactive mode requires a TTY", kind="err")
+    if not tui_available() or not sys.stdout.isatty():
+        print_status(
+            f"interactive mode requires a TTY — {fzf_install_hint()}", kind="err"
+        )
         return 1
 
     if config.ui.show_banner:
