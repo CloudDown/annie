@@ -666,7 +666,7 @@ def read_query() -> str | None:
     except (EOFError, KeyboardInterrupt):
         print()
         return None
-    return raw or None
+    return raw
 
 
 GROUP_LABELS = {
