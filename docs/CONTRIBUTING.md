@@ -63,6 +63,7 @@ annie/
   subtitles.py        OpenSubtitles.com
   ui.py               TUI & interface terminal
   tui.py              Picker plein écran (filtre, preview)
+  tui_settings.py     Écran réglages (clés API, résolution)
   net.py              HTTP + rate limit
   cache.py            Cache disque JSON
   paths.py            Chemins multi-OS

@@ -61,6 +61,7 @@ gap_max_missing = 6
 gap_max_queries = 10
 preferred_groups = []        # ex. ["Erai-raws", "SubsPlease"]
 preferred_group_bonus = 10   # points qualité ajoutés à ces groupes
+preferred_resolution = "auto"  # auto | 720p | 1080p | 2160p
 min_seeders_strict = 10
 min_seeders_relaxed = 3
 min_quality_strict = 26      # ~720p

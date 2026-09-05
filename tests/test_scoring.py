@@ -70,5 +70,25 @@ class PickBestTests(unittest.TestCase):
         self.assertEqual(picked[1].episode, 5)
 
 
+class PreferredResolutionTests(unittest.TestCase):
+    def test_bonus_for_preferred_res(self) -> None:
+        from unittest.mock import Mock, patch
+
+        from annie.scoring import torrent_quality_score
+
+        catalog = Mock(
+            preferred_resolution="1080p",
+            preferred_groups=[],
+            preferred_group_bonus=10,
+        )
+        with patch(
+            "annie.config.AnnieConfig.load_cached",
+            return_value=Mock(catalog=catalog),
+        ):
+            hi = torrent_quality_score("[G] Show - 01 [1080p]", None)
+            lo = torrent_quality_score("[G] Show - 01 [720p]", None)
+        self.assertGreater(hi, lo)
+
+
 if __name__ == "__main__":
     unittest.main()

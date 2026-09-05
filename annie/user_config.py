@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from importlib.resources import files
 from pathlib import Path
 
@@ -111,3 +112,76 @@ def ensure_media_player_config(*, force: bool = False) -> str | None:
 
     resolve_player()
     return exe
+
+
+def _toml_literal(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return str(value)
+    if isinstance(value, list):
+        inner = ", ".join(_toml_literal(item) for item in value)
+        return f"[{inner}]"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _is_assignment(stripped: str, key: str) -> bool:
+    return stripped.startswith(f"{key}=") or stripped.startswith(f"{key} =")
+
+
+def set_config_value(section: str, key: str, value: object) -> bool:
+    """Écrit ``[section].key`` dans config.toml sans casser le reste du fichier."""
+    ensure_user_config()
+    literal = _toml_literal(value)
+    new_line = f"{key} = {literal}"
+    heading = f"[{section}]"
+    lines = CONFIG_FILE.read_text(encoding="utf-8").splitlines()
+    out: list[str] = []
+    in_section = False
+    seen_section = False
+    seen_key = False
+    changed = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == heading:
+            in_section = True
+            seen_section = True
+            out.append(line)
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if in_section and not seen_key:
+                out.append(new_line)
+                changed = True
+                seen_key = True
+            in_section = False
+        if in_section and _is_assignment(stripped, key):
+            comment = ""
+            if " #" in line:
+                comment = " #" + line.split(" #", 1)[1]
+            replacement = new_line + comment
+            if line != replacement:
+                changed = True
+            out.append(replacement)
+            seen_key = True
+            continue
+        out.append(line)
+
+    if not seen_section:
+        if out and out[-1].strip():
+            out.append("")
+        out.extend([heading, new_line])
+        changed = True
+    elif in_section and not seen_key:
+        out.append(new_line)
+        changed = True
+
+    if changed:
+        CONFIG_FILE.write_text("\n".join(out) + "\n", encoding="utf-8")
+        try:
+            CONFIG_FILE.chmod(0o600)
+        except OSError:
+            pass
+    return changed

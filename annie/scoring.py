@@ -48,11 +48,30 @@ def torrent_quality_score(title: str, release_group: str | None) -> int:
             break
     if release_group:
         score += _merged_preferred_groups().get(release_group.lower(), 0)
+    pref = _preferred_resolution()
+    if pref and pref != "auto":
+        from annie.parsing import resolution_tag
+
+        tag = resolution_tag(title)
+        if tag == pref:
+            score += 20
+        elif tag:
+            score -= 8
     if re.search(r"\brepack\b", title, re.I):
         score -= 5
     if re.search(r"\bdual[\s-]?audio\b", title, re.I):
         score += 2
     return score
+
+
+def _preferred_resolution() -> str:
+    from annie.config import AnnieConfig
+
+    raw = getattr(AnnieConfig.load_cached().catalog, "preferred_resolution", "auto")
+    value = str(raw or "auto").lower()
+    if value not in {"auto", "720p", "1080p", "2160p"}:
+        return "auto"
+    return value
 
 
 def _catalog_thresholds() -> tuple[int, int, int, int]:

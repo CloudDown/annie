@@ -15,6 +15,20 @@ from typing import Any, Callable, TypeVar
 
 from annie.paths import cache_dir
 from annie.parsing import minimal_label
+from annie.theme import (
+    ACC,
+    BOLD,
+    BRIGHT,
+    CYAN_FG,
+    DIM as FG_DIM,
+    ERR,
+    FG,
+    MAG,
+    OK,
+    RESET,
+    RULE,
+    WARN,
+)
 from annie.types import MediaKind, MediaSection, ResultItem
 
 # Code de sortie conventionnel (SIGINT / Ctrl+C volontaire).
@@ -32,34 +46,33 @@ def is_play_completed(code: int | None) -> bool:
 
 
 class C:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
+    RESET = RESET
+    BOLD = BOLD
     DIM = "\033[2m"
     ITALIC = "\033[3m"
     UNDER = "\033[4m"
 
-    # Terminal / banner
-    FG = "\033[38;5;252m"
-    MUTED = "\033[38;5;244m"
-    PINK = "\033[38;5;213m"
-    PALE_PINK = "\033[38;5;218m"
-    ROSE = "\033[38;5;176m"
-    CYAN = "\033[38;5;86m"
-    GREEN = "\033[38;5;84m"
-    YELLOW = "\033[38;5;220m"
-    MAGENTA = "\033[38;5;141m"
-    ORANGE = "\033[38;5;215m"
-    RED = "\033[38;5;203m"
-    BLUE = "\033[38;5;117m"
-    WHITE = "\033[38;5;255m"
+    # Tokyo Night (Omarchy) — PALE_PINK reste un alias de l'accent.
+    FG = FG
+    MUTED = FG_DIM
+    PINK = MAG
+    PALE_PINK = ACC
+    ROSE = MAG
+    CYAN = CYAN_FG
+    GREEN = OK
+    YELLOW = WARN
+    MAGENTA = MAG
+    ORANGE = WARN
+    RED = ERR
+    BLUE = ACC
+    WHITE = BRIGHT
 
-    # TUI list — restrained palette
-    LIST = "\033[38;5;252m"
-    META = "\033[38;5;243m"
-    CHROME = "\033[38;5;245m"
-    SEED_HIGH = "\033[38;5;114m"
-    SEED_MID = "\033[38;5;179m"
-    SEED_LOW = "\033[38;5;174m"
+    LIST = BRIGHT
+    META = FG_DIM
+    CHROME = RULE
+    SEED_HIGH = OK
+    SEED_MID = WARN
+    SEED_LOW = ERR
 
 
 def stylize(text: str, *codes: str) -> str:
@@ -165,18 +178,13 @@ BANNER_ART = [
 
 
 HELP = f"""
-{stylize("Navigation", C.PALE_PINK, C.BOLD)}
-  {stylize("①", C.PALE_PINK)} season / movie / ova
-  {stylize("②", C.PALE_PINK)} episode (best torrent)
-  {stylize("↑↓ Enter", C.GREEN)} select · {stylize("tape", C.CYAN)} filtre · {stylize("Ctrl-O", C.CYAN)} magnet · {stylize("←", C.YELLOW)} back · {stylize("Esc", C.YELLOW)} search / none
+  {stylize("↑↓ enter", C.FG)}     select
+  {stylize("type", C.FG)}         filter
+  {stylize("ctrl-o", C.FG)}       magnet
+  {stylize("← esc", C.MUTED)}       back / search
 
-{stylize("Shortcuts", C.PALE_PINK, C.BOLD)}
-  frieren s2e10        stream directly
-  frieren s2           pick episode in S2
-  frieren movie 3        movie #3
-
-{stylize("Commands", C.PALE_PINK, C.BOLD)}
-  help · quit
+  {stylize("frieren s2e10", C.MUTED)}
+  {stylize("settings · help · quit", C.MUTED)}
 """
 
 CACHE_DIR = cache_dir()
@@ -287,7 +295,9 @@ def print_banner() -> None:
     clear_terminal()
     print()
     for line in BANNER_ART:
-        print(stylize(line, C.PALE_PINK))
+        print(stylize(line, C.BLUE))
+    print()
+    print(stylize("  settings", C.MUTED))
     print()
 
 
@@ -296,9 +306,8 @@ def print_help() -> None:
 
 
 def print_status(message: str, *, kind: str = "info") -> None:
-    colors = {"info": C.GREEN, "ok": C.GREEN, "warn": C.YELLOW, "err": C.RED}
-    icon = {"info": "◆", "ok": "✔", "warn": "!", "err": "✖"}.get(kind, "·")
-    print(stylize(f"  {icon} {message}", colors.get(kind, C.FG)))
+    colors = {"info": C.FG, "ok": C.GREEN, "warn": C.YELLOW, "err": C.RED}
+    print(stylize(f"  {message}", colors.get(kind, C.FG)))
 
 
 _STREAM_TONES = {
@@ -306,7 +315,7 @@ _STREAM_TONES = {
     "ok": C.GREEN,
     "warn": C.YELLOW,
     "muted": C.MUTED,
-    "accent": C.CYAN,
+    "accent": C.BLUE,
     "err": C.RED,
 }
 
@@ -380,13 +389,11 @@ def format_buffer_local_file(mib: int) -> str:
 
 
 def log_buffer_pause() -> None:
-    line = f"{_annie_prefix()}{_s('⏸', C.RED)}  {_s('buffer insuffisant', C.RED)}"
-    print(line, flush=True)
+    print(format_stream_log("pause", "buffer insuffisant", tone="err"), flush=True)
 
 
 def log_buffer_resume() -> None:
-    line = f"{_annie_prefix()}{_s('▶', C.GREEN)}  {_s('reprise', C.GREEN)}"
-    print(line, flush=True)
+    print(format_stream_log("reprise", tone="ok"), flush=True)
 
 
 _T = TypeVar("_T")
@@ -414,7 +421,7 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
     del query  # titre affiché ailleurs (TUI) — spinner volontairement minimal
 
     if not sys.stdout.isatty():
-        print(_s("Searching", C.MAGENTA), flush=True)
+        print(_s("search", C.MUTED), flush=True)
         return fn()
 
     result: list[_T] = []
@@ -440,7 +447,7 @@ def run_search_spinner(query: str, fn: Callable[[], _T]) -> _T:
                 done.wait(0.05)
                 continue
             spin = _SEARCH_SPINNER[frame % len(_SEARCH_SPINNER)]
-            line = f"{_s('Searching · ', C.MAGENTA)}{_s(spin, C.MAGENTA)}"
+            line = f"{_s('search', C.MUTED)}  {_s(spin, C.BLUE)}"
             print(f"\r{line}", end="", flush=True)
             frame += 1
             done.wait(0.09)
@@ -500,7 +507,7 @@ def log_playback_start(filename: str, player: str) -> None:
 
 
 def _fzf_header(text: str) -> str:
-    return stylize(text, C.CHROME)
+    return text
 
 
 def _seed_color(seeders: int) -> str:
@@ -664,7 +671,7 @@ def _tui_choose(
 
 def read_query() -> str | None:
     try:
-        print(stylize("> ", C.PALE_PINK), end="", flush=True)
+        print(stylize("> ", C.BLUE), end="", flush=True)
         raw = input().strip()
     except (EOFError, KeyboardInterrupt):
         print()
@@ -737,8 +744,8 @@ def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
         indexed,
         previews,
         lines,
-        prompt="anime> ",
-        header=_fzf_header("↑↓ Enter · tape pour filtrer · Esc"),
+        prompt="titre",
+        header=_fzf_header("↑↓  enter  esc"),
         expect="enter",
     )
     if picked is None:
@@ -800,8 +807,8 @@ def pick_allanime_show(shows: list, query: str = "") -> Any | None:
         indexed,
         previews,
         lines,
-        prompt="show> ",
-        header=_fzf_header("↑↓ Enter · Esc → AniList"),
+        prompt="série",
+        header=_fzf_header("↑↓  enter  esc"),
         expect="enter",
     )
     if picked is None:
@@ -834,8 +841,8 @@ def pick_group(groups: dict[str, list[MediaSection]]) -> str | None:
         indexed,
         previews,
         lines,
-        prompt="group> ",
-        header=_fzf_header("↑↓ Enter · ← retour · Esc"),
+        prompt="type",
+        header=_fzf_header("↑↓  enter  ←  esc"),
         expect="left,enter",
     )
     if picked is None:
@@ -858,12 +865,12 @@ def _pick_section_flat(
         previews[key] = format_preview_section(section)
         lines.append(f"{key}{SEP}{format_section_line(section)}")
 
-    header = _fzf_header(f"↑↓ Enter · ← {back_label} · Esc")
+    header = _fzf_header(f"↑↓  enter  ← {back_label}  esc")
     picked = _tui_choose(
         indexed,
         previews,
         lines,
-        prompt="section> ",
+        prompt="saison",
         header=header,
         expect="left,enter",
     )
@@ -955,8 +962,8 @@ def pick_episode(
             f"{key}{SEP}{format_torrent_line(item, section=section, watch_history=watch_history)}"
         )
 
-    prompt = f"{_clip(section.label, 18)}> "
-    header = _fzf_header("↑↓ Enter · Ctrl-O magnet · ← retour · Esc")
+    prompt = _clip(section.label, 24)
+    header = _fzf_header("↑↓  enter  ctrl-o  ←  esc")
     picked = _tui_choose(
         indexed,
         previews,
@@ -1012,8 +1019,8 @@ def pick_subtitle_language() -> str | None | _BackToEpisode:
         indexed,
         previews,
         lines,
-        prompt="langue> ",
-        header=_fzf_header("↑↓ Enter · ← épisodes · Esc = aucun"),
+        prompt="langue",
+        header=_fzf_header("↑↓  enter  ←  esc"),
         expect="left,enter",
     )
     if picked is None:

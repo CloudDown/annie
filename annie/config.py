@@ -46,6 +46,13 @@ def _metadata_mode_defaults(mode: str) -> tuple[bool, str, str]:
     return True, "anilist", "allanime"
 
 
+def _norm_resolution(value: str) -> str:
+    raw = (value or "auto").lower()
+    if raw not in {"auto", "720p", "1080p", "2160p"}:
+        return "auto"
+    return raw
+
+
 @dataclass
 class MetadataConfig:
     """Source métadonnées franchise (saisons / titres / synonymes)."""
@@ -90,6 +97,7 @@ class CatalogConfig:
     gap_max_queries: int = 10
     preferred_groups: list[str] = field(default_factory=list)
     preferred_group_bonus: int = 10
+    preferred_resolution: str = "auto"  # auto | 720p | 1080p | 2160p
     min_seeders_strict: int = 10
     min_seeders_relaxed: int = 3
     min_quality_strict: int = 26
@@ -305,6 +313,11 @@ class AnnieConfig:
             ),
             preferred_group_bonus=toml_util.int_val(
                 catalog_table.get("preferred_group_bonus"), 10
+            ),
+            preferred_resolution=_norm_resolution(
+                toml_util.str_val(
+                    catalog_table.get("preferred_resolution"), "auto"
+                )
             ),
             min_seeders_strict=toml_util.int_val(
                 catalog_table.get("min_seeders_strict"), 10

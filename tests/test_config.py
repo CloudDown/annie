@@ -146,6 +146,46 @@ structure = "allanime"
         self.assertEqual(cfg.metadata.mode, "off")
         self.assertFalse(cfg.metadata.enabled)
 
+    def test_preferred_resolution(self) -> None:
+        toml = """
+[catalog]
+preferred_resolution = "1080p"
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.catalog.preferred_resolution, "1080p")
+
+
+class ConfigWriteTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        reload_config()
+
+    def test_set_config_value_keeps_other_keys(self) -> None:
+        from annie.user_config import set_config_value
+
+        toml = """
+[subtitles]
+enabled = true
+api_key = ""
+
+[catalog]
+preferred_resolution = "auto"
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.user_config.CONFIG_FILE", path):
+                set_config_value("subtitles", "api_key", "secret-key")
+                set_config_value("catalog", "preferred_resolution", "1080p")
+                text = path.read_text(encoding="utf-8")
+        self.assertIn('api_key = "secret-key"', text)
+        self.assertIn('preferred_resolution = "1080p"', text)
+        self.assertIn("enabled = true", text)
+
 
 class SettingsLoadTests(unittest.TestCase):
     def tearDown(self) -> None:

@@ -143,7 +143,7 @@ prêt         22 MiB contigu
 
 Connexion lente → `⏸ buffer insuffisant` puis reprise auto. Quitter mpv : **q** ou fermer la fenêtre.
 
-Au prompt Annie : `help` · `quit` / `q`
+Au prompt Annie : `settings` · `help` · `quit` / `q`
 
 ---
 
@@ -179,7 +179,7 @@ Source : [OpenSubtitles.com](https://www.opensubtitles.com) — clé API gratuit
 
 1. Compte sur [opensubtitles.com](https://www.opensubtitles.com)
 2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**
-3. Édite la config :
+3. Dans Annie, tape `settings` — ou édite la config :
 
    | OS | Fichier |
    |----|---------|
@@ -310,6 +310,7 @@ preferred_groups = ["SubsPlease", "Erai-raws"]
 | `[ui]` | `show_banner` | `false` = sans logo |
 | `[streaming]` | `seed_while_watching` | seed pendant la lecture |
 | `[catalog]` | `preferred_groups` | groupes favoris |
+| `[catalog]` | `preferred_resolution` | `auto`, `720p`, `1080p`, `2160p` |
 | `[metadata]` | `mode` | `auto`, `anilist`, `mal`, `off` |
 
 **Variables d’environnement :**

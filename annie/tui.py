@@ -1,4 +1,4 @@
-"""TUI in-process : picker plein écran, sans fzf."""
+"""TUI in-process : picker plein écran + chrome partagé."""
 
 from __future__ import annotations
 
@@ -10,14 +10,20 @@ import signal
 import sys
 from typing import Any, Callable
 
+from annie import theme as T
+
 ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
 
-# Surlignage liste — lisible sur thème clair ou sombre.
-_SEL = "\033[1;38;5;255;48;5;61m"
-_RESET = "\033[0m"
-_DIM = "\033[38;5;245m"
-_TITLE = "\033[1;38;5;218m"
-_RULE = "\033[38;5;238m"
+_RESET = T.RESET
+_BOLD = T.BOLD
+_DIM = T.DIM
+_TITLE = T.BOLD + T.ACC
+_ACCENT = T.ACC
+_RULE = T.RULE
+_TEXT = T.FG
+_SEL = T.SEL
+_HINT = T.DIM
+_OK = T.OK
 
 
 def available() -> bool:
@@ -60,6 +66,51 @@ def clip_visible(text: str, width: int) -> str:
         n += 1
         i += 1
     return "".join(out) + _RESET
+
+
+def pad_visible(text: str, width: int) -> str:
+    clipped = clip_visible(text, width)
+    pad = max(0, width - visible_len(clipped))
+    return clipped + (" " * pad)
+
+
+def _bar(left: str, right: str, width: int) -> str:
+    space = width - visible_len(left) - visible_len(right)
+    if space < 1:
+        left = clip_visible(left, max(0, width - visible_len(right) - 1))
+        space = width - visible_len(left) - visible_len(right)
+    return left + (" " * max(0, space)) + right
+
+
+def screen_title(title: str) -> str:
+    text = title.strip().rstrip("> ").strip()
+    if text.lower().startswith("annie"):
+        text = text[5:].lstrip(" ·").strip()
+    return text
+
+
+def layout(rows: int, preview_n: int) -> tuple[int, int, int]:
+    """Hauteur liste, aperçu, spacer. Doit rester ≤ *rows* avec le chrome."""
+    preview_h = 0
+    extra = 0
+    spacer = 0
+    if preview_n > 0:
+        cap = 8 if rows >= 28 else (5 if rows >= 20 else 3)
+        preview_h = min(preview_n, cap)
+        extra = 1
+        spacer = 1 if rows >= 20 else 0
+    body_h = max(3, rows - 4 - extra - spacer - preview_h)
+    return body_h, preview_h, spacer
+
+
+def select_row(text: str, width: int, *, selected: bool) -> str:
+    inner = max(1, width - 2)
+    if selected:
+        return (
+            f"{T.SEL_BAR}▏{T.RESET}{T.SEL} "
+            f"{pad_visible(strip_ansi(text), inner)}{T.RESET}"
+        )
+    return f"  {pad_visible(text, inner)}"
 
 
 def fuzzy_score(query: str, text: str) -> int | None:
@@ -108,6 +159,22 @@ def filter_rows(
 
 def parse_expect(expect: str) -> set[str]:
     return {part.strip() for part in expect.split(",") if part.strip()}
+
+
+def mask_secret(value: str) -> str:
+    if not value:
+        return "—"
+    if len(value) <= 4:
+        return "•" * len(value)
+    return "•" * (len(value) - 4) + value[-4:]
+
+
+def cycle_choice(current: str, choices: tuple[str, ...]) -> str:
+    if not choices:
+        return current
+    if current not in choices:
+        return choices[0]
+    return choices[(choices.index(current) + 1) % len(choices)]
 
 
 class _UnixKeys:
@@ -250,6 +317,107 @@ def _open_tty():
     return tty, tty, True
 
 
+def term_size() -> tuple[int, int]:
+    try:
+        size = shutil.get_terminal_size()
+        return max(40, size.columns), max(12, size.lines)
+    except OSError:
+        return 80, 24
+
+
+class Session:
+    """Écran alternatif + raw TTY. Un seul à la fois."""
+
+    def __init__(self) -> None:
+        self.stdin, self.stdout, self._owned = _open_tty()
+        self._keys: _UnixKeys | _WinKeys
+        if sys.platform == "win32":
+            self._keys = _WinKeys()
+        else:
+            self._keys = _UnixKeys(self.stdin.fileno())
+        self._prev_winch = None
+        self.resized = False
+
+        def _on_winch(_signum, _frame) -> None:
+            self.resized = True
+
+        if hasattr(signal, "SIGWINCH"):
+            self._prev_winch = signal.signal(signal.SIGWINCH, _on_winch)
+
+    def __enter__(self) -> Session:
+        self.write("\033[?1049h\033[?25l\033[2J\033[H")
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.write("\033[?25h\033[?1049l")
+        self._keys.restore()
+        if self._prev_winch is not None:
+            signal.signal(signal.SIGWINCH, self._prev_winch)
+        if self._owned:
+            try:
+                self.stdin.close()
+            except OSError:
+                pass
+
+    def write(self, text: str) -> None:
+        self.stdout.write(text)
+        self.stdout.flush()
+
+    def draw(self, frame: str) -> None:
+        self.write("\033[H\033[J" + frame.replace("\n", "\r\n"))
+
+    def read(self) -> str:
+        return self._keys.read()
+
+    def show_cursor(self, visible: bool) -> None:
+        self.write("\033[?25h" if visible else "\033[?25l")
+
+
+def chrome(
+    *,
+    title: str,
+    body: list[str],
+    footer: str,
+    preview: list[str] | None = None,
+    cols: int,
+    rows: int,
+    meta: str = "",
+) -> str:
+    """Barre Omarchy : marque, filet, liste, aperçu, footer — sans cadre."""
+    width = max(24, cols - 1)
+    preview_n = len(preview) if preview else 0
+    body_h, preview_h, spacer = layout(rows, preview_n)
+    rule = f"{_RULE}{'─' * width}{_RESET}"
+    brand = f"{_TITLE}annie{_RESET}"
+    label = screen_title(title)
+    left = brand if not label else f"{brand}  {_DIM}{label}{_RESET}"
+    if meta and "\033" not in meta:
+        right = f"{_DIM}{meta}{_RESET}"
+    else:
+        right = meta
+    lines = [_bar(left, right, width), rule]
+
+    view = list(body[:body_h])
+    while len(view) < body_h:
+        view.append("")
+    for row in view:
+        lines.append(pad_visible(row, width))
+
+    if preview:
+        if spacer:
+            lines.append("")
+        lines.append(rule)
+        shown = list(preview[:preview_h])
+        while len(shown) < preview_h:
+            shown.append("")
+        for row in shown:
+            lines.append(f"{_DIM}{pad_visible(row, width)}{_RESET}")
+
+    lines.append(rule)
+    lines.append(pad_visible(footer, width))
+    return "\n".join(lines)
+
+
 def choose(
     rows: list[tuple[str, str, str, Any]],
     *,
@@ -261,27 +429,8 @@ def choose(
     on_suspend: Callable[[], None] | None = None,
 ) -> tuple[str, Any] | None:
     """Picker plein écran. rows = (key, label_ansi, preview_ansi, value)."""
-    if not rows:
+    if not rows or not available():
         return None
-    if not available():
-        return None
-
-    stdin, stdout, owned = _open_tty()
-    resize = {"flag": False}
-
-    def _on_winch(_signum, _frame) -> None:
-        resize["flag"] = True
-
-    prev_winch = None
-    if hasattr(signal, "SIGWINCH"):
-        prev_winch = signal.signal(signal.SIGWINCH, _on_winch)
-
-    keys: _UnixKeys | _WinKeys
-    if sys.platform == "win32":
-        keys = _WinKeys()
-    else:
-        keys = _UnixKeys(stdin.fileno())
-
     if on_suspend is not None:
         on_suspend()
 
@@ -294,168 +443,146 @@ def choose(
                 cursor = index
                 break
 
-    def write(text: str) -> None:
-        stdout.write(text)
-        stdout.flush()
-
-    write("\033[?1049h\033[?25l\033[2J\033[H")
     try:
-        while True:
-            cols, lines = _term_size()
-            filtered = filter_rows(rows, query_buf)
-            if not filtered:
-                filtered = []
-            if cursor >= len(filtered):
-                cursor = max(0, len(filtered) - 1)
-            if cursor < 0:
-                cursor = 0
+        with Session() as ses:
+            while True:
+                cols, lines = term_size()
+                filtered = filter_rows(rows, query_buf)
+                if cursor >= len(filtered):
+                    cursor = max(0, len(filtered) - 1)
+                if cursor < 0:
+                    cursor = 0
 
-            preview_h = _preview_height(lines)
-            list_h = max(3, lines - preview_h - 6)
-            if filtered:
-                if cursor < scroll:
-                    scroll = cursor
-                if cursor >= scroll + list_h:
-                    scroll = cursor - list_h + 1
-
-            frame = _render(
-                prompt=prompt,
-                header=header,
-                query=query_buf,
-                filtered=filtered,
-                cursor=cursor,
-                scroll=scroll,
-                list_h=list_h,
-                preview_h=preview_h,
-                cols=cols,
-                total=len(rows),
-            )
-            write("\033[H\033[J" + frame.replace("\n", "\r\n"))
-
-            key = keys.read()
-            if resize["flag"]:
-                resize["flag"] = False
-                continue
-            if key == "resize":
-                continue
-            if key == "ctrl-c":
-                return None
-            if key == "esc":
-                return None
-            if key == "enter" or key == "right":
-                if not filtered:
-                    continue
-                if key == "right" and "enter" not in actions and "right" not in actions:
-                    continue
-                return "enter", filtered[cursor][1][3]
-            if key == "left" and "left" in actions:
-                if not filtered:
-                    return "left", None
-                return "left", filtered[cursor][1][3]
-            if key == "ctrl-o" and "ctrl-o" in actions:
-                if not filtered:
-                    continue
-                return "ctrl-o", filtered[cursor][1][3]
-            if key in {"up", "ctrl-p"}:
+                preview_src = (
+                    strip_ansi(filtered[cursor][1][2]).splitlines() if filtered else []
+                )
+                list_h, _preview_h, _spacer = layout(lines, len(preview_src))
+                width = max(24, cols - 1)
                 if filtered:
+                    if cursor < scroll:
+                        scroll = cursor
+                    if cursor >= scroll + list_h:
+                        scroll = cursor - list_h + 1
+
+                body: list[str] = []
+                view = filtered[scroll : scroll + list_h]
+                for offset, (_score, row) in enumerate(view):
+                    index = scroll + offset
+                    label = clip_visible(row[1], max(10, width - 2))
+                    body.append(select_row(label, width, selected=index == cursor))
+                if not filtered:
+                    body.append(select_row(f"{_DIM}rien{_RESET}", width, selected=False))
+                while len(body) < list_h:
+                    body.append("")
+
+                shown = len(filtered)
+                typed = f"{_TEXT}{query_buf}{_RESET}" if query_buf else ""
+                footer = _bar(
+                    f"{_ACCENT}/{_RESET}{typed}",
+                    f"{_HINT}{header}{_RESET}",
+                    width,
+                )
+                ses.draw(
+                    chrome(
+                        title=prompt,
+                        body=body,
+                        footer=footer,
+                        preview=preview_src or None,
+                        cols=cols,
+                        rows=lines,
+                        meta=f"{shown}/{len(rows)}",
+                    )
+                )
+
+                key = ses.read()
+                if ses.resized or key == "resize":
+                    ses.resized = False
+                    continue
+                if key in {"ctrl-c", "esc"}:
+                    return None
+                if key in {"enter", "right"}:
+                    if not filtered:
+                        continue
+                    if key == "right" and "enter" not in actions and "right" not in actions:
+                        continue
+                    return "enter", filtered[cursor][1][3]
+                if key == "left" and "left" in actions:
+                    if not filtered:
+                        return "left", None
+                    return "left", filtered[cursor][1][3]
+                if key == "ctrl-o" and "ctrl-o" in actions:
+                    if not filtered:
+                        continue
+                    return "ctrl-o", filtered[cursor][1][3]
+                if key in {"up", "ctrl-p"} and filtered:
                     cursor = (cursor - 1) % len(filtered)
-                continue
-            if key in {"down", "ctrl-n"}:
-                if filtered:
+                elif key in {"down", "ctrl-n"} and filtered:
                     cursor = (cursor + 1) % len(filtered)
-                continue
-            if key == "home":
-                cursor = 0
-                continue
-            if key == "end" and filtered:
-                cursor = len(filtered) - 1
-                continue
-            if key == "backspace":
-                query_buf = query_buf[:-1]
-                cursor = 0
-                scroll = 0
-                continue
-            if key == "ctrl-u" or key == "delete":
-                query_buf = ""
-                cursor = 0
-                scroll = 0
-                continue
-            if key.startswith("char:"):
-                query_buf += key[5:]
-                cursor = 0
-                scroll = 0
+                elif key == "home":
+                    cursor = 0
+                elif key == "end" and filtered:
+                    cursor = len(filtered) - 1
+                elif key == "backspace":
+                    query_buf = query_buf[:-1]
+                    cursor = 0
+                    scroll = 0
+                elif key in {"ctrl-u", "delete"}:
+                    query_buf = ""
+                    cursor = 0
+                    scroll = 0
+                elif key.startswith("char:"):
+                    query_buf += key[5:]
+                    cursor = 0
+                    scroll = 0
     except KeyboardInterrupt:
         return None
-    finally:
-        write("\033[?25h\033[?1049l")
-        keys.restore()
-        if prev_winch is not None:
-            signal.signal(signal.SIGWINCH, prev_winch)
-        if owned:
-            try:
-                stdin.close()
-            except OSError:
-                pass
 
 
-def _term_size() -> tuple[int, int]:
-    try:
-        size = shutil.get_terminal_size()
-        return max(40, size.columns), max(12, size.lines)
-    except OSError:
-        return 80, 24
-
-
-def _preview_height(lines: int) -> int:
-    if lines < 20:
-        return 4
-    if lines < 32:
-        return 6
-    return 8
-
-
-def _render(
+def prompt_edit(
+    session: Session,
     *,
-    prompt: str,
-    header: str,
-    query: str,
-    filtered: list[tuple[int, tuple[str, str, str, Any]]],
-    cursor: int,
-    scroll: int,
-    list_h: int,
-    preview_h: int,
-    cols: int,
-    total: int,
-) -> str:
-    width = max(20, cols - 1)
-    rule = f"{_RULE}{'─' * width}{_RESET}"
-    title = clip_visible(f"{_TITLE}{prompt}{_RESET}  {_DIM}{header}{_RESET}", width)
-    lines = [title, rule]
-
-    view = filtered[scroll : scroll + list_h]
-    for offset, (_score, row) in enumerate(view):
-        index = scroll + offset
-        label = clip_visible(row[1], width - 2)
-        if index == cursor:
-            plain = strip_ansi(label)
-            lines.append(clip_visible(f"{_SEL}❯ {plain} {_RESET}", width))
-        else:
-            lines.append(clip_visible(f"  {label}", width))
-    for _ in range(max(0, list_h - len(view))):
-        lines.append("")
-
-    lines.append(rule)
-    preview = ""
-    if filtered:
-        preview = filtered[cursor][1][2]
-    preview_lines = (preview or "").splitlines() or [""]
-    for i in range(preview_h):
-        chunk = preview_lines[i] if i < len(preview_lines) else ""
-        lines.append(clip_visible(f"{_DIM}{chunk}{_RESET}" if chunk else "", width))
-
-    lines.append(rule)
-    shown = len(filtered)
-    filter_txt = query if query else ""
-    status = f"{_DIM}/{filter_txt}{_RESET}  {_DIM}{shown}/{total}{_RESET}"
-    lines.append(clip_visible(status, width))
-    return "\n".join(lines)
+    title: str,
+    label: str,
+    initial: str,
+    secret: bool = False,
+    hint: str = "",
+) -> str | None:
+    """Saisie inline dans la session déjà ouverte. None = annuler."""
+    buf = initial
+    session.show_cursor(True)
+    try:
+        while True:
+            cols, rows = term_size()
+            shown = ("•" * len(buf)) if secret else buf
+            caret = f"{_TEXT}{shown}{_ACCENT}▍{_RESET}"
+            body = [
+                f"{_DIM}{label}{_RESET}",
+                "",
+                caret,
+                "",
+                f"{_DIM}{hint}{_RESET}" if hint else "",
+            ]
+            footer = f"{_HINT}enter  esc{_RESET}"
+            session.draw(
+                chrome(
+                    title=title,
+                    body=body,
+                    footer=footer,
+                    preview=None,
+                    cols=cols,
+                    rows=rows,
+                )
+            )
+            key = session.read()
+            if key in {"esc", "ctrl-c"}:
+                return None
+            if key == "enter":
+                return buf
+            if key == "backspace":
+                buf = buf[:-1]
+            elif key in {"ctrl-u", "delete"}:
+                buf = ""
+            elif key.startswith("char:"):
+                buf += key[5:]
+    finally:
+        session.show_cursor(False)
