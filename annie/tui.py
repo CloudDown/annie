@@ -43,21 +43,38 @@ _OK = OK
 
 ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
 
+def keychip(key: str) -> str:
+    """Touche en reverse vidéo — suit le thème du terminal (style Omarchy)."""
+    return f"{BOLD}{REV} {key} {RESET}"
+
+
+def shortcut_line(pairs: list[tuple[str, str]], *, prefix: str = "  ") -> str:
+    bits = [f"{keychip(key)}{DIM} {label}{RESET}" for key, label in pairs]
+    return prefix + "  ".join(bits)
+
+
 HELP_OVERLAY = [
-    "navigation",
-    "  ↑↓ / j k     déplacer",
-    "  enter / →    ouvrir",
-    "  ← / esc      retour",
-    "  / + texte    filtrer",
-    "  1–9          aller à la ligne (sans filtre)",
-    "  pgup / pgdn  page",
-    "  ctrl-o       copier magnet (si dispo)",
-    "  ?            fermer cette aide",
+    shortcut_line(
+        [
+            ("↑↓", "move"),
+            ("enter", "open"),
+            ("1-9", "jump"),
+            ("type", "filter"),
+            ("?", "fermer"),
+            ("ctrl-o", "magnet"),
+            ("esc", "back"),
+        ],
+        prefix="",
+    ),
     "",
-    "prompt",
-    "  /settings    clés API, résolution, lecteur",
-    "  /help        aide",
-    "  /quit        quitter",
+    shortcut_line(
+        [
+            ("help", "aide"),
+            ("settings", "réglages"),
+            ("quit", "quitter"),
+        ],
+        prefix="",
+    ),
 ]
 
 
@@ -462,6 +479,7 @@ def choose(
         return None
     if on_suspend is not None:
         on_suspend()
+    del header  # footer chips construits depuis *actions*
 
     query_buf = query
     scroll = 0
@@ -487,14 +505,17 @@ def choose(
                     cursor = 0
 
                 if help_open:
-                    body = [f"  {DIM}{line}{RESET}" if line else "" for line in HELP_OVERLAY]
+                    body = [f"  {line}" if line else "" for line in HELP_OVERLAY]
                     while len(body) < max(3, lines - 4):
                         body.append("")
                     ses.draw(
                         chrome(
                             title="aide",
                             body=body,
-                            footer=f"{HINT}? fermer  ·  esc retour{RESET}",
+                            footer=shortcut_line(
+                                [("?", "fermer"), ("esc", "retour")],
+                                prefix="",
+                            ),
                             preview=None,
                             cols=cols,
                             rows=lines,
@@ -539,9 +560,18 @@ def choose(
                     while len(body) < list_h:
                         body.append("")
 
+                    footer_pairs: list[tuple[str, str]] = [
+                        ("↑↓", "move"),
+                        ("enter", "open"),
+                    ]
+                    if "left" in actions:
+                        footer_pairs.append(("←", "back"))
+                    if "ctrl-o" in actions:
+                        footer_pairs.append(("ctrl-o", "magnet"))
+                    footer_pairs.append(("?", "aide"))
                     footer = _bar(
                         f"{ACC}/{RESET}{TEXT}{query_buf}{RESET}" if query_buf else f"{ACC}/{RESET}",
-                        f"{HINT}{header}  ?{RESET}",
+                        shortcut_line(footer_pairs, prefix=""),
                         width,
                     )
                     ses.draw(
@@ -645,7 +675,7 @@ def prompt_edit(
                 chrome(
                     title=title,
                     body=body,
-                    footer=f"{HINT}enter enregistrer  ·  esc annuler{RESET}",
+                    footer=f"{shortcut_line([('enter', 'ok'), ('esc', 'annuler')], prefix='')}",
                     preview=None,
                     cols=cols,
                     rows=rows,
@@ -797,7 +827,10 @@ def run_settings() -> bool:
                 chrome(
                     title="réglages",
                     body=body,
-                    footer=f"{HINT}↑↓  enter  esc  ?{RESET}",
+                    footer=shortcut_line(
+                        [("↑↓", "move"), ("enter", "edit"), ("esc", "back")],
+                        prefix="",
+                    ),
                     preview=preview,
                     cols=cols,
                     rows=rows,

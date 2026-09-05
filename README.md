@@ -142,9 +142,9 @@ prêt         22 MiB contigu
 
 Connexion lente → `pause  buffer insuffisant` puis reprise auto. Quitter mpv : **q** ou fermer la fenêtre.
 
-Au prompt Annie : `/settings` · `/help` · `/quit`
+Au prompt Annie : `help` · `settings` · `quit` (chips sous le logo).
 
-Dans le TUI : `?` aide · `1–9` sélection rapide · `j`/`k` ou flèches · couleurs = thème du terminal.
+Dans le TUI : barre raccourcis style Omarchy · `?` aide · couleurs = thème du terminal.
 
 ---
 
@@ -180,7 +180,7 @@ Source : [OpenSubtitles.com](https://www.opensubtitles.com) — clé API gratuit
 
 1. Compte sur [opensubtitles.com](https://www.opensubtitles.com)
 2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**
-3. Dans Annie, tape `/settings` — ou édite la config :
+3. Dans Annie, tape `settings` — ou édite la config :
 
    | OS | Fichier |
    |----|---------|

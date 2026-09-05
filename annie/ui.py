@@ -160,21 +160,34 @@ BANNER_ART = [
 ]
 
 
-# Une ligne sous le logo — tout ce qu’il faut à l’arrivée.
-BANNER_HINT = (
-    f"  {stylize('/help', C.BLUE)}  "
-    f"{stylize('/settings', C.BLUE)}  "
-    f"{stylize('/quit', C.BLUE)}"
-    f"{stylize('   ·   tape un titre  (frieren · frieren s2e10)', C.MUTED)}"
-)
+# Raccourcis style Omarchy : touche en reverse + libellé muted.
+def keychip(key: str) -> str:
+    return f"{C.BOLD}\033[7m {key} \033[0m"
 
-# /help réaffiche la même ligne.
+
+def shortcut_line(pairs: list[tuple[str, str]], *, prefix: str = "  ") -> str:
+    bits = [f"{keychip(key)}{stylize(f' {label}', C.MUTED)}" for key, label in pairs]
+    return prefix + "  ".join(bits)
+
+
+# Une ligne sous le logo — chips Omarchy (comme la barre raccourcis).
+BANNER_HINT = shortcut_line(
+    [
+        ("help", "aide"),
+        ("settings", "réglages"),
+        ("quit", "quitter"),
+        ("↑↓", "move"),
+        ("enter", "open"),
+        ("?", "aide TUI"),
+        ("esc", "back"),
+    ]
+) + stylize("  ·  frieren s2e10", C.MUTED)
+
 HELP = BANNER_HINT
 
 SEP = "\x1f"
 
-# Commandes slash du prompt (sans le « / »).
-SLASH_COMMANDS = {
+PROMPT_COMMANDS = {
     "help": "help",
     "?": "help",
     "h": "help",
@@ -188,24 +201,21 @@ SLASH_COMMANDS = {
 }
 
 
-def parse_slash_command(raw: str) -> str | None:
-    """Retourne help|settings|quit, ou None si ce n'est pas une commande.
-
-    Accepte ``/help`` (préféré) et les alias sans slash pour ne pas bloquer.
-    Une saisie ``/…`` inconnue n'est pas une recherche.
-    """
+def parse_prompt_command(raw: str) -> str | None:
+    """Retourne help|settings|quit, ou None. Sans slash (optionnel en tête)."""
     text = raw.strip()
     if not text:
         return None
     lowered = text.casefold()
     if lowered.startswith("/"):
-        name = lowered[1:].split(None, 1)[0] if lowered[1:] else ""
-        if name in SLASH_COMMANDS:
-            return SLASH_COMMANDS[name]
-        return "unknown"
-    if lowered in SLASH_COMMANDS and " " not in lowered:
-        return SLASH_COMMANDS[lowered]
-    return None
+        lowered = lowered[1:].strip()
+    if " " in lowered:
+        return None
+    return PROMPT_COMMANDS.get(lowered)
+
+
+# Compat ancien nom
+parse_slash_command = parse_prompt_command
 
 
 def _tty_streams() -> list[Any]:
