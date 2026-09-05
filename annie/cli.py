@@ -219,10 +219,25 @@ def _next_episode_item(
     return None
 
 
+def _binge_chain(
+    section: MediaSection, item: ResultItem, *, max_ahead: int = 16
+) -> list[ResultItem]:
+    """Épisodes suivants de la saison (tout magnet) pour enchaînement sans relancer mpv."""
+    chain: list[ResultItem] = []
+    current = item
+    while len(chain) < max_ahead:
+        nxt = _next_episode_item(section, current)
+        if nxt is None:
+            break
+        chain.append(nxt)
+        current = nxt
+    return chain
+
+
 def _same_magnet_binge_chain(
     section: MediaSection, item: ResultItem
 ) -> list[ResultItem]:
-    """Épisodes suivants du même torrent (enchaînement sans relancer mpv)."""
+    """Épisodes suivants du même torrent uniquement."""
     chain: list[ResultItem] = []
     current = item
     while True:
@@ -713,9 +728,7 @@ def interactive_loop(config: AnnieConfig) -> int:
                         catalog, item
                     )
                     binge_chain = (
-                        _same_magnet_binge_chain(section, item)
-                        if section is not None
-                        else []
+                        _binge_chain(section, item) if section is not None else []
                     )
 
                     def _mark_done(done_item: ResultItem, *, _sec=section) -> None:
@@ -773,7 +786,7 @@ def interactive_loop(config: AnnieConfig) -> int:
                     section = active_section or _find_section_for_episode(
                         catalog, item
                     )
-                    # Dernier épisode joué dans cette session mpv (chaîne same-magnet).
+                    # Dernier épisode joué dans cette session mpv (chaîne binge).
                     last = (
                         binge_chain[-1]
                         if section is not None and binge_chain

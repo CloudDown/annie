@@ -117,15 +117,15 @@ class PlaybackCompletionTests(unittest.TestCase):
 
 
 class SameMagnetBingeTests(unittest.TestCase):
-    def test_chain_stops_on_different_magnet(self) -> None:
+    def test_same_magnet_chain_stops_on_different_magnet(self) -> None:
         from dataclasses import replace
 
-        from annie.cli import _same_magnet_binge_chain
+        from annie.cli import _binge_chain, _same_magnet_binge_chain
         from annie.types import MediaKind, MediaSection
         from tests.helpers import nyaa_entry, result_item
 
-        magnet_a = "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaa"
-        magnet_b = "magnet:?xt=urn:btih:bbbbbbbbbbbbbbbb"
+        magnet_a = "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        magnet_b = "magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         ep1 = replace(
             result_item("[G] Anime - 01 [1080p]"),
             entry=nyaa_entry("[G] Anime - 01 [1080p]", magnet=magnet_a),
@@ -148,6 +148,10 @@ class SameMagnetBingeTests(unittest.TestCase):
         )
         chain = _same_magnet_binge_chain(section, ep1)
         self.assertEqual([it.parsed.episode for it in chain], [2])
+        # Chaîne binge complète : enchaîne aussi l'épisode sur un autre magnet.
+        self.assertEqual(
+            [it.parsed.episode for it in _binge_chain(section, ep1)], [2, 3]
+        )
 
     def test_mpv_keep_open_flag(self) -> None:
         from pathlib import Path

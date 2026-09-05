@@ -85,9 +85,11 @@ CACHE_DIR = cache_dir()
 START_UNPAUSE_BONUS_BYTES = 12 * 1024 * 1024
 START_UNPAUSE_MAX_BONUS_BYTES = 32 * 1024 * 1024
 START_UNPAUSE_MAX_WAIT_SEC = 15.0
-# Prefetch binge : tête contiguë du prochain épisode dès 70 %.
-BINGE_PREFETCH_PROGRESS = 0.70
+# Prefetch binge : tête contiguë du prochain épisode dès ~30 %.
+BINGE_PREFETCH_PROGRESS = 0.30
 BINGE_SWITCH_PROGRESS = 0.97
+# Attente max du prochain magnet déjà lancé en fond avant loadfile.
+BINGE_CROSS_PREFETCH_WAIT_SEC = 90.0
 # Marge renforcée pendant les premières secondes de lecture (HEVC / BD).
 START_WARMUP_SEC = 30.0
 START_WARMUP_MARGIN_BYTES = 80 * 1024 * 1024
@@ -680,12 +682,18 @@ def _play_while_downloading(
     show_download_progress: bool = True,
     listed_seeders: int | None = None,
     on_eof_next: Callable[
-        [], tuple[int, Path, int, Path | None, object] | None
+        [],
+        tuple[int, Path, int, Path | None, object, lt.torrent_handle | None]
+        | None,
     ]
     | None = None,
-    on_prefetch_next: Callable[[], int | None] | None = None,
+    on_prefetch_next: Callable[
+        [], tuple[int, lt.torrent_handle | None] | None
+    ]
+    | None = None,
     on_episode_done: Callable[[object], None] | None = None,
     playback_item: object | None = None,
+    keep_files: bool = False,
 ) -> int:
     ipc_available = ipc_path is not None and _wait_mpv_ipc(ipc_path)
     paused_for_buffer = False
@@ -700,6 +708,7 @@ def _play_while_downloading(
     eof_handled = False
     current_item = playback_item
     prefetch_index: int | None = None
+    prefetch_alt_handle: lt.torrent_handle | None = None
     last_prefetch_boost = 0.0
     last_seed_boost = 0.0
 
@@ -738,21 +747,27 @@ def _play_while_downloading(
                 if eof is True or _mpv_near_end(time_pos, duration):
                     saw_near_end = True
 
-                # Dès 70 % : précharger n+1 entier en contigu (comme un épisode normal).
+                # Dès ~30 % : précharger n+1 (même torrent ou magnet suivant).
                 if (
-                    prefetch_index is None
-                    and on_prefetch_next is not None
+                    on_prefetch_next is not None
                     and max_progress >= BINGE_PREFETCH_PROGRESS
                 ):
-                    prefetch_index = on_prefetch_next()
-                    last_prefetch_boost = now
-                elif (
-                    prefetch_index is not None
-                    and now - last_prefetch_boost >= 1.0
-                    and max_progress < BINGE_SWITCH_PROGRESS
-                ):
-                    _reboost_prefetch_head(handle, prefetch_index)
-                    last_prefetch_boost = now
+                    if prefetch_index is None:
+                        result = on_prefetch_next()
+                        if result is not None:
+                            prefetch_index, prefetch_alt_handle = result
+                            last_prefetch_boost = now
+                    elif (
+                        now - last_prefetch_boost >= 1.0
+                        and max_progress < BINGE_SWITCH_PROGRESS
+                    ):
+                        boost_handle = (
+                            prefetch_alt_handle
+                            if prefetch_alt_handle is not None
+                            else handle
+                        )
+                        _reboost_prefetch_head(boost_handle, prefetch_index)
+                        last_prefetch_boost = now
 
                 # Enchaînement binge : charger le prochain fichier sans fermer mpv.
                 if (
@@ -766,10 +781,29 @@ def _play_while_downloading(
                         display.finish("")
                     nxt = on_eof_next()
                     if nxt is not None:
-                        next_index, next_path, next_size, next_sub, next_item = nxt
+                        (
+                            next_index,
+                            next_path,
+                            next_size,
+                            next_sub,
+                            next_item,
+                            next_handle,
+                        ) = nxt
                         if _mpv_loadfile(ipc_path, next_path, sub_file=next_sub):
                             if on_episode_done is not None and current_item is not None:
                                 on_episode_done(current_item)
+                            if (
+                                next_handle is not None
+                                and next_handle != handle
+                                and session is not None
+                            ):
+                                try:
+                                    session.remove_torrent(
+                                        handle, 0 if keep_files else 1
+                                    )
+                                except Exception:
+                                    pass
+                                handle = next_handle
                             current_item = next_item
                             file_index = next_index
                             file_size = next_size
@@ -781,6 +815,7 @@ def _play_while_downloading(
                             eof_handled = False
                             paused_for_buffer = False
                             prefetch_index = None
+                            prefetch_alt_handle = None
                             last_prefetch_boost = 0.0
                             prev_tick = time.monotonic()
                             continue
@@ -904,13 +939,19 @@ def _launch_and_stream(
     sub_file: Path | None = None,
     listed_seeders: int | None = None,
     on_eof_next: Callable[
-        [], tuple[int, Path, int, Path | None, object] | None
+        [],
+        tuple[int, Path, int, Path | None, object, lt.torrent_handle | None]
+        | None,
     ]
     | None = None,
-    on_prefetch_next: Callable[[], int | None] | None = None,
+    on_prefetch_next: Callable[
+        [], tuple[int, lt.torrent_handle | None] | None
+    ]
+    | None = None,
     on_episode_done: Callable[[object], None] | None = None,
     playback_item: object | None = None,
     keep_open: bool = False,
+    keep_files: bool = False,
 ) -> int:
     buf = _buffer_cfg()
     wait_startable(
@@ -976,6 +1017,7 @@ def _launch_and_stream(
                 on_prefetch_next=on_prefetch_next if player_name == "mpv" else None,
                 on_episode_done=on_episode_done,
                 playback_item=playback_item,
+                keep_files=keep_files,
             )
         finally:
             if pass_ipc is not None and sys.platform != "win32" and pass_ipc.exists():
@@ -1129,24 +1171,52 @@ def play(
                 _enable_watch_seed(session, handle, file_index)
 
             binge_queue = list(binge_items or [])
-            # Prefetch dès 70 % : fichier n+1 entier (contigu) + sous-titres.
+            # Prefetch dès ~30 % : fichier n+1 (même torrent ou autre magnet) + sous-titres.
+            playing_magnet = source if source.startswith("magnet:?") else None
+            session_handles: list[lt.torrent_handle] = (
+                [handle] if handle is not None else []
+            )
             prefetch_box: dict[str, object | None] = {
                 "item": None,
                 "index": None,
                 "path": None,
                 "size": None,
+                "handle": None,
+                "save_path": None,
+                "ready": False,
+                "failed": False,
+                "cross_started": False,
                 "sub": None,
                 "sub_pending": False,
                 "sub_done": False,
             }
 
-            def _resolve_binge_file(nxt: object) -> tuple[int, Path, int] | None:
+            def _item_magnet(nxt: object) -> str | None:
+                entry = getattr(nxt, "entry", None)
+                magnet = getattr(entry, "magnet", None)
+                return magnet if isinstance(magnet, str) else None
+
+            def _same_magnet_as_playing(nxt: object) -> bool:
+                nxt_magnet = _item_magnet(nxt)
+                if not nxt_magnet or not playing_magnet:
+                    return playing_magnet is None and nxt_magnet is None
+                if nxt_magnet == playing_magnet:
+                    return True
+                try:
+                    return magnet_info_hash(nxt_magnet) == magnet_info_hash(
+                        playing_magnet
+                    )
+                except SystemExit:
+                    return False
+
+            def _resolve_on_handle(
+                h: lt.torrent_handle, sp: Path, nxt: object
+            ) -> tuple[int, Path, int] | None:
                 nxt_parsed = getattr(nxt, "parsed", None)
                 nxt_ep = getattr(nxt_parsed, "episode", None)
                 nxt_season = getattr(nxt_parsed, "season", None)
                 nxt_source = getattr(nxt_parsed, "source_episode", None)
-                assert handle is not None
-                info_now = handle.torrent_file()
+                info_now = h.torrent_file()
                 if info_now is None:
                     return None
                 files_now = torrent_files(info_now)
@@ -1162,9 +1232,23 @@ def play(
                     )
                 except SystemExit:
                     return None
-                next_path = (save_path / next_rel).resolve()
+                next_path = (sp / next_rel).resolve()
                 ensure_directory(next_path.parent)
                 return next_index, next_path, next_size
+
+            def _reset_prefetch_box() -> None:
+                prefetch_box["item"] = None
+                prefetch_box["index"] = None
+                prefetch_box["path"] = None
+                prefetch_box["size"] = None
+                prefetch_box["handle"] = None
+                prefetch_box["save_path"] = None
+                prefetch_box["ready"] = False
+                prefetch_box["failed"] = False
+                prefetch_box["cross_started"] = False
+                prefetch_box["sub"] = None
+                prefetch_box["sub_pending"] = False
+                prefetch_box["sub_done"] = False
 
             def _start_sub_prefetch(nxt: object) -> None:
                 if not subtitle_lang or prefetch_box.get("sub_pending"):
@@ -1197,119 +1281,277 @@ def play(
 
                 threading.Thread(target=_worker, daemon=True).start()
 
-            def _on_prefetch_next() -> int | None:
-                if not binge_queue:
-                    return None
-                nxt = binge_queue[0]
-                resolved = _resolve_binge_file(nxt)
-                if resolved is None:
-                    return None
-                next_index, next_path, next_size = resolved
-                assert handle is not None
-                info_now = handle.torrent_file()
-                if info_now is None:
-                    return None
-                _prefetch_binge_file(
-                    handle,
-                    next_index,
-                    info_now.files().num_files(),
-                    target=next_path,
-                    file_size=next_size,
-                )
+            def _start_cross_magnet_prefetch(nxt: object) -> None:
+                if prefetch_box.get("cross_started"):
+                    return
+                magnet = _item_magnet(nxt)
+                if not magnet:
+                    prefetch_box["failed"] = True
+                    return
+                prefetch_box["cross_started"] = True
+                prefetch_box["ready"] = False
+                prefetch_box["failed"] = False
                 prefetch_box["item"] = nxt
-                prefetch_box["index"] = next_index
-                prefetch_box["path"] = next_path
-                prefetch_box["size"] = next_size
+                stream_log("prefetch", "next episode…", tone="muted")
                 _start_sub_prefetch(nxt)
-                stream_log("prefetch", next_path.name, tone="muted")
-                return next_index
 
-            def _on_eof_next() -> tuple[int, Path, int, Path | None, object] | None:
-                if not binge_queue:
-                    return None
-                nxt = binge_queue.pop(0)
-                assert handle is not None
-                info_now = handle.torrent_file()
-                if info_now is None:
-                    return None
+                def _worker() -> None:
+                    try:
+                        sp = magnet_save_path(magnet)
+                        h = add_torrent(session, magnet, sp)
+                        session_handles.append(h)
+                        try:
+                            info = wait_metadata(h)
+                        except SystemExit:
+                            prefetch_box["failed"] = True
+                            return
+                        resolved = _resolve_on_handle(h, sp, nxt)
+                        if resolved is None:
+                            prefetch_box["failed"] = True
+                            return
+                        next_index, next_path, next_size = resolved
+                        _prefetch_binge_file(
+                            h,
+                            next_index,
+                            info.files().num_files(),
+                            target=next_path,
+                            file_size=next_size,
+                        )
+                        prefetch_box["handle"] = h
+                        prefetch_box["index"] = next_index
+                        prefetch_box["path"] = next_path
+                        prefetch_box["size"] = next_size
+                        prefetch_box["save_path"] = sp
+                        prefetch_box["ready"] = True
+                        stream_log("prefetch", next_path.name, tone="muted")
+                    except Exception:
+                        prefetch_box["failed"] = True
 
+                threading.Thread(target=_worker, daemon=True).start()
+
+            def _wait_cross_prefetch_ready() -> bool:
+                if prefetch_box.get("ready"):
+                    return True
+                if not prefetch_box.get("cross_started"):
+                    return False
+                deadline = time.monotonic() + BINGE_CROSS_PREFETCH_WAIT_SEC
+                while time.monotonic() < deadline:
+                    if prefetch_box.get("ready"):
+                        return True
+                    if prefetch_box.get("failed"):
+                        return False
+                    time.sleep(0.1)
+                return bool(prefetch_box.get("ready"))
+
+            def _prepare_cross_magnet(
+                nxt: object,
+            ) -> tuple[int, Path, int, lt.torrent_handle] | None:
+                magnet = _item_magnet(nxt)
+                if not magnet:
+                    return None
                 if (
                     prefetch_box.get("item") is nxt
-                    and prefetch_box.get("index") is not None
+                    and prefetch_box.get("ready")
+                    and prefetch_box.get("handle") is not None
                 ):
                     next_index = int(prefetch_box["index"])  # type: ignore[arg-type]
                     next_path = prefetch_box["path"]  # type: ignore[assignment]
                     next_size = int(prefetch_box["size"])  # type: ignore[arg-type]
+                    next_handle = prefetch_box["handle"]
                     assert isinstance(next_path, Path)
-                else:
-                    resolved = _resolve_binge_file(nxt)
-                    if resolved is None:
+                    assert next_handle is not None
+                    info_ready = next_handle.torrent_file()
+                    if info_ready is None:
                         return None
-                    next_index, next_path, next_size = resolved
+                    configure_stream(
+                        next_handle,
+                        next_index,
+                        info_ready.files().num_files(),
+                        target=next_path,
+                        file_size=next_size,
+                    )
+                    if not _head_buffered(
+                        next_handle, next_index, next_path, next_size
+                    ):
+                        wait_startable(
+                            next_handle,
+                            next_index,
+                            next_path,
+                            next_size,
+                            listed_seeders=listed_seeders,
+                        )
+                    return next_index, next_path, next_size, next_handle
 
+                sp = magnet_save_path(magnet)
+                h = add_torrent(session, magnet, sp)
+                session_handles.append(h)
+                info = wait_metadata(h)
+                resolved = _resolve_on_handle(h, sp, nxt)
+                if resolved is None:
+                    return None
+                next_index, next_path, next_size = resolved
                 configure_stream(
-                    handle,
+                    h,
                     next_index,
-                    info_now.files().num_files(),
+                    info.files().num_files(),
                     target=next_path,
                     file_size=next_size,
                 )
-                if not _head_buffered(handle, next_index, next_path, next_size):
-                    wait_startable(
-                        handle,
-                        next_index,
-                        next_path,
-                        next_size,
-                        listed_seeders=listed_seeders,
+                wait_startable(
+                    h,
+                    next_index,
+                    next_path,
+                    next_size,
+                    listed_seeders=listed_seeders,
+                )
+                return next_index, next_path, next_size, h
+
+            def _resolve_next_sub(nxt: object) -> Path | None:
+                if not subtitle_lang:
+                    return None
+                if prefetch_box.get("item") is nxt and prefetch_box.get("sub_pending"):
+                    deadline = time.monotonic() + 2.0
+                    while (
+                        not prefetch_box.get("sub_done")
+                        and time.monotonic() < deadline
+                    ):
+                        time.sleep(0.05)
+                if prefetch_box.get("item") is nxt and prefetch_box.get("sub_done"):
+                    cached = prefetch_box.get("sub")
+                    return cached if isinstance(cached, Path) else None
+                try:
+                    from annie.subtitles import build_query, fetch_best
+
+                    mal_titles = ()
+                    series_title = None
+                    if subtitle_query is not None:
+                        series_title = getattr(subtitle_query, "series_title", None)
+                        mal_titles = getattr(subtitle_query, "mal_titles", ()) or ()
+                    q = build_query(
+                        nxt, series_title=series_title, mal_titles=mal_titles
+                    )
+                    return fetch_best(q, subtitle_lang)
+                except Exception:
+                    return None
+
+            def _on_prefetch_next() -> tuple[int, lt.torrent_handle | None] | None:
+                if not binge_queue:
+                    return None
+                nxt = binge_queue[0]
+                if (
+                    prefetch_box.get("item") is nxt
+                    and prefetch_box.get("ready")
+                    and prefetch_box.get("index") is not None
+                ):
+                    alt = prefetch_box.get("handle")
+                    return (
+                        int(prefetch_box["index"]),  # type: ignore[arg-type]
+                        alt,  # type: ignore[return-value]
                     )
 
-                next_sub: Path | None = None
-                if subtitle_lang:
+                if _same_magnet_as_playing(nxt):
+                    assert handle is not None
+                    resolved = _resolve_on_handle(handle, save_path, nxt)
+                    if resolved is None:
+                        return None
+                    next_index, next_path, next_size = resolved
+                    info_now = handle.torrent_file()
+                    if info_now is None:
+                        return None
+                    _prefetch_binge_file(
+                        handle,
+                        next_index,
+                        info_now.files().num_files(),
+                        target=next_path,
+                        file_size=next_size,
+                    )
+                    prefetch_box["item"] = nxt
+                    prefetch_box["index"] = next_index
+                    prefetch_box["path"] = next_path
+                    prefetch_box["size"] = next_size
+                    prefetch_box["handle"] = None
+                    prefetch_box["ready"] = True
+                    _start_sub_prefetch(nxt)
+                    stream_log("prefetch", next_path.name, tone="muted")
+                    return next_index, None
+
+                _start_cross_magnet_prefetch(nxt)
+                if prefetch_box.get("ready") and prefetch_box.get("index") is not None:
+                    alt = prefetch_box.get("handle")
+                    return int(prefetch_box["index"]), alt  # type: ignore[return-value]
+                return None
+
+            def _on_eof_next() -> (
+                tuple[int, Path, int, Path | None, object, lt.torrent_handle | None]
+                | None
+            ):
+                nonlocal playing_magnet, handle, save_path
+                if not binge_queue:
+                    return None
+                nxt = binge_queue.pop(0)
+
+                next_handle: lt.torrent_handle | None = None
+                if _same_magnet_as_playing(nxt):
+                    assert handle is not None
+                    info_now = handle.torrent_file()
+                    if info_now is None:
+                        return None
                     if (
                         prefetch_box.get("item") is nxt
-                        and prefetch_box.get("sub_pending")
+                        and prefetch_box.get("index") is not None
+                        and prefetch_box.get("ready")
                     ):
-                        deadline = time.monotonic() + 2.0
-                        while (
-                            not prefetch_box.get("sub_done")
-                            and time.monotonic() < deadline
-                        ):
-                            time.sleep(0.05)
-                    if (
-                        prefetch_box.get("item") is nxt
-                        and prefetch_box.get("sub_done")
-                    ):
-                        cached = prefetch_box.get("sub")
-                        next_sub = cached if isinstance(cached, Path) else None
+                        next_index = int(prefetch_box["index"])  # type: ignore[arg-type]
+                        next_path = prefetch_box["path"]  # type: ignore[assignment]
+                        next_size = int(prefetch_box["size"])  # type: ignore[arg-type]
+                        assert isinstance(next_path, Path)
                     else:
+                        resolved = _resolve_on_handle(handle, save_path, nxt)
+                        if resolved is None:
+                            return None
+                        next_index, next_path, next_size = resolved
+                    configure_stream(
+                        handle,
+                        next_index,
+                        info_now.files().num_files(),
+                        target=next_path,
+                        file_size=next_size,
+                    )
+                    if not _head_buffered(handle, next_index, next_path, next_size):
+                        wait_startable(
+                            handle,
+                            next_index,
+                            next_path,
+                            next_size,
+                            listed_seeders=listed_seeders,
+                        )
+                else:
+                    if prefetch_box.get("item") is nxt and prefetch_box.get(
+                        "cross_started"
+                    ):
+                        _wait_cross_prefetch_ready()
+                    prepared = _prepare_cross_magnet(nxt)
+                    if prepared is None:
+                        return None
+                    next_index, next_path, next_size, next_handle = prepared
+                    sp = prefetch_box.get("save_path")
+                    if isinstance(sp, Path):
+                        save_path = sp
+                    else:
+                        magnet = _item_magnet(nxt)
+                        if magnet:
+                            save_path = magnet_save_path(magnet)
+                    playing_magnet = _item_magnet(nxt)
+                    # Les callbacks suivants doivent cibler le nouveau torrent.
+                    if handle is not None and handle != next_handle:
                         try:
-                            from annie.subtitles import build_query, fetch_best
+                            session_handles.remove(handle)
+                        except ValueError:
+                            pass
+                    handle = next_handle
 
-                            mal_titles = ()
-                            series_title = None
-                            if subtitle_query is not None:
-                                series_title = getattr(
-                                    subtitle_query, "series_title", None
-                                )
-                                mal_titles = (
-                                    getattr(subtitle_query, "mal_titles", ()) or ()
-                                )
-                            q = build_query(
-                                nxt,
-                                series_title=series_title,
-                                mal_titles=mal_titles,
-                            )
-                            next_sub = fetch_best(q, subtitle_lang)
-                        except Exception:
-                            next_sub = None
-
-                prefetch_box["item"] = None
-                prefetch_box["index"] = None
-                prefetch_box["path"] = None
-                prefetch_box["size"] = None
-                prefetch_box["sub"] = None
-                prefetch_box["sub_pending"] = False
-                prefetch_box["sub_done"] = False
+                next_sub = _resolve_next_sub(nxt)
+                _reset_prefetch_box()
 
                 clear_terminal()
                 try:
@@ -1325,7 +1567,7 @@ def play(
                 if next_sub is not None:
                     stream_log("subtitles", next_sub.name, tone="accent")
                 log_playback_start(next_path.name, player_name)
-                return next_index, next_path, next_size, next_sub, nxt
+                return next_index, next_path, next_size, next_sub, nxt, next_handle
 
             code = 1
             try:
@@ -1344,6 +1586,7 @@ def play(
                     on_episode_done=on_episode_done,
                     playback_item=current_item,
                     keep_open=bool(binge_queue),
+                    keep_files=keep,
                 )
                 if code not in (PLAY_COMPLETED, PLAY_INCOMPLETE) and not is_user_cancel(
                     code
@@ -1352,8 +1595,20 @@ def play(
             finally:
                 if seed_while_watching:
                     _disable_watch_seed(session)
-                if handle is not None:
-                    session.remove_torrent(handle, 0 if keep else 1)
+                # handle peut avoir changé après un switch multi-magnet.
+                remaining = []
+                seen_ids: set[int] = set()
+                for h in session_handles:
+                    hid = id(h)
+                    if hid in seen_ids:
+                        continue
+                    seen_ids.add(hid)
+                    remaining.append(h)
+                for h in remaining:
+                    try:
+                        session.remove_torrent(h, 0 if keep else 1)
+                    except Exception:
+                        pass
 
             return code
         finally:

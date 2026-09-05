@@ -173,8 +173,8 @@ class BufferDefaultTests(unittest.TestCase):
 
 
 class BingePrefetchTests(unittest.TestCase):
-    def test_prefetch_starts_at_seventy_percent(self) -> None:
-        self.assertEqual(BINGE_PREFETCH_PROGRESS, 0.70)
+    def test_prefetch_starts_early_for_smooth_handoff(self) -> None:
+        self.assertEqual(BINGE_PREFETCH_PROGRESS, 0.30)
         self.assertGreater(BINGE_SWITCH_PROGRESS, BINGE_PREFETCH_PROGRESS)
 
 
