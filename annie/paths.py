@@ -1,59 +1,14 @@
-"""Chemins utilisateur multi-plateformes (Linux, Debian, Windows, macOS)."""
+"""User paths (XDG on Linux, ~/.config and ~/.cache on macOS)."""
 
 from __future__ import annotations
 
 import os
 import shutil
-import sys
+import time
 from pathlib import Path
-
-_WINDOWS_PROGRAM_DIRS: dict[str, tuple[str, ...]] = {
-    "mpv": (
-        r"C:\Program Files\mpv",
-        r"C:\Program Files\MPV Player",
-        r"C:\mpv",
-    ),
-    "vlc": (
-        r"C:\Program Files\VideoLAN\VLC",
-        r"C:\Program Files (x86)\VideoLAN\VLC",
-    ),
-    "ffplay": (
-        r"C:\Program Files\ffmpeg\bin",
-        r"C:\Program Files (x86)\ffmpeg\bin",
-        r"C:\ffmpeg\bin",
-    ),
-}
-
-_MEDIA_PLAYER_NAMES: tuple[str, ...] = ("mpv", "vlc", "ffplay")
-
-
-def _windows_extra_dirs(stem: str) -> tuple[Path, ...]:
-    dirs: list[Path] = []
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        # winget expose les exécutables installés via des liens dans Links.
-        dirs.append(Path(local) / "Microsoft" / "WinGet" / "Links")
-    for key in ("LOCALAPPDATA", "USERPROFILE"):
-        value = os.environ.get(key)
-        if not value:
-            continue
-        base = Path(value)
-        dirs.extend(
-            (
-                base / "Programs" / stem,
-                base / "Programs" / stem / "bin",
-                base / "scoop" / "apps" / stem / "current",
-                base / "scoop" / "shims",
-            )
-        )
-    choco = Path(r"C:\ProgramData\chocolatey\bin")
-    if choco.is_dir():
-        dirs.append(choco)
-    return tuple(dirs)
 
 
 def find_program(name: str) -> str | None:
-    """Résout un exécutable (mpv, vlc, ffplay) ou un chemin absolu."""
     raw = name.strip().strip('"')
     if not raw:
         return None
@@ -62,113 +17,30 @@ def find_program(name: str) -> str | None:
     if candidate.is_file():
         return str(candidate.resolve())
 
-    found = shutil.which(raw)
-    if found:
-        return found
-
-    if sys.platform != "win32":
-        return None
-
-    stem = Path(raw).stem.lower()
-    exe_name = raw if raw.lower().endswith(".exe") else f"{stem}.exe"
-    program_dirs = _WINDOWS_PROGRAM_DIRS.get(stem, ())
-    for directory in program_dirs:
-        path = Path(directory) / exe_name
-        if path.is_file():
-            return str(path.resolve())
-    for directory in _windows_extra_dirs(stem):
-        path = directory / exe_name
-        if path.is_file():
-            return str(path.resolve())
-
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        winget = Path(local) / "Microsoft" / "WinGet" / "Packages"
-        if winget.is_dir():
-            for match in winget.rglob(exe_name):
-                if match.is_file():
-                    return str(match.resolve())
-        programs = Path(local) / "Programs"
-        if programs.is_dir():
-            for match in programs.rglob(exe_name):
-                if match.is_file():
-                    return str(match.resolve())
-
-    for env_key in ("ProgramFiles", "ProgramFiles(x86)"):
-        root = os.environ.get(env_key)
-        if not root:
-            continue
-        base = Path(root)
-        for match in base.rglob(exe_name):
-            if match.is_file() and match.name.lower() == exe_name.lower():
-                return str(match.resolve())
-
-    return None
-
-
-def find_best_media_player() -> tuple[str, str] | None:
-    """Retourne (nom, chemin) du premier lecteur utilisable trouvé."""
-    for name in _MEDIA_PLAYER_NAMES:
-        exe = find_program(name)
-        if exe:
-            return name, exe
-    return None
-
-
-def _windows_roaming() -> Path:
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return Path(appdata)
-    return Path.home() / "AppData" / "Roaming"
-
-
-def _windows_local() -> Path:
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        return Path(local)
-    return Path.home() / "AppData" / "Local"
+    return shutil.which(raw)
 
 
 def config_dir() -> Path:
-    """Répertoire de configuration (XDG sur Unix, %APPDATA% sur Windows)."""
-    if sys.platform == "win32":
-        return _windows_roaming() / "annie"
-    if sys.platform == "darwin":
-        return Path.home() / ".config" / "annie"
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / "annie"
+    if os.environ.get("XDG_CONFIG_HOME"):
+        return Path(os.environ["XDG_CONFIG_HOME"]) / "annie"
     return Path.home() / ".config" / "annie"
 
 
 def cache_dir() -> Path:
-    """Répertoire de cache (XDG sur Unix, %LOCALAPPDATA% sur Windows)."""
-    if sys.platform == "win32":
-        return _windows_local() / "annie" / "Cache"
-    if sys.platform == "darwin":
-        return Path.home() / ".cache" / "annie"
-    xdg = os.environ.get("XDG_CACHE_HOME")
-    if xdg:
-        return Path(xdg) / "annie"
+    if os.environ.get("XDG_CACHE_HOME"):
+        return Path(os.environ["XDG_CACHE_HOME"]) / "annie"
     return Path.home() / ".cache" / "annie"
 
 
 def venv_python(project_root: Path) -> Path | None:
-    """Interpréteur Python du venv local (uv sync), si présent."""
-    if sys.platform == "win32":
-        candidate = project_root / ".venv" / "Scripts" / "python.exe"
-    else:
-        candidate = project_root / ".venv" / "bin" / "python3"
-        if not candidate.is_file():
-            candidate = project_root / ".venv" / "bin" / "python"
+    candidate = project_root / ".venv" / "bin" / "python3"
+    if not candidate.is_file():
+        candidate = project_root / ".venv" / "bin" / "python"
     return candidate if candidate.is_file() else None
 
 
 def mpv_ipc_path(ipc_dir: Path) -> Path:
-    """Chemin socket/pipe pour le IPC mpv."""
-    token = f"annie-{os.getpid()}-{int(__import__('time').time() * 1000)}"
-    if sys.platform == "win32":
-        return Path(rf"\\.\pipe\{token}")
+    token = f"annie-{os.getpid()}-{int(time.time() * 1000)}"
     path = ipc_dir / f"{token}.sock"
     if path.exists():
         path.unlink()
@@ -176,42 +48,16 @@ def mpv_ipc_path(ipc_dir: Path) -> Path:
 
 
 def ipc_ready(ipc_path: Path) -> bool:
-    """True si le socket/pipe IPC mpv est prêt."""
-    if sys.platform == "win32":
-        try:
-            with open(ipc_path, "rb", buffering=0):
-                return True
-        except OSError:
-            return False
     return ipc_path.is_socket()
 
 
-def windows_extended_path(path: Path | str) -> str:
-    """Préfixe ``\\\\?\\`` pour contourner MAX_PATH (260) sous Windows."""
-    if sys.platform != "win32":
-        return str(path)
-    text = str(path)
-    if text.startswith("\\\\?\\"):
-        return text
-    resolved = str(Path(text).resolve())
-    if resolved.startswith("\\\\"):
-        return "\\\\?\\UNC\\" + resolved[2:]
-    return "\\\\?\\" + resolved
-
-
 def ensure_directory(path: Path) -> None:
-    """Crée un répertoire (parents inclus), compatible chemins longs Windows."""
-    if sys.platform == "win32":
-        os.makedirs(windows_extended_path(path), exist_ok=True)
-    else:
-        path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True)
 
 
 def path_exists(path: Path) -> bool:
-    if sys.platform == "win32":
-        return os.path.exists(windows_extended_path(path))
     return path.exists()
 
 
 def path_open(path: Path, mode: str = "rb"):
-    return open(windows_extended_path(path), mode)
+    return path.open(mode)

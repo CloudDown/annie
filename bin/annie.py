@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,10 +28,7 @@ def _reexec_with_venv() -> None:
     if Path(sys.executable).resolve() == venv_py.resolve():
         return
     argv = [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]]
-    env = _clean_venv_env(os.environ)
-    if sys.platform == "win32":
-        raise SystemExit(subprocess.call(argv, env=env))
-    os.execv(str(venv_py), argv)
+    os.execve(str(venv_py), argv, _clean_venv_env(os.environ))
 
 
 _reexec_with_venv()

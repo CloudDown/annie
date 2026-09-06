@@ -54,46 +54,11 @@ UI: in-terminal **TUI** (↑↓, filter, Enter, Esc).
 | **mpv** | Video player | yes* |
 | vlc / ffplay | Alternative | optional |
 
-\* Without a player, Annie cannot play. The Windows installer sets everything up automatically.
+\* Without a player, Annie cannot play. Install mpv (`sudo pacman -S mpv` or `apt install mpv`).
 
 ---
 
 ## Install
-
-### Windows
-
-**Easiest method** — no git:
-
-1. GitHub → **Code** → **Download ZIP**
-2. Unzip the folder
-3. Double-click **`install.bat`** (at the folder root)
-
-The script installs **Python, uv, and mpv** if missing, adds the **`annie`** command to your PATH, and writes the player into `%APPDATA%\annie\config.toml`.
-
-**With git:**
-
-```bat
-git clone https://github.com/CloudDown/annie.git
-cd annie
-install.bat
-```
-
-| After install | Command |
-|---------------|---------|
-| Current terminal | `annie` |
-| From the project folder | `.\bin\annie.cmd` |
-| New terminal | `annie` (PATH updated) |
-
-**Options:** `install.bat -SkipOptional` — does not install mpv automatically.
-
-<details>
-<summary><strong>Windows — common pitfalls</strong></summary>
-
-- **“Python was not found… Microsoft Store”** — Disable the `python.exe` / `python3.exe` aliases under *Settings → Apps → App execution aliases*, then rerun `install.bat`.
-- **Do not** run `python -m venv .` at the repo root. Use **`annie`** or **`bin\annie.cmd`**, not `annie.exe` (pip).
-- **Playback or player missing** — Rerun `install.bat` (or `git pull` then rerun if you cloned the repo).
-
-</details>
 
 ### Arch Linux
 
@@ -182,10 +147,7 @@ Source: [OpenSubtitles.com](https://www.opensubtitles.com) — free API key requ
 2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**
 3. In Annie, type `settings` — or edit the config:
 
-   | OS | File |
-   |----|------|
-   | Linux | `~/.config/annie/config.toml` |
-   | Windows | `%APPDATA%\annie\config.toml` |
+   Config file: `~/.config/annie/config.toml`
 
 ```toml
 [subtitles]
@@ -203,25 +165,16 @@ External subtitles require **mpv** only. Do not share this file (password includ
 ## Troubleshooting
 
 <details>
-<summary><strong>“filename or extension is too long” (Windows)</strong></summary>
-
-Some torrent packs have very long folder names. Annie uses extended paths (`\\?\`) to work around the 260-character limit. Update Annie (`git pull` + `install.bat`) if you still see this error.
-
-</details>
-
-<details>
 <summary><strong>“interactive mode requires a TTY”</strong></summary>
 
-Run Annie in a real terminal (Windows Terminal, Alacritty, kitty…), not an IDE button with no console.
+Run Annie in a real terminal (Alacritty, kitty, GNOME Terminal…), not an IDE button with no console.
 
 </details>
 
 <details>
 <summary><strong>“no player found”</strong></summary>
 
-**Windows:** rerun `install.bat` — detects mpv, VLC, or ffplay and writes the path into `config.toml`.
-
-**Linux:** `sudo pacman -S mpv` (or `apt install mpv`).
+Install mpv: `sudo pacman -S mpv` (or `apt install mpv`).
 
 </details>
 
@@ -281,10 +234,7 @@ annie watch "…" --no-banner
 
 Created on **first launch**, never overwritten:
 
-| OS | Location |
-|----|----------|
-| Linux / macOS | `~/.config/annie/config.toml` |
-| Windows | `%APPDATA%\annie\config.toml` |
+`~/.config/annie/config.toml`
 
 ### Minimal example
 

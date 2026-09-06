@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
-from annie.paths import find_program, windows_extended_path
+from annie.paths import find_program
 
 PLAYER_NAMES = ("mpv", "vlc", "ffplay")
 
@@ -65,22 +64,16 @@ def resolve_player(requested: str | None = None) -> str:
 def _mpv_profile_video(
     profile: str, gpu_api: str, hwdec: str, vo: str
 ) -> tuple[str, str, str]:
-    """Ajuste GPU / hwdec selon le profil. d3d11 reste réservé à Windows."""
-    if sys.platform == "win32" and gpu_api in {"opengl", ""}:
-        gpu_api = "d3d11"
+    """Adjust GPU / hwdec for the playback profile."""
     if profile == "safe":
         hwdec = "auto-safe"
         vo = "gpu"
-        if sys.platform == "win32":
-            gpu_api = "d3d11"
-        elif gpu_api in {"d3d11", ""}:
+        if gpu_api in {"d3d11", ""}:
             gpu_api = "opengl"
     elif profile == "software":
         hwdec = "no"
         vo = "gpu"
-        if sys.platform == "win32":
-            gpu_api = "d3d11"
-        elif gpu_api == "d3d11":
+        if gpu_api == "d3d11":
             gpu_api = "opengl"
     return gpu_api, hwdec, vo
 
@@ -136,7 +129,7 @@ def _mpv_command(
     if ipc_path is not None:
         cmd.append(f"--input-ipc-server={ipc_path}")
     if sub_file is not None:
-        cmd.append(f"--sub-file={windows_extended_path(sub_file.resolve())}")
+        cmd.append(f"--sub-file={sub_file.resolve()}")
     cmd.extend(mpv.extra_args)
     cmd.append(target)
     return cmd
@@ -182,7 +175,7 @@ def player_command(
     streaming: bool = False,
     keep_open: bool = False,
 ) -> list[str]:
-    target = windows_extended_path(path.resolve())
+    target = str(path.resolve())
     if player == "mpv":
         return _mpv_command(
             target,

@@ -116,11 +116,11 @@ class PlaybackCompletionTests(unittest.TestCase):
         self.assertEqual(code, PLAY_INCOMPLETE)
 
 
-class SameMagnetBingeTests(unittest.TestCase):
-    def test_same_magnet_chain_stops_on_different_magnet(self) -> None:
+class BingeChainTests(unittest.TestCase):
+    def test_chain_includes_next_episodes_across_magnets(self) -> None:
         from dataclasses import replace
 
-        from annie.cli import _binge_chain, _same_magnet_binge_chain
+        from annie.cli import _binge_chain
         from annie.types import MediaKind, MediaSection
         from tests.helpers import nyaa_entry, result_item
 
@@ -146,9 +146,6 @@ class SameMagnetBingeTests(unittest.TestCase):
             mal_id=1,
             episodes={1: ep1, 2: ep2, 3: ep3},
         )
-        chain = _same_magnet_binge_chain(section, ep1)
-        self.assertEqual([it.parsed.episode for it in chain], [2])
-        # Chaîne binge complète : enchaîne aussi l'épisode sur un autre magnet.
         self.assertEqual(
             [it.parsed.episode for it in _binge_chain(section, ep1)], [2, 3]
         )

@@ -16,8 +16,8 @@ from annie.catalog import (
 from annie.gather import format_catalog_status, gather_catalog
 from annie.parsing import kind_from_options, minimal_label, parse_inline_target
 from annie.scoring import pick_best, rank_entry
-from annie.types import MalRelease, MediaKind, MediaSection, ResultItem, WatchTarget
-from annie import allanime, metadata as meta
+from annie.types import MediaKind, MediaSection, ResultItem, WatchTarget
+from annie import metadata as meta
 from annie.nyaa import search
 from annie.ui import (
     BackToEpisode,
@@ -31,7 +31,6 @@ from annie.ui import (
     fzf_install_hint,
     tui_available,
     is_play_completed,
-    pick_allanime_show,
     pick_anime_candidate,
     pick_catalog,
     pick_episode,
@@ -138,36 +137,6 @@ def resolve_anime_for_query(
     return meta.pick_candidate(candidates, query)
 
 
-def resolve_allanime_release(
-    query: str, config: AnnieConfig
-) -> MalRelease | None:
-    """AllAnime search + fzf show → une MalRelease enrichie (hors spinner)."""
-    if not meta.metadata_enabled(config):
-        return None
-    if config.metadata.structure != "allanime":
-        return None
-    if not (sys.stdin.isatty() and tui_available()):
-        return None
-    try:
-        shows = allanime.search_shows(query, limit=40)
-    except Exception:
-        return None
-    if not shows:
-        return None
-    picked = pick_allanime_show(shows, query)
-    if picked is None:
-        return None  # Esc → fallback AniList
-    release = allanime.show_to_release(picked, user_query=query)
-    if release is None:
-        return None
-    try:
-        return allanime.enrich_release_queries(
-            release, query=query, show_name=picked.name
-        )
-    except Exception:
-        return release
-
-
 def _catalog_error(exc: BaseException) -> None:
     print(
         stylize(f"annie: catalog unavailable ({exc}), Nyaa fallback", C.MUTED),
@@ -228,21 +197,6 @@ def _binge_chain(
     while len(chain) < max_ahead:
         nxt = _next_episode_item(section, current)
         if nxt is None:
-            break
-        chain.append(nxt)
-        current = nxt
-    return chain
-
-
-def _same_magnet_binge_chain(
-    section: MediaSection, item: ResultItem
-) -> list[ResultItem]:
-    """Épisodes suivants du même torrent uniquement."""
-    chain: list[ResultItem] = []
-    current = item
-    while True:
-        nxt = _next_episode_item(section, current)
-        if nxt is None or nxt.entry.magnet != item.entry.magnet:
             break
         chain.append(nxt)
         current = nxt

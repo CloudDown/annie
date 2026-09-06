@@ -210,20 +210,15 @@ def parse_prompt_command(raw: str) -> str | None:
     return PROMPT_COMMANDS.get(lowered)
 
 
-# Compat ancien nom
-parse_slash_command = parse_prompt_command
-
-
 def _tty_streams() -> list[Any]:
     """Flux réellement attachés au terminal."""
     streams: list[Any] = []
-    if sys.platform != "win32":
-        try:
-            streams.append(
-                open("/dev/tty", "w", encoding="utf-8", errors="replace")  # noqa: SIM115
-            )
-        except OSError:
-            pass
+    try:
+        streams.append(
+            open("/dev/tty", "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+        )
+    except OSError:
+        pass
     if sys.stdout.isatty():
         streams.append(sys.stdout)
     return streams
@@ -255,10 +250,7 @@ _playback_alt_screen = False
 
 def clear_terminal() -> None:
     """Efface l'écran comme la commande shell ``clear``."""
-    if sys.platform == "win32":
-        os.system("cls")
-    else:
-        os.system("clear")
+    os.system("clear")
 
 
 def begin_playback_ui() -> None:
@@ -456,11 +448,6 @@ def tui_available() -> bool:
     from annie.tui import available
 
     return available()
-
-
-def fzf_available() -> bool:
-    """Compat : l'UI interactive est le TUI natif, plus fzf."""
-    return tui_available()
 
 
 def fzf_install_hint() -> str:
@@ -735,69 +722,6 @@ def pick_anime_candidate(candidates: list, query: str = "") -> Any | None:
         previews,
         lines,
         prompt="anime",
-        header=_fzf_header("↑↓ enter · 1-9 · ? · esc"),
-        expect="enter",
-    )
-    if picked is None:
-        return None
-    return picked[1]
-
-
-def pick_allanime_show(shows: list, query: str = "") -> Any | None:
-    """fzf : choisir un show AllAnime (S1 / S2 / Movie), comme ani-cli."""
-    if not shows:
-        return None
-
-    from annie.allanime import (
-        AllAnimeShow,
-        _infer_kind,
-        _infer_season,
-        rank_shows_for_picker,
-    )
-
-    ranked = rank_shows_for_picker(
-        [s for s in shows if isinstance(s, AllAnimeShow)],
-        user_query=query,
-    )
-    if not ranked:
-        return None
-    if len(ranked) == 1:
-        return ranked[0]
-
-    indexed: dict[str, AllAnimeShow] = {}
-    previews: dict[str, str] = {}
-    lines: list[str] = []
-    for index, show in enumerate(ranked):
-        key = f"s{index:03d}"
-        indexed[key] = show
-        kind = _infer_kind(show)
-        season = _infer_season(show.name)
-        if kind == MediaKind.MOVIE:
-            kind_label = "Movie"
-        elif kind == MediaKind.OVA:
-            kind_label = "OVA"
-        elif kind == MediaKind.SPECIAL:
-            kind_label = "Special"
-        elif season is not None:
-            kind_label = f"S{season:02d}"
-        else:
-            kind_label = "TV"
-        eps = f"{show.episode_count} ep"
-        detail = f"{kind_label} · {eps}"
-        previews[key] = stylize(
-            f"{show.name}\n{detail}\nAllAnime {show.show_id}",
-            C.META,
-        )
-        lines.append(
-            f"{key}{SEP}{stylize(show.name, C.LIST, C.BOLD)}  "
-            f"{stylize(detail, C.META)}"
-        )
-
-    picked = _tui_choose(
-        indexed,
-        previews,
-        lines,
-        prompt="show",
         header=_fzf_header("↑↓ enter · 1-9 · ? · esc"),
         expect="enter",
     )
@@ -1119,20 +1043,6 @@ def pick_catalog(
 
 
 def copy_magnet(magnet: str) -> bool:
-    if sys.platform == "win32":
-        try:
-            subprocess.run(
-                ["clip"],
-                input=magnet,
-                text=True,
-                check=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-                if hasattr(subprocess, "CREATE_NO_WINDOW")
-                else 0,
-            )
-            return True
-        except (OSError, subprocess.CalledProcessError):
-            return False
     if shutil.which("wl-copy"):
         try:
             subprocess.run(["wl-copy", magnet], check=True)

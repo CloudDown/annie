@@ -72,8 +72,6 @@ HELP_OVERLAY = [
 def available() -> bool:
     if sys.stdin.isatty() and sys.stdout.isatty():
         return True
-    if sys.platform == "win32":
-        return False
     try:
         fd = os.open("/dev/tty", os.O_RDWR)
         os.close(fd)
@@ -314,52 +312,8 @@ class _UnixKeys:
         return "esc"
 
 
-class _WinKeys:
-    def restore(self) -> None:
-        return
-
-    def read(self) -> str:
-        import msvcrt
-
-        char = msvcrt.getwch()
-        if char in {"\x00", "\xe0"}:
-            code = msvcrt.getwch()
-            return {
-                "H": "up",
-                "P": "down",
-                "K": "left",
-                "M": "right",
-                "S": "delete",
-                "G": "home",
-                "O": "end",
-                "I": "pgup",
-                "Q": "pgdn",
-            }.get(code, "esc")
-        if char == "\x03":
-            return "ctrl-c"
-        if char == "\x0e":
-            return "ctrl-n"
-        if char == "\x0f":
-            return "ctrl-o"
-        if char == "\x10":
-            return "ctrl-p"
-        if char == "\x15":
-            return "ctrl-u"
-        if char in {"\r", "\n"}:
-            return "enter"
-        if char in {"\x08", "\x7f"}:
-            return "backspace"
-        if char == "\x1b":
-            return "esc"
-        if char.isprintable():
-            return f"char:{char}"
-        return "esc"
-
-
 def _open_tty():
     if sys.stdin.isatty() and sys.stdout.isatty():
-        return sys.stdin, sys.stdout, False
-    if sys.platform == "win32":
         return sys.stdin, sys.stdout, False
     tty = open("/dev/tty", "r+", encoding="utf-8", errors="replace")  # noqa: SIM115
     return tty, tty, True
@@ -376,11 +330,7 @@ def term_size() -> tuple[int, int]:
 class Session:
     def __init__(self) -> None:
         self.stdin, self.stdout, self._owned = _open_tty()
-        self._keys: _UnixKeys | _WinKeys
-        if sys.platform == "win32":
-            self._keys = _WinKeys()
-        else:
-            self._keys = _UnixKeys(self.stdin.fileno())
+        self._keys = _UnixKeys(self.stdin.fileno())
         self._prev_winch = None
         self.resized = False
 
@@ -647,80 +597,7 @@ def choose(
         return None
 
 
-def prompt_edit(
-    session: Session,
-    *,
-    title: str,
-    label: str,
-    initial: str,
-    secret: bool = False,
-    hint: str = "",
-) -> str | None:
-    buf = initial
-    pos = len(buf)
-    session.show_cursor(True)
-    try:
-        while True:
-            cols, rows = term_size()
-            display = ("•" * len(buf)) if secret else buf
-            before, after = display[:pos], display[pos:]
-            caret = f"{TEXT}{before}{ACC}▍{RESET}{TEXT}{after}{RESET}"
-            body = [
-                f"{DIM}{label}{RESET}",
-                "",
-                caret,
-                "",
-                f"{DIM}{hint}{RESET}" if hint else "",
-            ]
-            session.draw(
-                chrome(
-                    title=title,
-                    body=body,
-                    footer=shortcut_line(
-                        [
-                            ("←→", "cursor"),
-                            ("enter", "save"),
-                            ("esc", "cancel"),
-                        ],
-                        prefix="",
-                    ),
-                    preview=None,
-                    cols=cols,
-                    rows=rows,
-                )
-            )
-            key = session.read()
-            if key in {"esc", "ctrl-c"}:
-                return None
-            if key == "enter":
-                return buf
-            if key == "left":
-                pos = max(0, pos - 1)
-            elif key == "right":
-                pos = min(len(buf), pos + 1)
-            elif key == "home":
-                pos = 0
-            elif key == "end":
-                pos = len(buf)
-            elif key == "backspace":
-                if pos > 0:
-                    buf = buf[: pos - 1] + buf[pos:]
-                    pos -= 1
-            elif key == "delete":
-                if pos < len(buf):
-                    buf = buf[:pos] + buf[pos + 1 :]
-            elif key == "ctrl-u":
-                buf = ""
-                pos = 0
-            elif key.startswith("char:"):
-                ch = key[5:]
-                buf = buf[:pos] + ch + buf[pos:]
-                pos += len(ch)
-    finally:
-        session.show_cursor(False)
-
-
-# --- Réglages (ex-tui_settings) ------------------------------------------------
+# --- Settings -----------------------------------------------------------------
 
 RES_QUALITY = {"auto": 26, "720p": 26, "1080p": 38, "2160p": 45}
 LANG_CHOICES = ("", "fr", "en", "es", "de", "it", "pt", "ja")

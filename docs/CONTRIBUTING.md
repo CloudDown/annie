@@ -40,7 +40,6 @@ make clean          # supprime venv & artefacts
 ```
 bin/
   annie.py            Lanceur (active .venv si présent)
-  annie.cmd           Lanceur Windows (sources)
 docs/
   CONTRIBUTING.md     Ce guide
 annie/
@@ -65,7 +64,7 @@ annie/
   tui.py              Picker, réglages, chrome (ANSI 16)
   net.py              HTTP + rate limit
   cache.py            Cache disque JSON (+ ApiDiskCache)
-  paths.py            Chemins multi-OS
+  paths.py            Chemins XDG
   watch_history.py    Historique de visionnage
 tests/
   helpers.py          Factories & chargement fixtures
@@ -75,8 +74,6 @@ scripts/              Outils debug / validation (réseau)
 packaging/
   aur/                PKGBUILD AUR
   debian/             build .deb
-  windows/            install-windows.bat, install.ps1
-install.bat           Raccourci Windows → packaging/windows/
 ```
 
 ## Tests vs scripts de validation

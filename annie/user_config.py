@@ -99,21 +99,6 @@ def set_player_command(command: str, *, only_if_auto: bool = True) -> bool:
     return changed
 
 
-def ensure_media_player_config(*, force: bool = False) -> str | None:
-    """Configure le lecteur dans config.toml et vérifie la résolution."""
-    from annie.paths import find_best_media_player
-
-    found = find_best_media_player()
-    if not found:
-        return None
-    _name, exe = found
-    set_player_command(exe, only_if_auto=not force)
-    from annie.player import resolve_player
-
-    resolve_player()
-    return exe
-
-
 def _toml_literal(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"

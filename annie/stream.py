@@ -21,7 +21,6 @@ from annie.paths import (
     ipc_ready as mpv_ipc_is_ready,
     mpv_ipc_path,
     path_exists,
-    windows_extended_path,
 )
 from annie.parsing import (
     _filename_for_episode_match,
@@ -56,7 +55,7 @@ from annie.buffer import (  # noqa: F401 — ré-export tests / callers
     _stream_margin_bytes,
     wait_startable,
 )
-from annie.player import (  # noqa: F401 — resolve_player ré-exporté (install Windows)
+from annie.player import (  # noqa: F401 — resolve_player re-exported for callers
     player_command,
     player_popen as _player_popen,
     resolve_player,
@@ -232,13 +231,9 @@ def is_video(path: str) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXT
 
 
-def _torrent_save_path(save_path: Path) -> str:
-    return windows_extended_path(save_path)
-
-
 def add_torrent(session: lt.session, source: str, save_path: Path) -> lt.torrent_handle:
     ensure_directory(save_path)
-    save = _torrent_save_path(save_path)
+    save = str(save_path)
     if source.startswith("magnet:?"):
         info_hash = magnet_info_hash(source)
         cached = torrent_file_cache_path(info_hash)
@@ -520,36 +515,21 @@ def configure_stream(
 def _mpv_ipc_request(ipc_path: Path, command: list) -> object | None:
     payload_bytes = json.dumps({"command": command}).encode() + b"\n"
     try:
-        if sys.platform == "win32":
-            with open(ipc_path, "r+b", buffering=0) as pipe:
-                pipe.write(payload_bytes)
-                chunks: list[bytes] = []
-                while True:
-                    chunk = pipe.read(4096)
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    if b"\n" in chunk:
-                        break
-                if not chunks:
-                    return None
-                line = b"".join(chunks).split(b"\n", 1)[0]
-        else:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-                sock.settimeout(0.5)
-                sock.connect(str(ipc_path))
-                sock.sendall(payload_bytes)
-                chunks = []
-                while True:
-                    chunk = sock.recv(4096)
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    if b"\n" in chunk:
-                        break
-                if not chunks:
-                    return None
-                line = b"".join(chunks).split(b"\n", 1)[0]
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            sock.connect(str(ipc_path))
+            sock.sendall(payload_bytes)
+            chunks = []
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if b"\n" in chunk:
+                    break
+            if not chunks:
+                return None
+            line = b"".join(chunks).split(b"\n", 1)[0]
         parsed = json.loads(line.decode())
         if parsed.get("error") == "success":
             return parsed.get("data")
@@ -656,14 +636,14 @@ def _mpv_loadfile(
     sub_file: Path | None = None,
 ) -> bool:
     """Charge un nouveau fichier dans mpv sans fermer la fenêtre."""
-    target = windows_extended_path(path.resolve())
+    target = str(path.resolve())
     result = _mpv_ipc_request(ipc_path, ["loadfile", target, "replace"])
     if result is None and not _wait_mpv_ipc(ipc_path, timeout_sec=0.5):
         return False
     if sub_file is not None and path_exists(sub_file):
         _mpv_ipc_request(
             ipc_path,
-            ["sub-add", windows_extended_path(sub_file.resolve()), "select"],
+            ["sub-add", str(sub_file.resolve()), "select"],
         )
     _mpv_ipc_request(ipc_path, ["set_property", "pause", False])
     return True
@@ -1020,7 +1000,7 @@ def _launch_and_stream(
                 keep_files=keep_files,
             )
         finally:
-            if pass_ipc is not None and sys.platform != "win32" and pass_ipc.exists():
+            if pass_ipc is not None and pass_ipc.exists():
                 pass_ipc.unlink(missing_ok=True)
 
     code = _run_pass(mpv_profile="default")
@@ -1101,7 +1081,7 @@ def play(
                 save_path = torrent_cache_dir(info)
                 params = lt.add_torrent_params()
                 params.ti = info
-                params.save_path = _torrent_save_path(save_path)
+                params.save_path = str(save_path)
                 handle = session.add_torrent(params)
 
             files = torrent_files(info)

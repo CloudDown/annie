@@ -10,7 +10,6 @@ keywords = ["anime", "nyaa", "torrent", "cli", "mpv"]
 classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
-    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
