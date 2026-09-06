@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import ROOT, print  # noqa: E402
 
-from annie.catalog import gather_catalog
+from annie.gather import gather_catalog
 from annie.config import AnnieConfig
 from annie.scoring import assess_tv_catalog
 from annie import metadata as meta

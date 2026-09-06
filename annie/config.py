@@ -127,6 +127,49 @@ class UiConfig:
 
 
 @dataclass
+class StreamingConfig:
+    seed_while_watching: bool = True
+    upload_limit_kib: int = 512
+
+
+@dataclass
+class BufferConfig:
+    max_wait_sec: float = 25.0
+    no_peers_sec: float = 45.0
+    absolute_sec: float = 90.0
+    mkv_start_mib: int = 80
+    mkv_head_mib: int = 96
+    stream_margin_mib: int = 64
+    mpv_retry_sec: float = 15.0
+    mkv_playable_wait_sec: float = 8.0
+
+
+@dataclass
+class TorrentConfig:
+    metadata_timeout: float = 60.0
+    connections_limit: int = 300
+    active_downloads: int = 1
+    active_limit: int = 4
+    unchoke_slots: int = 12
+    unchoke_slots_seeding: int = 20
+    enable_dht: bool = True
+    enable_lsd: bool = True
+    enable_upnp: bool = True
+    enable_natpmp: bool = True
+
+
+@dataclass
+class MpvConfig:
+    cache_secs: int = 30
+    hwdec: str = "auto-safe"
+    vo: str = "gpu"
+    gpu_api: str = "opengl"
+    really_quiet: bool = True
+    force_window: bool = True
+    extra_args: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AnnieConfig:
     player: str = "auto"
     nyaa: NyaaConfig = field(default_factory=NyaaConfig)
@@ -135,6 +178,10 @@ class AnnieConfig:
     catalog: CatalogConfig = field(default_factory=CatalogConfig)
     subtitles: SubtitlesConfig = field(default_factory=SubtitlesConfig)
     ui: UiConfig = field(default_factory=UiConfig)
+    streaming: StreamingConfig = field(default_factory=StreamingConfig)
+    buffer: BufferConfig = field(default_factory=BufferConfig)
+    torrent: TorrentConfig = field(default_factory=TorrentConfig)
+    mpv: MpvConfig = field(default_factory=MpvConfig)
 
     @property
     def category(self) -> str:
@@ -172,6 +219,10 @@ class AnnieConfig:
     def opensubtitles_password(self) -> str:
         return self.subtitles.password
 
+    @property
+    def seed_while_watching(self) -> bool:
+        return self.streaming.seed_while_watching
+
     @classmethod
     def load(cls) -> AnnieConfig:
         global _config_cache
@@ -186,6 +237,10 @@ class AnnieConfig:
         catalog_table = toml_util.table(data, "catalog")
         subtitles_table = toml_util.table(data, "subtitles")
         ui_table = toml_util.table(data, "ui")
+        streaming_table = toml_util.table(data, "streaming")
+        buffer_table = toml_util.table(data, "buffer")
+        torrent_table = toml_util.table(data, "torrent")
+        mpv_table = toml_util.table(player_table, "mpv")
 
         player_raw = data.get("player")
         if isinstance(player_raw, dict):
@@ -386,6 +441,67 @@ class AnnieConfig:
             ),
         )
 
+        if "streaming" in data:
+            seed_default = streaming_table.get("seed_while_watching")
+        else:
+            seed_default = data.get("seed_while_watching")
+        seed_while_watching = toml_util.bool_val(seed_default, True)
+        env = os.environ.get("ANNIE_SEED_WHILE_WATCHING", "").strip().lower()
+        if env in {"0", "false", "no", "off"}:
+            seed_while_watching = False
+        elif env in {"1", "true", "yes", "on"}:
+            seed_while_watching = True
+
+        streaming = StreamingConfig(
+            seed_while_watching=seed_while_watching,
+            upload_limit_kib=toml_util.int_val(
+                streaming_table.get("upload_limit_kib"), 512
+            ),
+        )
+        buffer = BufferConfig(
+            max_wait_sec=toml_util.float_val(buffer_table.get("max_wait_sec"), 25.0),
+            no_peers_sec=toml_util.float_val(buffer_table.get("no_peers_sec"), 45.0),
+            absolute_sec=toml_util.float_val(buffer_table.get("absolute_sec"), 90.0),
+            mkv_start_mib=toml_util.int_val(buffer_table.get("mkv_start_mib"), 80),
+            mkv_head_mib=toml_util.int_val(buffer_table.get("mkv_head_mib"), 96),
+            stream_margin_mib=toml_util.int_val(
+                buffer_table.get("stream_margin_mib"), 64
+            ),
+            mpv_retry_sec=toml_util.float_val(buffer_table.get("mpv_retry_sec"), 15.0),
+            mkv_playable_wait_sec=toml_util.float_val(
+                buffer_table.get("mkv_playable_wait_sec"), 8.0
+            ),
+        )
+        torrent = TorrentConfig(
+            metadata_timeout=toml_util.float_val(
+                torrent_table.get("metadata_timeout"), 60.0
+            ),
+            connections_limit=toml_util.int_val(
+                torrent_table.get("connections_limit"), 300
+            ),
+            active_downloads=toml_util.int_val(
+                torrent_table.get("active_downloads"), 1
+            ),
+            active_limit=toml_util.int_val(torrent_table.get("active_limit"), 4),
+            unchoke_slots=toml_util.int_val(torrent_table.get("unchoke_slots"), 12),
+            unchoke_slots_seeding=toml_util.int_val(
+                torrent_table.get("unchoke_slots_seeding"), 20
+            ),
+            enable_dht=toml_util.bool_val(torrent_table.get("enable_dht"), True),
+            enable_lsd=toml_util.bool_val(torrent_table.get("enable_lsd"), True),
+            enable_upnp=toml_util.bool_val(torrent_table.get("enable_upnp"), True),
+            enable_natpmp=toml_util.bool_val(torrent_table.get("enable_natpmp"), True),
+        )
+        mpv = MpvConfig(
+            cache_secs=toml_util.int_val(mpv_table.get("cache_secs"), 30),
+            hwdec=str(mpv_table.get("hwdec") or "auto-safe"),
+            vo=str(mpv_table.get("vo") or "gpu"),
+            gpu_api=str(mpv_table.get("gpu_api") or "opengl"),
+            really_quiet=toml_util.bool_val(mpv_table.get("really_quiet"), True),
+            force_window=toml_util.bool_val(mpv_table.get("force_window"), True),
+            extra_args=toml_util.str_list(mpv_table.get("extra_args")),
+        )
+
         _config_cache = cls(
             player=player,
             nyaa=nyaa,
@@ -394,6 +510,10 @@ class AnnieConfig:
             catalog=catalog,
             subtitles=subtitles,
             ui=ui,
+            streaming=streaming,
+            buffer=buffer,
+            torrent=torrent,
+            mpv=mpv,
         )
         return replace(_config_cache)
 

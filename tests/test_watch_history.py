@@ -164,10 +164,10 @@ class BingeChainTests(unittest.TestCase):
         mpv.really_quiet = True
         mpv.cache_secs = 120
         mpv.extra_args = []
-        settings = MagicMock()
-        settings.player.mpv = mpv
+        cfg = MagicMock()
+        cfg.mpv = mpv
         with patch("annie.player.find_program", return_value="mpv"), patch(
-            "annie.player._settings", return_value=settings
+            "annie.player._config", return_value=cfg
         ):
             cmd_yes = player_command(
                 "mpv", Path("/tmp/a.mkv"), keep_open=True

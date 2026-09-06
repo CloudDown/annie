@@ -11,9 +11,7 @@ depends=(
   'python-libtorrent'
 )
 optdepends=(
-  'mpv: recommended video player'
-  'vlc: alternative player'
-  'ffmpeg: for ffplay'
+  'mpv: video player'
 )
 makedepends=(
   'python-build'

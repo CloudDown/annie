@@ -1,4 +1,4 @@
-"""Résolution et lancement des lecteurs vidéo (mpv, vlc, ffplay)."""
+"""Resolve and launch mpv."""
 
 from __future__ import annotations
 
@@ -8,16 +8,16 @@ from pathlib import Path
 
 from annie.paths import find_program
 
-PLAYER_NAMES = ("mpv", "vlc", "ffplay")
+PLAYER_NAMES = ("mpv",)
 
 _player_cache: str | None = None
 _player_exe_cache: str | None = None
 
 
-def _settings():
-    from annie.settings import AnnieSettings
+def _config():
+    from annie.config import AnnieConfig
 
-    return AnnieSettings.load()
+    return AnnieConfig.load()
 
 
 def _remember_player(kind: str, exe: str) -> str:
@@ -58,7 +58,7 @@ def resolve_player(requested: str | None = None) -> str:
         exe = find_program(name)
         if exe:
             return _remember_player(name, exe)
-    raise RuntimeError("no player found — install mpv, vlc, or ffmpeg")
+    raise RuntimeError("no player found — install mpv")
 
 
 def _mpv_profile_video(
@@ -87,7 +87,7 @@ def _mpv_command(
     streaming: bool = False,
     keep_open: bool = False,
 ) -> list[str]:
-    mpv = _settings().player.mpv
+    mpv = _config().mpv
     cmd = [player_binary("mpv")]
     gpu_api = mpv.gpu_api
     hwdec = mpv.hwdec
@@ -135,36 +135,6 @@ def _mpv_command(
     return cmd
 
 
-def _vlc_command(target: str) -> list[str]:
-    vlc = _settings().player.vlc
-    cmd = [
-        player_binary("vlc"),
-        "--intf",
-        "dummy",
-        "--quiet",
-        "--play-and-exit",
-        "--no-video-title-show",
-        f"--file-caching={vlc.file_caching_ms}",
-        f"--network-caching={vlc.network_caching_ms}",
-    ]
-    cmd.extend(vlc.extra_args)
-    cmd.append(target)
-    return cmd
-
-
-def _ffplay_command(target: str) -> list[str]:
-    return [
-        player_binary("ffplay"),
-        "-autoexit",
-        "-infbuf",
-        "-fflags",
-        "+genpts+discardcorrupt",
-        "-loglevel",
-        "error",
-        target,
-    ]
-
-
 def player_command(
     player: str,
     path: Path,
@@ -185,10 +155,6 @@ def player_command(
             streaming=streaming,
             keep_open=keep_open,
         )
-    if player == "vlc":
-        return _vlc_command(target)
-    if player == "ffplay":
-        return _ffplay_command(target)
     raise RuntimeError(f"unsupported player: {player}")
 
 

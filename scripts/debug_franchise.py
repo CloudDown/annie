@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import print  # noqa: E402
 
-from annie.catalog import gather_catalog
+from annie.gather import gather_catalog
 from annie.config import AnnieConfig
 from annie import metadata as meta
 from annie.mal import franchise_to_releases, pick_candidate

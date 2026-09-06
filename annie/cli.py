@@ -6,7 +6,6 @@ import argparse
 import re
 import sys
 
-from annie.settings import AnnieSettings
 from annie.config import AnnieConfig
 from annie.catalog import (
     build_catalog,
@@ -28,7 +27,7 @@ from annie.ui import (
     EXIT_CANCELLED,
     PLAY_COMPLETED,
     PLAY_INCOMPLETE,
-    fzf_install_hint,
+    tty_required_hint,
     tui_available,
     is_play_completed,
     pick_anime_candidate,
@@ -283,7 +282,7 @@ def play_item(
         season=season,
         source_episode=item.parsed.source_episode,
         match_queries=file_match_queries or None,
-        seed_while_watching=AnnieSettings.load().seed_while_watching,
+        seed_while_watching=AnnieConfig.load().seed_while_watching,
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
         listed_seeders=item.entry.seeders,
@@ -532,7 +531,7 @@ def run_watch(
         player=config.resolved_player(player),
         episode=batch_episode,
         season=batch_season,
-        seed_while_watching=AnnieSettings.load().seed_while_watching,
+        seed_while_watching=AnnieConfig.load().seed_while_watching,
         subtitle_lang=lang,
         subtitle_query=subtitle_query,
         listed_seeders=entry.seeders,
@@ -543,7 +542,7 @@ def run_watch(
 def interactive_loop(config: AnnieConfig) -> int:
     if not tui_available() or not sys.stdout.isatty():
         print_status(
-            f"interactive mode requires a TTY — {fzf_install_hint()}", kind="err"
+            f"interactive mode requires a TTY — {tty_required_hint()}", kind="err"
         )
         return 1
 
@@ -563,12 +562,10 @@ def interactive_loop(config: AnnieConfig) -> int:
             continue
         if cmd == "settings":
             from annie.config import reload_config
-            from annie.settings import reload_settings
             from annie.tui import run_settings
 
             if run_settings():
                 config = reload_config()
-                reload_settings()
                 print_status("settings saved", kind="ok")
             continue
         if cmd == "quit":
@@ -791,9 +788,9 @@ def interactive_loop(config: AnnieConfig) -> int:
 def _add_player_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--player",
-        choices=["auto", "mpv", "vlc", "ffplay"],
+        choices=["auto", "mpv"],
         default="auto",
-        help="Player (auto, or ANNIE_PLAYER)",
+        help="Player (auto, mpv, or ANNIE_PLAYER)",
     )
 
 
@@ -920,5 +917,5 @@ def _main_impl() -> int:
         args.query,
         args.keep,
         player=config.resolved_player(None if args.player == "auto" else args.player),
-        seed_while_watching=AnnieSettings.load().seed_while_watching,
+        seed_while_watching=AnnieConfig.load().seed_while_watching,
     )

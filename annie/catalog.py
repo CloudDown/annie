@@ -2040,10 +2040,3 @@ def resolve_catalog_target(
                     return item
 
     return None
-
-
-def gather_catalog(raw_query: str, config, **overrides):
-    """Compat : l'orchestration vit dans annie.gather."""
-    from annie.gather import gather_catalog as _gather
-
-    return _gather(raw_query, config, **overrides)

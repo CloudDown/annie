@@ -10,8 +10,6 @@ from annie.paths import config_dir
 
 CONFIG_DIR = config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
-# Conservé pour la rétrocompatibilité (anciennes installations).
-SETTINGS_FILE = CONFIG_DIR / "settings.toml"
 
 _TEMPLATES = files("annie") / "templates"
 

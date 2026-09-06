@@ -1,4 +1,4 @@
-"""Streaming torrent (libtorrent) + lecteurs."""
+"""Streaming torrent (libtorrent) + mpv."""
 
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ from annie.paths import (
     ensure_directory,
     ipc_ready as mpv_ipc_is_ready,
     mpv_ipc_path,
-    path_exists,
 )
 from annie.parsing import (
     _filename_for_episode_match,
@@ -28,34 +27,25 @@ from annie.parsing import (
     match_episode_filename,
     parse_title,
 )
-from annie.buffer import (  # noqa: F401 — ré-export tests / callers
-    MP4_TAIL_BYTES,
-    MKV_CLUSTER,
+from annie.buffer import (
     MKV_FRONTIER_PIECES,
-    MKV_MAGIC,
-    START_MIN_MKV_BYTES,
-    START_MIN_MP4_BYTES,
-    START_MIN_OTHER_BYTES,
     _buffer_cfg,
     _buffer_peer_state,
-    _buffer_start_mode,
     _contiguous_file_bytes,
     _enforce_sequential_frontier,
     _file_piece_bounds,
     _file_ready,
     _frontier_piece,
     _head_buffered,
-    _is_startable,
     _mkv_head_bytes,
     _mkv_playable,
     _mkv_start_bytes,
-    _peer_wait_deadlines,
     _piece_range_for_file_bytes,
     _prioritize_mp4_tail,
     _stream_margin_bytes,
     wait_startable,
 )
-from annie.player import (  # noqa: F401 — resolve_player re-exported for callers
+from annie.player import (
     player_command,
     player_popen as _player_popen,
     resolve_player,
@@ -67,9 +57,9 @@ from annie.ui import (
     BufferStatusDisplay,
     begin_playback_ui,
     clear_terminal,
+    die,
     end_playback_ui,
     format_buffer_lines,
-    format_stream_fatal,
     is_play_completed,
     is_user_cancel,
     log_buffer_pause,
@@ -94,25 +84,19 @@ START_WARMUP_SEC = 30.0
 START_WARMUP_MARGIN_BYTES = 80 * 1024 * 1024
 
 
-def _settings():
-    from annie.settings import AnnieSettings
+def _config():
+    from annie.config import AnnieConfig
 
-    return AnnieSettings.load()
+    return AnnieConfig.load()
 
 
 def _upload_limit_bytes() -> int:
-    limit_kib = _settings().streaming.upload_limit_kib
+    limit_kib = _config().streaming.upload_limit_kib
     return 0 if limit_kib <= 0 else limit_kib * 1024
 
 
-def die(message: str, code: int = 1) -> None:
-    print(format_stream_fatal(message), file=sys.stderr)
-    raise SystemExit(code)
-
-
 def make_session(*, seed_while_watching: bool = False) -> lt.session:
-    settings = _settings()
-    torrent = settings.torrent
+    torrent = _config().torrent
     session = lt.session()
     upload_limit = 0 if seed_while_watching else _upload_limit_bytes()
     try:
@@ -144,7 +128,7 @@ def make_session(*, seed_while_watching: bool = False) -> lt.session:
 def _enable_watch_seed(
     session: lt.session, handle: lt.torrent_handle, file_index: int
 ) -> None:
-    torrent = _settings().torrent
+    torrent = _config().torrent
     try:
         handle.set_upload_mode(False)
     except Exception:
@@ -173,7 +157,7 @@ def _enable_watch_seed(
 
 
 def _disable_watch_seed(session: lt.session) -> None:
-    torrent = _settings().torrent
+    torrent = _config().torrent
     try:
         session.apply_settings(
             {
@@ -256,7 +240,7 @@ def add_torrent(session: lt.session, source: str, save_path: Path) -> lt.torrent
 
 def wait_metadata(handle: lt.torrent_handle, timeout: float | None = None) -> lt.torrent_info:
     if timeout is None:
-        timeout = _settings().torrent.metadata_timeout
+        timeout = _config().torrent.metadata_timeout
     deadline = time.monotonic() + timeout
     delay = 0.03
     while not handle.status().has_metadata:
@@ -640,7 +624,7 @@ def _mpv_loadfile(
     result = _mpv_ipc_request(ipc_path, ["loadfile", target, "replace"])
     if result is None and not _wait_mpv_ipc(ipc_path, timeout_sec=0.5):
         return False
-    if sub_file is not None and path_exists(sub_file):
+    if sub_file is not None and sub_file.exists():
         _mpv_ipc_request(
             ipc_path,
             ["sub-add", str(sub_file.resolve()), "select"],
@@ -937,7 +921,7 @@ def _launch_and_stream(
     wait_startable(
         handle, file_index, target, file_size, listed_seeders=listed_seeders
     )
-    if not path_exists(target):
+    if not target.exists():
         die(f"file missing: {target}")
 
     ready = _contiguous_file_bytes(handle, file_index)

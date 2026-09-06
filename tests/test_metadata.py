@@ -230,5 +230,69 @@ provider = "anilist"
         self.assertTrue(cfg.metadata.fallback_mal)
 
 
+class ReleasesForAnimeTests(unittest.TestCase):
+    def _tv(self, mal_id: int, season: int):
+        from annie.types import tv_release
+
+        return tv_release(
+            mal_id=mal_id,
+            label=f"Season {season:02d}",
+            season=season,
+            episode_count=12,
+            nyaa_queries=["x"],
+            sort_key=(season, "x"),
+        )
+
+    def test_rich_allanime_skips_franchise_walk(self) -> None:
+        from annie.metadata import releases_for_anime
+
+        cfg = AnnieConfig()
+        aa = [self._tv(1, 1), self._tv(2, 2)]
+        with (
+            mock.patch("annie.metadata.allanime.releases_for_query", return_value=aa),
+            mock.patch("annie.metadata._franchise_releases") as franchise,
+        ):
+            out = releases_for_anime(
+                _anime(), query="x", skip_recap=False, config=cfg
+            )
+        self.assertEqual(out, aa)
+        franchise.assert_not_called()
+
+    def test_poor_allanime_keeps_richer_franchise(self) -> None:
+        from annie.metadata import releases_for_anime
+
+        cfg = AnnieConfig()
+        aa = [self._tv(1, 1)]
+        franchise_rels = [self._tv(1, 1), self._tv(2, 2), self._tv(3, 3)]
+        with (
+            mock.patch("annie.metadata.allanime.releases_for_query", return_value=aa),
+            mock.patch(
+                "annie.metadata._franchise_releases", return_value=franchise_rels
+            ),
+        ):
+            out = releases_for_anime(
+                _anime(), query="x", skip_recap=False, config=cfg
+            )
+        self.assertEqual(out, franchise_rels)
+
+    def test_franchise_structure_skips_allanime(self) -> None:
+        from annie.config import MetadataConfig
+        from annie.metadata import releases_for_anime
+
+        cfg = AnnieConfig(metadata=MetadataConfig(structure="franchise"))
+        franchise_rels = [self._tv(1, 1)]
+        with (
+            mock.patch("annie.metadata.allanime.releases_for_query") as allanime_fn,
+            mock.patch(
+                "annie.metadata._franchise_releases", return_value=franchise_rels
+            ),
+        ):
+            out = releases_for_anime(
+                _anime(), query="x", skip_recap=False, config=cfg
+            )
+        allanime_fn.assert_not_called()
+        self.assertEqual(out, franchise_rels)
+
+
 if __name__ == "__main__":
     unittest.main()

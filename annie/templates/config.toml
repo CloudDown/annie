@@ -2,7 +2,7 @@
 # Flat keys (player, category, filter…) remain supported for compatibility.
 
 [player]
-# auto | mpv | vlc | ffplay | absolute path to an executable
+# auto | mpv | absolute path to mpv
 command = "auto"
 
 [player.mpv]
@@ -13,11 +13,6 @@ gpu_api = "opengl"          # opengl | vulkan
 really_quiet = true
 force_window = true
 extra_args = []              # e.g. ["--fs"]
-
-[player.vlc]
-file_caching_ms = 3000
-network_caching_ms = 3000
-extra_args = []
 
 [nyaa]
 category = "0_0"           # Nyaa category filter (0_0 = anime)

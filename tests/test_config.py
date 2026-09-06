@@ -1,4 +1,4 @@
-"""Tests chargement config.toml / settings.toml."""
+"""Tests chargement config.toml."""
 
 from __future__ import annotations
 
@@ -8,13 +8,11 @@ from pathlib import Path
 from unittest import mock
 
 from annie.config import AnnieConfig, reload_config
-from annie.settings import AnnieSettings, reload_settings
 
 
 class ConfigLoadTests(unittest.TestCase):
     def tearDown(self) -> None:
         reload_config()
-        reload_settings()
 
     def test_flat_keys_backward_compat(self) -> None:
         toml = """
@@ -43,7 +41,7 @@ default_sub_lang = "fr"
     def test_nested_sections(self) -> None:
         toml = """
 [player]
-command = "vlc"
+command = "mpv"
 
 [nyaa]
 search_pages = 3
@@ -69,7 +67,7 @@ seeders_highlight = 100
             with mock.patch("annie.config.CONFIG_FILE", path):
                 reload_config()
                 cfg = AnnieConfig.load()
-        self.assertEqual(cfg.player, "vlc")
+        self.assertEqual(cfg.player, "mpv")
         self.assertEqual(cfg.nyaa.search_pages, 3)
         self.assertEqual(cfg.nyaa.parallel, 6)
         self.assertFalse(cfg.mal.enabled)
@@ -187,11 +185,11 @@ preferred_resolution = "auto"
         self.assertIn("enabled = true", text)
 
 
-class SettingsLoadTests(unittest.TestCase):
+class StreamConfigLoadTests(unittest.TestCase):
     def tearDown(self) -> None:
-        reload_settings()
+        reload_config()
 
-    def test_streaming_and_buffer(self) -> None:
+    def test_streaming_buffer_and_mpv(self) -> None:
         toml = """
 [streaming]
 seed_while_watching = false
@@ -207,23 +205,18 @@ hwdec = "no"
 extra_args = ["--fs"]
 """
         with tempfile.TemporaryDirectory() as tmp:
-            settings_path = Path(tmp) / "settings.toml"
-            settings_path.write_text(toml, encoding="utf-8")
-            config_path = Path(tmp) / "config.toml"
-            with (
-                mock.patch("annie.settings.SETTINGS_FILE", settings_path),
-                mock.patch("annie.settings.CONFIG_FILE", config_path),
-                mock.patch("annie.settings.ensure_user_config"),
-            ):
-                reload_settings()
-                settings = AnnieSettings.load()
-        self.assertFalse(settings.seed_while_watching)
-        self.assertEqual(settings.streaming.upload_limit_kib, 0)
-        self.assertEqual(settings.buffer.max_wait_sec, 10.0)
-        self.assertEqual(settings.buffer.mkv_start_mib, 8)
-        self.assertEqual(settings.player.mpv.cache_secs, 60)
-        self.assertEqual(settings.player.mpv.hwdec, "no")
-        self.assertEqual(settings.player.mpv.extra_args, ["--fs"])
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertFalse(cfg.seed_while_watching)
+        self.assertEqual(cfg.streaming.upload_limit_kib, 0)
+        self.assertEqual(cfg.buffer.max_wait_sec, 10.0)
+        self.assertEqual(cfg.buffer.mkv_start_mib, 8)
+        self.assertEqual(cfg.mpv.cache_secs, 60)
+        self.assertEqual(cfg.mpv.hwdec, "no")
+        self.assertEqual(cfg.mpv.extra_args, ["--fs"])
 
 
 if __name__ == "__main__":

@@ -601,7 +601,7 @@ def choose(
 
 RES_QUALITY = {"auto": 26, "720p": 26, "1080p": 38, "2160p": 45}
 LANG_CHOICES = ("", "fr", "en", "es", "de", "it", "pt", "ja")
-PLAYER_CHOICES = ("auto", "mpv", "vlc", "ffplay")
+PLAYER_CHOICES = ("auto", "mpv")
 MODE_CHOICES = ("auto", "anilist", "mal", "off")
 RES_CHOICES = ("auto", "720p", "1080p", "2160p")
 
@@ -638,10 +638,8 @@ _FIELDS: tuple[_Field, ...] = (
 
 def _settings_values() -> dict[str, object]:
     from annie.config import AnnieConfig
-    from annie.settings import AnnieSettings
 
     cfg = AnnieConfig.load()
-    settings = AnnieSettings.load()
     return {
         "os_key": cfg.subtitles.api_key,
         "os_user": cfg.subtitles.username,
@@ -651,7 +649,7 @@ def _settings_values() -> dict[str, object]:
         "resolution": getattr(cfg.catalog, "preferred_resolution", "auto") or "auto",
         "player": cfg.player or "auto",
         "meta": cfg.metadata.mode,
-        "seed": settings.seed_while_watching,
+        "seed": cfg.seed_while_watching,
         "groups": list(cfg.catalog.preferred_groups),
     }
 
@@ -672,7 +670,6 @@ def _settings_display(field: _Field, value: object) -> str:
 
 def _settings_save(field: _Field, value: object) -> None:
     from annie.config import reload_config
-    from annie.settings import reload_settings
     from annie.user_config import set_config_value
 
     if field.key == "player":
@@ -689,7 +686,6 @@ def _settings_save(field: _Field, value: object) -> None:
     elif field.key == "meta":
         set_config_value("metadata", "enabled", True)
     reload_config()
-    reload_settings()
 
 
 def run_settings() -> bool:

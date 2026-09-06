@@ -11,7 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import print  # noqa: E402
 
-from annie.catalog import build_catalog, gather_catalog
+from annie.catalog import build_catalog
+from annie.gather import gather_catalog
 from annie.config import AnnieConfig
 from annie.types import MediaKind
 from tests.helpers import catalog_from_fixture, load_fixture

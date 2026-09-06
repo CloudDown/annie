@@ -16,7 +16,7 @@ from annie.mal import (
     relation_nyaa_hints as mal_relation_hints,
     search_anime as mal_search_anime,
 )
-from annie.types import MalRelease
+from annie.types import MalRelease, MediaKind
 
 __all__ = [
     "MalAnime",
@@ -132,6 +132,22 @@ def releases_for_anime(
 ) -> list[MalRelease]:
     cfg = config or AnnieConfig.load()
 
+    aa_rels: list[MalRelease] = []
+    if cfg.metadata.structure == "allanime":
+        try:
+            aa_rels = allanime.releases_for_query(
+                query,
+                chosen=chosen,
+                skip_recap=skip_recap,
+            )
+        except Exception:
+            aa_rels = []
+
+        aa_tv = sum(1 for r in aa_rels if r.kind == MediaKind.EPISODE)
+        # AllAnime already has a real season split — skip the slow franchise walk.
+        if aa_tv >= 2:
+            return aa_rels
+
     franchise_rels = _franchise_releases(
         chosen,
         query=query,
@@ -140,27 +156,12 @@ def releases_for_anime(
         pool=pool,
         config=cfg,
     )
+    if not aa_rels:
+        return franchise_rels
 
-    # Structure AllAnime (shows discrets S1/S2/Movie) — même source qu'ani-cli.
-    if cfg.metadata.structure == "allanime":
-        try:
-            aa_rels = allanime.releases_for_query(
-                query,
-                chosen=chosen,
-                skip_recap=skip_recap,
-            )
-            if aa_rels:
-                from annie.types import MediaKind
-
-                aa_tv = sum(1 for r in aa_rels if r.kind == MediaKind.EPISODE)
-                fr_tv = sum(
-                    1 for r in franchise_rels if r.kind == MediaKind.EPISODE
-                )
-                # AllAnime parfois incomplet (Overlord S1 seul) → garder le graphe.
-                if fr_tv >= 2 and aa_tv <= 1 and fr_tv > aa_tv:
-                    return franchise_rels
-                return aa_rels
-        except Exception:
-            pass
-
-    return franchise_rels
+    aa_tv = sum(1 for r in aa_rels if r.kind == MediaKind.EPISODE)
+    fr_tv = sum(1 for r in franchise_rels if r.kind == MediaKind.EPISODE)
+    # AllAnime sometimes incomplete (Overlord S1 only) → keep the graph.
+    if fr_tv >= 2 and aa_tv <= 1 and fr_tv > aa_tv:
+        return franchise_rels
+    return aa_rels

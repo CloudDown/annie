@@ -7,9 +7,9 @@ from pathlib import Path
 
 import libtorrent as lt
 
-from annie.paths import path_exists, path_open
 from annie.ui import (
     BufferStatusDisplay,
+    die,
     format_buffer_forced_start,
     format_buffer_lines,
     format_buffer_local_file,
@@ -27,9 +27,9 @@ MP4_TAIL_BYTES = 8 * 1024 * 1024
 
 
 def _buffer_cfg():
-    from annie.settings import AnnieSettings
+    from annie.config import AnnieConfig
 
-    return AnnieSettings.load().buffer
+    return AnnieConfig.load().buffer
 
 
 def _mkv_start_bytes() -> int:
@@ -135,10 +135,10 @@ def _contiguous_file_bytes(handle: lt.torrent_handle, file_index: int) -> int:
 def _has_mkv_header(path: Path) -> bool:
     for _ in range(4):
         try:
-            if not path_exists(path):
+            if not path.exists():
                 time.sleep(0.05)
                 continue
-            with path_open(path, "rb") as f:
+            with path.open("rb") as f:
                 if f.read(4) == MKV_MAGIC:
                     return True
         except OSError:
@@ -149,7 +149,7 @@ def _has_mkv_header(path: Path) -> bool:
 
 def _mp4_has_ftyp(path: Path) -> bool:
     try:
-        with path_open(path, "rb") as f:
+        with path.open("rb") as f:
             head = f.read(12)
         return len(head) >= 8 and head[4:8] == b"ftyp"
     except OSError:
@@ -162,7 +162,7 @@ def _mp4_has_moov_in_bytes(data: bytes) -> bool:
 
 def _mp4_moov_in_head(path: Path, nbytes: int) -> bool:
     try:
-        with path_open(path, "rb") as f:
+        with path.open("rb") as f:
             data = f.read(max(0, nbytes))
         return _mp4_has_moov_in_bytes(data)
     except OSError:
@@ -171,11 +171,11 @@ def _mp4_moov_in_head(path: Path, nbytes: int) -> bool:
 
 def _mp4_moov_in_tail(path: Path, file_size: int) -> bool:
     try:
-        if not path_exists(path) or file_size < 1024:
+        if not path.exists() or file_size < 1024:
             return False
         read_len = min(MP4_TAIL_BYTES, file_size)
         start = max(0, file_size - read_len)
-        with path_open(path, "rb") as f:
+        with path.open("rb") as f:
             f.seek(start)
             data = f.read(read_len)
         return _mp4_has_moov_in_bytes(data)
@@ -187,7 +187,7 @@ def _mkv_has_clusters(path: Path, nbytes: int) -> bool:
     if nbytes < 1024:
         return False
     try:
-        with path_open(path, "rb") as f:
+        with path.open("rb") as f:
             data = f.read(nbytes)
         return MKV_CLUSTER in data
     except OSError:
@@ -413,8 +413,6 @@ def wait_startable(
                         f" — Nyaa listed {listed_seeders} seeders; "
                         "swarm connection may take longer"
                     )
-                from annie.stream import die
-
                 die(
                     "buffer timeout — incomplete file "
                     f"({contiguous // 1024 // 1024} MiB contiguous / "

@@ -350,6 +350,11 @@ def format_stream_fatal(message: str) -> str:
     return f"{_annie_prefix(stream=sys.stderr)}{_s(message, C.RED, stream=sys.stderr)}"
 
 
+def die(message: str, code: int = 1) -> None:
+    print(format_stream_fatal(message), file=sys.stderr)
+    raise SystemExit(code)
+
+
 def format_buffer_ready(mib: int) -> str:
     return format_stream_log("ready", f"{mib} MiB contiguous", tone="ok")
 
@@ -450,8 +455,8 @@ def tui_available() -> bool:
     return available()
 
 
-def fzf_install_hint() -> str:
-    return "lancez Annie dans un vrai terminal (TTY)"
+def tty_required_hint() -> str:
+    return "run Annie in a real terminal (TTY)"
 
 
 def _terminal_size() -> tuple[int, int]:

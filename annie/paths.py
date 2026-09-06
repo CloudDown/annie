@@ -53,11 +53,3 @@ def ipc_ready(ipc_path: Path) -> bool:
 
 def ensure_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-
-
-def path_exists(path: Path) -> bool:
-    return path.exists()
-
-
-def path_open(path: Path, mode: str = "rb"):
-    return path.open(mode)

@@ -229,7 +229,7 @@ def _fetch_media(anilist_id: int) -> dict:
     )
     media = data.get("Media")
     if not isinstance(media, dict):
-        raise RuntimeError(f"AniList: media {anilist_id} introuvable")
+        raise RuntimeError(f"AniList: media {anilist_id} not found")
     return media
 
 

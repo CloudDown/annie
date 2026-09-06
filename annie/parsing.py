@@ -42,12 +42,6 @@ PREFERRED_GROUPS = {
 }
 
 
-def quality_score(title: str, release_group: str | None) -> int:
-    from annie.scoring import torrent_quality_score
-
-    return torrent_quality_score(title, release_group)
-
-
 def resolution_tag(title: str) -> str | None:
     for pattern, _ in RESOLUTION_SCORES:
         match = pattern.search(title)
@@ -612,6 +606,8 @@ def finalize_parsed(
 ) -> ParsedTitle:
     display_name = extract_display_name(body)
     resolution = resolution_tag(title)
+    from annie.scoring import torrent_quality_score
+
     return ParsedTitle(
         raw=title,
         release_group=release_group,
@@ -621,7 +617,7 @@ def finalize_parsed(
         season=season,
         episode=episode,
         arc=arc,
-        quality=quality_score(title, release_group),
+        quality=torrent_quality_score(title, release_group),
         resolution=resolution,
         is_repack=bool(re.search(r"\brepack\b", title, re.I)),
     )

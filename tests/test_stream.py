@@ -14,6 +14,12 @@ try:
 except ImportError:
     HAS_LT = False
 
+from annie.buffer import (
+    _buffer_peer_state,
+    _buffer_start_mode,
+    _peer_wait_deadlines,
+)
+from annie.config import BufferConfig
 from annie.parsing import match_episode_filename
 from tests.helpers import load_fixture
 
@@ -23,11 +29,7 @@ if HAS_LT:
 from annie.stream import (
     BINGE_PREFETCH_PROGRESS,
     BINGE_SWITCH_PROGRESS,
-    _buffer_peer_state,
-    _buffer_start_mode,
-    _peer_wait_deadlines,
 )
-from annie.settings import BufferSettings
 
 
 class BufferPeerStateTests(unittest.TestCase):
@@ -80,7 +82,7 @@ class BufferPeerStateTests(unittest.TestCase):
 
 class PeerWaitDeadlineTests(unittest.TestCase):
     def test_bonus_with_listed_seeders(self) -> None:
-        buf = BufferSettings(no_peers_sec=45.0, absolute_sec=90.0)
+        buf = BufferConfig(no_peers_sec=45.0, absolute_sec=90.0)
         no_peers, absolute = _peer_wait_deadlines(
             buf, 100.0, listed_seeders=20
         )
@@ -88,7 +90,7 @@ class PeerWaitDeadlineTests(unittest.TestCase):
         self.assertGreater(absolute, 190.0)
 
     def test_no_bonus_without_listed_seeders(self) -> None:
-        buf = BufferSettings(no_peers_sec=45.0, absolute_sec=90.0)
+        buf = BufferConfig(no_peers_sec=45.0, absolute_sec=90.0)
         no_peers, absolute = _peer_wait_deadlines(buf, 100.0)
         self.assertEqual(no_peers, 145.0)
         self.assertEqual(absolute, 190.0)
@@ -165,7 +167,7 @@ class BufferStartModeTests(unittest.TestCase):
 
 class BufferDefaultTests(unittest.TestCase):
     def test_buffer_defaults_are_conservative(self) -> None:
-        buf = BufferSettings()
+        buf = BufferConfig()
         self.assertGreaterEqual(buf.mkv_start_mib, 80)
         self.assertGreaterEqual(buf.mkv_head_mib, buf.mkv_start_mib)
         self.assertGreaterEqual(buf.stream_margin_mib, 64)

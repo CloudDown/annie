@@ -51,10 +51,9 @@ UI: in-terminal **TUI** (↑↓, filter, Enter, Esc).
 | Program | Role | Required |
 |---------|------|----------|
 | **Annie** | Main CLI | yes |
-| **mpv** | Video player | yes* |
-| vlc / ffplay | Alternative | optional |
+| **mpv** | Video player | yes |
 
-\* Without a player, Annie cannot play. Install mpv (`sudo pacman -S mpv` or `apt install mpv`).
+Without mpv, Annie cannot play. Install it (`sudo pacman -S mpv` or `apt install mpv`).
 
 ---
 
@@ -255,7 +254,7 @@ preferred_groups = ["SubsPlease", "Erai-raws"]
 
 | Section | Key | Effect |
 |---------|-----|--------|
-| `[player]` | `command` | `auto`, `mpv`, `vlc`, `ffplay` |
+| `[player]` | `command` | `auto`, `mpv` |
 | `[subtitles]` | `default_lang` | `"en"` = English by default |
 | `[subtitles]` | `enabled` | `false` = no subtitle menu |
 | `[ui]` | `show_banner` | `false` = no logo |
@@ -281,7 +280,7 @@ Commented template: [`annie/templates/config.toml`](annie/templates/config.toml)
 | Section | Notable keys |
 |---------|--------------|
 | `[player]` | `command` — `auto`, name, or executable path |
-| `[player.mpv]` / `[player.vlc]` | `cache_secs`, `hwdec`, `extra_args` |
+| `[player.mpv]` | `cache_secs`, `hwdec`, `extra_args` |
 | `[nyaa]` | `category`, `search_pages`, `parallel`, `sort`, `order` |
 | `[mal]` | `enabled` — `false` = Nyaa only |
 | `[metadata]` | `mode` — `auto`, `anilist`, `mal`, `off` |
@@ -309,12 +308,12 @@ Legacy flat keys (`player = "mpv"`) still work; `[…]` sections take precedence
 
 ```mermaid
 flowchart LR
-    A[Title] --> B[MAL]
+    A[Title] --> B[AniList / AllAnime]
     B --> C[Catalog]
     C --> D[Nyaa.si]
     D --> E[TUI]
     E --> F[Subtitles]
-    F --> G[Stream]
+    F --> G[libtorrent]
     G --> H[mpv]
 ```
 

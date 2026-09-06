@@ -44,11 +44,11 @@ docs/
   CONTRIBUTING.md     Ce guide
 annie/
   cli.py              Commandes & boucle interactive
-  metadata.py         Façade AniList / MAL
+  metadata.py         Façade AniList / MAL + AllAnime
+  allanime.py         Structure saisons/films (API AllAnime)
   anilist.py          Client AniList GraphQL
   mal.py              Franchise MAL / Jikan
   config.py           AnnieConfig (~/.config/annie/config.toml)
-  settings.py         Streaming, buffer, torrent, profils lecteur
   types.py            Types catalogue (MediaSection, MalRelease, …)
   parsing.py          Parsing titres Nyaa
   scoring.py          Scoring des releases
@@ -56,9 +56,9 @@ annie/
   gather.py           Orchestration métadonnées → Nyaa
   season_coherence.py Cohérence intra-saison
   nyaa.py             Client Nyaa & cache
-  stream.py           libtorrent + lecteurs
+  stream.py           libtorrent + mpv
   buffer.py           Buffer / probes MKV-MP4 / lancement mpv
-  player.py           Commandes mpv/vlc/ffplay
+  player.py           Commandes mpv
   subtitles.py        OpenSubtitles.com
   ui.py               TUI & interface terminal
   tui.py              Picker, réglages, chrome (ANSI 16)
@@ -73,7 +73,6 @@ tests/
 scripts/              Outils debug / validation (réseau)
 packaging/
   aur/                PKGBUILD AUR
-  debian/             build .deb
 ```
 
 ## Tests vs scripts de validation
