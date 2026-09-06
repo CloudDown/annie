@@ -13,6 +13,12 @@ paru -S annie
 **Depends:** `python`, `python-libtorrent`  
 **Recommended:** `mpv`
 
+The package ships the CLI + an Omarchy-style `.desktop`. Full desktop wiring (Super+Shift+A):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/master/install-omarchy.sh | bash
+```
+
 ## Local build from the repo
 
 From the cloned project root:

@@ -75,4 +75,10 @@ package() {
   find "${pkgdir}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
   rm -f "${pkgdir}/usr/lib/python"*/site-packages/annie-*.dist-info/direct_url.json
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 packaging/omarchy/annie.desktop \
+    "${pkgdir}/usr/share/applications/annie.desktop"
+  install -Dm644 packaging/omarchy/annie.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/annie.svg"
+  install -Dm644 packaging/omarchy/annie.png \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/annie.png"
 }

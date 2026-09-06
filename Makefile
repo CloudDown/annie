@@ -1,11 +1,12 @@
-.PHONY: install dev run test test-offline debug-rezero smoke clean help
+.PHONY: install dev run test test-offline debug-rezero smoke omarchy clean help
 
 UV ?= uv
 ANNIE := ./bin/annie.py
 
 help:
 	@echo "Targets:"
-	@echo "  make install      uv sync + ~/.config/annie/config.toml (si absent)"
+	@echo "  make install      uv sync + config.toml + ~/.local/bin/annie"
+	@echo "  make omarchy      native Omarchy launcher, menu, Super+Shift+A"
 	@echo "  make dev          alias for install"
 	@echo "  make run          launch interactive CLI"
 	@echo "  make test         suite unitaire (offline)"
@@ -17,8 +18,13 @@ help:
 install:
 	$(UV) sync
 	$(UV) run python -c "from annie.user_config import ensure_user_config; ensure_user_config()"
+	mkdir -p $(HOME)/.local/bin
+	ln -sfn $(CURDIR)/.venv/bin/annie $(HOME)/.local/bin/annie
 
 dev: install
+
+omarchy: install
+	packaging/omarchy/install.sh
 
 run: install
 	$(ANNIE)

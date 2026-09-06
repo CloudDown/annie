@@ -18,103 +18,90 @@
 
 # Annie
 
-**Anime from the terminal — search, pick, play.**
+**Anime from the terminal — search, pick, stream in mpv.**
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![libtorrent](https://img.shields.io/badge/libtorrent-2.0+-green.svg)](https://libtorrent.org/)
-
-[Install](#install) · [Usage](#usage) · [Shortcuts](#shortcuts) · [Subtitles](#subtitles) · [Troubleshooting](#troubleshooting) · [Config](#configuration)
+[Install](#install) · [Launch](#launch) · [Usage](#usage) · [Config](#configuration)
 
 </div>
 
----
-
-## Overview
-
-Annie walks you through the full flow:
-
-| Step | Detail |
-|------|--------|
-| **Catalog** | Seasons and episodes via MyAnimeList |
-| **Search** | Best torrents on [Nyaa.si](https://nyaa.si) (seeders, quality, group) |
-| **Playback** | Stream while downloading — no full wait |
-| **Subtitles** | Optional via OpenSubtitles (mpv) |
-
-UI: in-terminal **TUI** (↑↓, filter, Enter, Esc).
+Search [Nyaa](https://nyaa.si), pick a season/episode in a TUI, play while it downloads. Catalog from AniList / AllAnime. Optional [OpenSubtitles](https://www.opensubtitles.com).
 
 > Personal tool — follow copyright law in your country.
 
 ---
 
-## Requirements
-
-| Program | Role | Required |
-|---------|------|----------|
-| **Annie** | Main CLI | yes |
-| **mpv** | Video player | yes |
-
-Without mpv, Annie cannot play. Install it (`sudo pacman -S mpv` or `apt install mpv`).
-
----
-
 ## Install
+
+### Omarchy (easy)
+
+One command — deps, binary, app launcher, **Super+Shift+A**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/master/install-omarchy.sh | bash
+```
+
+Already cloned this repo? Same result:
+
+```bash
+make omarchy
+```
+
+Then:
+
+| | |
+|---|---|
+| **Super+Shift+A** | Open / focus Annie |
+| **Super+Space** | Type `annie` or `anime` |
+| **Super+Alt+Space** | Apps → Annie |
+| Terminal | `annie` |
+
+Same wiring as btop / Docker (`xdg-terminal-exec`, floating TUI). mpv floats on top.
+
+Note: **Super+Shift+A** was ChatGPT (still in Apps). Grok stays on **Super+Shift+Alt+A**.
 
 ### Arch Linux
 
 ```bash
-yay -S annie          # or paru -S annie
-sudo pacman -S mpv   # if missing
+yay -S annie          # or: omarchy pkg aur add annie
+sudo pacman -S mpv    # if missing
 ```
 
-### Linux / macOS (from source)
+AUR ships the CLI + `.desktop`. For Super+Shift+A and the floating window, run `make omarchy` from a git clone.
+
+### From source (any Linux)
+
+Needs [uv](https://docs.astral.sh/uv/) and **mpv**.
 
 ```bash
 git clone https://github.com/CloudDown/annie.git
 cd annie
-make install
-./bin/annie.py
+make install          # uv sync + ~/.local/bin/annie + config.toml
+annie
 ```
-
-Config created on first run: `~/.config/annie/config.toml`
 
 ---
 
-## Usage
+## Launch
 
-### Launch
+Type a title in **English** or **romaji** (`frieren`, `made in abyss`).
 
-```bash
-annie          # after install
-./bin/annie.py     # from source
-```
+1. Pick a season → episode → optional subtitles  
+2. mpv opens; the torrent keeps downloading  
+3. Slow swarm → `pause  buffer too low`, then auto-resume  
+4. Quit mpv with **q**
 
-ASCII logo → `>` prompt → type a title (**English** or **romaji**, e.g. `frieren`).
-
-### Typical flow
-
-1. **Season** — TUI list, pick e.g. `Season 2`
-2. **Episode** — same menu
-3. **Subtitles** — language or *None* (if enabled)
-4. **Playback** — mpv opens, download continues in the background
-
-During playback:
+Prompt chips: `help` · `settings`. Ctrl+C to leave Annie. Colors follow the terminal theme.
 
 ```
 playing      [SubsPlease] … mkv  mpv
 ready        22 MiB contiguous
 ```
 
-Slow connection → `pause  buffer too low` then auto-resume. Quit mpv: **q** or close the window.
-
-At the Annie prompt: `help` · `settings` (shortcut chips under the logo). Ctrl+C to exit.
-
-In the TUI: Omarchy-style shortcut bar · colors follow the terminal theme.
-
 ---
 
-## Shortcuts
+## Usage
 
-### Direct search (no menus)
+Skip menus by typing the target:
 
 | You type | Result |
 |----------|--------|
@@ -125,98 +112,9 @@ In the TUI: Omarchy-style shortcut bar · colors follow the terminal theme.
 | `frieren movie 3` | 3rd movie |
 | `frieren --batch` | Prefer season packs |
 
-### In the TUI
+TUI: **↑↓** move · type to filter · **Enter** play · **Ctrl-O** copy magnet · **←** / **Esc** back.
 
-| Key | Action |
-|-----|--------|
-| ↑ / ↓ | Navigate |
-| letters | Filter the list |
-| **Enter** | Confirm / play |
-| **Ctrl-O** | Copy magnet |
-| **←** | Previous screen |
-| **Esc** | Back / cancel |
-
----
-
-## Subtitles
-
-Source: [OpenSubtitles.com](https://www.opensubtitles.com) — free API key required.
-
-1. Account on [opensubtitles.com](https://www.opensubtitles.com)
-2. [API consumers](https://www.opensubtitles.com/en/consumers) → **Create API key**
-3. In Annie, type `settings` — or edit the config:
-
-   Config file: `~/.config/annie/config.toml`
-
-```toml
-[subtitles]
-enabled = true
-api_key = "your_key_here"
-username = "your_username"
-password = "your_password"
-default_lang = "en"    # optional: skip language menu
-```
-
-External subtitles require **mpv** only. Do not share this file (password included).
-
----
-
-## Troubleshooting
-
-<details>
-<summary><strong>“interactive mode requires a TTY”</strong></summary>
-
-Run Annie in a real terminal (Alacritty, kitty, GNOME Terminal…), not an IDE button with no console.
-
-</details>
-
-<details>
-<summary><strong>“no player found”</strong></summary>
-
-Install mpv: `sudo pacman -S mpv` (or `apt install mpv`).
-
-</details>
-
-<details>
-<summary><strong>No subtitles / OpenSubtitles error</strong></summary>
-
-- Check `api_key`, `username`, `password` in `config.toml`
-- Player = **mpv** (`[player] command = "mpv"` or `auto`)
-- Test the key on the OpenSubtitles site
-
-</details>
-
-<details>
-<summary><strong>Stuttering or pauses</strong></summary>
-
-Few seeders or a slow connection. Annie pauses mpv (`buffer too low`) and resumes on its own. Tweak `[buffer]` if needed (see [Configuration](#configuration)).
-
-</details>
-
-<details>
-<summary><strong>ASCII logo missing</strong></summary>
-
-```toml
-[ui]
-show_banner = true
-```
-
-</details>
-
-<details>
-<summary><strong>No results for my anime</strong></summary>
-
-- Title in **English** or **romaji** (`Made in Abyss`, not a local translation)
-- Check your connection
-- If MAL is down → Annie falls back to Nyaa only (quiet message)
-
-</details>
-
----
-
-## Command line
-
-Without interactive menus:
+CLI without the prompt:
 
 ```bash
 annie search "frieren" -l 5
@@ -224,18 +122,33 @@ annie watch "frieren" -s 2 -e 6
 annie watch "frieren" -s 2 -e 6 --sub-lang en
 annie play "magnet:?xt=…" -q "01"
 annie ls file.torrent
-annie watch "…" --no-banner
 ```
+
+---
+
+## Subtitles
+
+[OpenSubtitles.com](https://www.opensubtitles.com) — free API key.
+
+1. Create a key under [API consumers](https://www.opensubtitles.com/en/consumers)  
+2. In Annie: `settings`, or edit `~/.config/annie/config.toml`
+
+```toml
+[subtitles]
+enabled = true
+api_key = "your_key_here"
+username = "your_username"
+password = "your_password"
+default_lang = "en"    # skip the language menu
+```
+
+Needs **mpv**. Don’t share this file (it contains the password).
 
 ---
 
 ## Configuration
 
-Created on **first launch**, never overwritten:
-
-`~/.config/annie/config.toml`
-
-### Minimal example
+Created on first launch, never overwritten: `~/.config/annie/config.toml`
 
 ```toml
 [player]
@@ -243,53 +156,31 @@ command = "mpv"
 
 [subtitles]
 enabled = true
-api_key = "your_opensubtitles_key"
+api_key = ""
 default_lang = "en"
 
 [catalog]
 preferred_groups = ["SubsPlease", "Erai-raws"]
+preferred_resolution = "1080p"
 ```
-
-### Common settings
 
 | Section | Key | Effect |
 |---------|-----|--------|
-| `[player]` | `command` | `auto`, `mpv` |
-| `[subtitles]` | `default_lang` | `"en"` = English by default |
-| `[subtitles]` | `enabled` | `false` = no subtitle menu |
-| `[ui]` | `show_banner` | `false` = no logo |
-| `[streaming]` | `seed_while_watching` | seed while watching |
-| `[catalog]` | `preferred_groups` | favorite groups |
-| `[catalog]` | `preferred_resolution` | `auto`, `720p`, `1080p`, `2160p` |
+| `[player]` | `command` | `auto` or `mpv` |
+| `[subtitles]` | `default_lang` | e.g. `"en"` |
+| `[ui]` | `show_banner` | `false` hides the logo |
+| `[streaming]` | `seed_while_watching` | seed while playing |
+| `[catalog]` | `preferred_groups` | extra score for these teams |
 | `[metadata]` | `mode` | `auto`, `anilist`, `mal`, `off` |
 
-**Environment variables:**
-
-| Variable | Effect |
-|----------|--------|
-| `ANNIE_PLAYER=mpv` | Force player |
-| `ANNIE_METADATA_MODE=off` | Nyaa only (no AniList/MAL) |
-| `OPENSUBTITLES_API_KEY=…` | Subtitles API key |
-| `ANNIE_SEED_WHILE_WATCHING=0` | No seeding while watching |
+Env: `ANNIE_PLAYER`, `ANNIE_METADATA_MODE=off`, `OPENSUBTITLES_API_KEY`, `ANNIE_SEED_WHILE_WATCHING=0`.
 
 <details>
-<summary><strong>Full <code>config.toml</code> reference</strong></summary>
+<summary><strong>Full <code>config.toml</code></strong></summary>
 
-Commented template: [`annie/templates/config.toml`](annie/templates/config.toml)
+Template: [`annie/templates/config.toml`](annie/templates/config.toml)
 
-| Section | Notable keys |
-|---------|--------------|
-| `[player]` | `command` — `auto`, name, or executable path |
-| `[player.mpv]` | `cache_secs`, `hwdec`, `extra_args` |
-| `[nyaa]` | `category`, `search_pages`, `parallel`, `sort`, `order` |
-| `[mal]` | `enabled` — `false` = Nyaa only |
-| `[metadata]` | `mode` — `auto`, `anilist`, `mal`, `off` |
-| `[catalog]` | `preferred_groups`, `min_seeders_strict`, `fill_gaps_on_search` |
-| `[subtitles]` | `enabled`, `default_lang`, `api_key`, `fetch_timeout` |
-| `[ui]` | `show_banner`, `show_download_progress`, `seeders_highlight` |
-| `[streaming]` / `[buffer]` / `[torrent]` | download, mpv pauses, torrent session |
-
-**Slow connection:**
+Slow connection:
 
 ```toml
 [buffer]
@@ -298,37 +189,42 @@ mkv_start_mib = 24
 stream_margin_mib = 16
 ```
 
-Legacy flat keys (`player = "mpv"`) still work; `[…]` sections take precedence.
+Legacy flat keys (`player = "mpv"`) still work.
 
 </details>
 
 ---
 
-## Architecture
+## Troubleshooting
 
-```mermaid
-flowchart LR
-    A[Title] --> B[AniList / AllAnime]
-    B --> C[Catalog]
-    C --> D[Nyaa.si]
-    D --> E[TUI]
-    E --> F[Subtitles]
-    F --> G[libtorrent]
-    G --> H[mpv]
-```
+| Problem | Fix |
+|---------|-----|
+| `interactive mode requires a TTY` | Run in a real terminal, not a headless IDE task |
+| `no player found` | `sudo pacman -S mpv` |
+| No subtitles | Check `api_key` / `username` / `password` in `config.toml` |
+| Stutter / pause | Weak swarm — Annie pauses on `buffer too low` by itself |
+| No results | English or romaji title; MAL down → Nyaa-only fallback |
 
 ---
 
 ## Developers
 
-[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) · `make test` (offline unit tests)
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) · `make test`
+
+```mermaid
+flowchart LR
+    A[Title] --> B[AniList / AllAnime]
+    B --> C[Catalog]
+    C --> D[Nyaa]
+    D --> E[TUI]
+    E --> F[libtorrent]
+    F --> G[mpv]
+```
 
 ---
 
 <div align="center">
 
-**Annie** — personal use
-
-<sub>Follow copyright law in your country.</sub>
+**Annie** — personal use · follow copyright law in your country
 
 </div>
