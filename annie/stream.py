@@ -65,6 +65,7 @@ from annie.ui import (
     log_buffer_pause,
     log_buffer_resume,
     log_playback_start,
+    print_playback_header,
     stream_log,
     stream_log_err,
 )
@@ -658,6 +659,7 @@ def _play_while_downloading(
     on_episode_done: Callable[[object], None] | None = None,
     playback_item: object | None = None,
     keep_files: bool = False,
+    player_name: str | None = None,
 ) -> int:
     ipc_available = ipc_path is not None and _wait_mpv_ipc(ipc_path)
     paused_for_buffer = False
@@ -675,6 +677,8 @@ def _play_while_downloading(
     prefetch_alt_handle: lt.torrent_handle | None = None
     last_prefetch_boost = 0.0
     last_seed_boost = 0.0
+    display_filename = target.name
+    display_player = player_name
 
     if ipc_available and ipc_path is not None:
         _mpv_ipc_request(ipc_path, ["set_property", "pause", True])
@@ -771,6 +775,7 @@ def _play_while_downloading(
                             current_item = next_item
                             file_index = next_index
                             file_size = next_size
+                            display_filename = next_path.name
                             playback_started_at = time.monotonic()
                             prev_play_byte = 0
                             consumption_rate = 0.0
@@ -834,6 +839,9 @@ def _play_while_downloading(
                         peer_hint=peer_hint,
                         download_kib=download_rate / 1024,
                         extra_hint=extra_hint,
+                        player=display_player,
+                        seed=seed_while_watching,
+                        filename=display_filename,
                     )
                 )
 
@@ -919,7 +927,13 @@ def _launch_and_stream(
 ) -> int:
     buf = _buffer_cfg()
     wait_startable(
-        handle, file_index, target, file_size, listed_seeders=listed_seeders
+        handle,
+        file_index,
+        target,
+        file_size,
+        listed_seeders=listed_seeders,
+        player=player_name,
+        seed=seed_while_watching,
     )
     if not target.exists():
         die(f"file missing: {target}")
@@ -982,6 +996,7 @@ def _launch_and_stream(
                 on_episode_done=on_episode_done,
                 playback_item=playback_item,
                 keep_files=keep_files,
+                player_name=player_name,
             )
         finally:
             if pass_ipc is not None and pass_ipc.exists():
@@ -1029,6 +1044,7 @@ def play(
     subtitle_query=None,
     listed_seeders: int | None = None,
     on_ui_start: Callable[[], None] | None = None,
+    ui_label: str | None = None,
     binge_items: list | None = None,
     on_episode_done: Callable[[object], None] | None = None,
     current_item: object | None = None,
@@ -1113,25 +1129,16 @@ def play(
                     else:
                         sub_status = ("err", "subtitles", f"unavailable ({exc})")
 
-        # Clear + ligne ◆ juste avant le bloc lecture (pas pendant le fetch metadata).
+        # Clear + header fixe juste avant le bloc lecture.
         if on_ui_start is not None:
             on_ui_start()
         else:
             begin_playback_ui()
 
         try:
-            if sub_status is not None:
-                kind, tag, detail = sub_status
-                if kind == "ok":
-                    stream_log(tag, detail, tone="accent")
-                else:
-                    stream_log_err(
-                        tag, detail, tone="warn" if kind == "warn" else "err"
-                    )
-
-            log_playback_start(target.name, player_name)
+            header_label = ui_label or target.name
+            print_playback_header(header_label, sub_status=sub_status)
             if seed_while_watching:
-                stream_log("seed", "active while watching", tone="muted")
                 _enable_watch_seed(session, handle, file_index)
 
             binge_queue = list(binge_items or [])
@@ -1520,17 +1527,16 @@ def play(
                 clear_terminal()
                 try:
                     from annie.parsing import minimal_label
-                    from annie.ui import C, stylize
 
-                    print(
-                        stylize(f"◆ {minimal_label(nxt.parsed)}", C.YELLOW, C.BOLD),
-                        flush=True,
-                    )
+                    next_label = minimal_label(nxt.parsed)
                 except Exception:
-                    print(f"◆ {next_path.name}", flush=True)
-                if next_sub is not None:
-                    stream_log("subtitles", next_sub.name, tone="accent")
-                log_playback_start(next_path.name, player_name)
+                    next_label = next_path.name
+                sub_line = (
+                    ("ok", "subtitles", next_sub.name)
+                    if next_sub is not None
+                    else None
+                )
+                print_playback_header(next_label, sub_status=sub_line)
                 return next_index, next_path, next_size, next_sub, nxt, next_handle
 
             code = 1

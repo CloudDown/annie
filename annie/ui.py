@@ -65,6 +65,7 @@ def stylize(text: str, *codes: str) -> str:
 
 
 BUFFER_BAR_WIDTH = 24
+_PLAYBACK_TAG_WIDTH = 6
 
 
 def progress_bar(pct: int, width: int = BUFFER_BAR_WIDTH) -> str:
@@ -77,6 +78,22 @@ def _mib_label(current: int, total: int) -> str:
     return f"{current // 1024 // 1024}/{max(1, total) // 1024 // 1024} MiB"
 
 
+def _playback_tag(name: str, *, stream: Any = None) -> str:
+    return _s(f"{name:<{_PLAYBACK_TAG_WIDTH}}", C.MUTED, stream=stream)
+
+
+def _shorten_sub_detail(detail: str, *, limit: int = 72) -> str:
+    lower = detail.lower()
+    if "api key" in lower or "api_key" in lower or "key missing" in lower:
+        return (
+            "key missing — type settings · "
+            "https://www.opensubtitles.com/en/consumers"
+        )
+    if len(detail) <= limit:
+        return detail
+    return detail[: limit - 1] + "…"
+
+
 def format_buffer_lines(
     *,
     contiguous: int,
@@ -86,31 +103,62 @@ def format_buffer_lines(
     peer_hint: str,
     download_kib: float,
     extra_hint: str = "",
+    player: str | None = None,
+    seed: bool = False,
+    filename: str | None = None,
 ) -> str:
     cont_pct = min(100, contiguous * 100 // target_bytes) if target_bytes else 0
     file_pct = ready * 100 // file_size if file_size else 0
     bar_cont = stylize(progress_bar(cont_pct), C.GREEN)
     bar_file = stylize(progress_bar(file_pct), C.PALE_PINK)
-    rate_part = (
-        stylize(f"{download_kib:.0f} KiB/s", C.GREEN) if download_kib > 0 else ""
-    )
-    hint = stylize(extra_hint, C.MUTED) if extra_hint else ""
-    if rate_part:
-        meta = f"{stylize(peer_hint, C.MUTED)} · {rate_part}{hint}"
-    else:
-        meta = f"{stylize(peer_hint, C.MUTED)}{hint}"
+    meta_parts: list[str] = []
+    if player:
+        meta_parts.append(stylize(player, C.MUTED))
+    if seed:
+        meta_parts.append(stylize("seed", C.MUTED))
+    if filename:
+        cols, _ = _terminal_size()
+        limit = max(24, min(42, cols - 36))
+        name = filename if len(filename) <= limit else filename[: limit - 1] + "…"
+        meta_parts.append(name)
+    meta_parts.append(stylize(peer_hint, C.MUTED))
+    if download_kib > 0:
+        meta_parts.append(stylize(f"{download_kib:.0f} KiB/s", C.GREEN))
+    if extra_hint:
+        meta_parts.append(stylize(extra_hint.lstrip(" ·"), C.MUTED))
+    meta = " · ".join(meta_parts)
     lines = [
         (
-            f"{stylize('contig', C.MUTED)}  [{bar_cont}] {cont_pct:3d}%  "
+            f"{_playback_tag('buffer')}  [{bar_cont}] {cont_pct:3d}%  "
             f"{_mib_label(contiguous, target_bytes)}"
         ),
         (
-            f"{stylize('file', C.MUTED)}  [{bar_file}] {file_pct:3d}%  "
+            f"{_playback_tag('file')}  [{bar_file}] {file_pct:3d}%  "
             f"{_mib_label(ready, file_size)}"
         ),
         meta,
     ]
     return "\n".join(lines)
+
+
+def print_playback_header(
+    label: str,
+    *,
+    sub_status: tuple[str, str, str] | None = None,
+) -> None:
+    """Bloc fixe : titre + règle + ligne subs optionnelle."""
+    print(stylize(f"◆ {label}", C.YELLOW, C.BOLD), flush=True)
+    cols, _ = _terminal_size()
+    width = min(52, max(28, cols - 2))
+    print(stylize("─" * width, C.MUTED), flush=True)
+    if sub_status is None:
+        return
+    kind, _tag, detail = sub_status
+    tone = {"ok": C.CYAN, "warn": C.YELLOW, "err": C.RED}.get(kind, C.FG)
+    print(
+        f"{_playback_tag('subs')}  {stylize(_shorten_sub_detail(detail), tone)}",
+        flush=True,
+    )
 
 
 class BufferStatusDisplay:
@@ -479,13 +527,8 @@ def _clip(text: str, limit: int) -> str:
 
 
 def log_playback_start(filename: str, player: str) -> None:
-    cols, _ = _terminal_size()
-    name = _clip(filename, max(40, cols - 28))
-    line = (
-        f"{_annie_prefix()}{_s('playing', C.MUTED)}  "
-        f"{_s(name, C.FG)}  {_s(player, C.MUTED)}"
-    )
-    print(line, flush=True)
+    """Compat : meta désormais dans le bloc buffer ; no-op si header dashboard."""
+    del filename, player
 
 
 def _fzf_header(text: str) -> str:

@@ -145,9 +145,8 @@ def _catalog_error(exc: BaseException) -> None:
 
 
 def print_status_line(label: str, seeders: int, release_group: str | None) -> None:
-    del seeders, release_group
+    del label, seeders, release_group
     begin_playback_ui()
-    print(stylize(f"◆ {label}", C.YELLOW, C.BOLD), flush=True)
 
 
 def _find_section_for_item(
@@ -289,6 +288,7 @@ def play_item(
         on_ui_start=lambda: print_status_line(
             label, item.entry.seeders, item.parsed.release_group
         ),
+        ui_label=label,
         binge_items=binge_items,
         on_episode_done=on_episode_done,
         current_item=item,
@@ -536,6 +536,7 @@ def run_watch(
         subtitle_query=subtitle_query,
         listed_seeders=entry.seeders,
         on_ui_start=lambda: print_status_line(label, entry.seeders, parsed.release_group),
+        ui_label=label,
     )
 
 

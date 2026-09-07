@@ -140,14 +140,12 @@ def layout(rows: int, preview_n: int) -> tuple[int, int, int]:
 
 
 def select_row(text: str, width: int, *, selected: bool, index: int | None = None) -> str:
-    """Ligne sélectionnée en reverse vidéo (suit le thème). Numéro optionnel."""
-    num = f"{index} " if index is not None and 1 <= index <= 9 else "  "
+    """Ligne sélectionnée en reverse vidéo (suit le thème)."""
+    del index  # raccourcis 1-9 restent actifs ; plus d'indice affiché à gauche
     if selected:
         inner = max(1, width - 1)
-        return f"{SEL_BAR}▏{RESET}{SEL}{pad_visible(num + strip_ansi(text), inner)}{RESET}"
-    if index is not None and 1 <= index <= 9:
-        return f"{DIM}{index}{RESET} {pad_visible(text, max(1, width - 2))}"
-    return f"  {pad_visible(text, max(1, width - 2))}"
+        return f"{SEL_BAR}▏{RESET}{SEL}{pad_visible(strip_ansi(text), inner)}{RESET}"
+    return pad_visible(text, max(1, width))
 
 
 def fuzzy_score(query: str, text: str) -> int | None:

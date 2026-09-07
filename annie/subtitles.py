@@ -151,12 +151,9 @@ def _resolve_credentials() -> tuple[str, str]:
 
 
 def _opensubtitles_config_hint() -> str:
-    from annie.paths import config_dir
-
-    config_path = config_dir() / "config.toml"
     return (
-        "OpenSubtitles API key missing — add api_key under [subtitles] in "
-        f"{config_path} (free: https://www.opensubtitles.com/en/consumers)"
+        "OpenSubtitles key missing — type settings · "
+        "https://www.opensubtitles.com/en/consumers"
     )
 
 

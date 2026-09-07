@@ -127,11 +127,12 @@ class ChromeTests(unittest.TestCase):
         selected = select_row("Season 02", 40, selected=True)
         idle = select_row("Season 01", 40, selected=False)
         self.assertTrue(strip_ansi(selected).startswith("▏"))
-        self.assertTrue(strip_ansi(idle).startswith("  "))
+        self.assertTrue(strip_ansi(idle).startswith("Season 01"))
         self.assertEqual(len(strip_ansi(selected)), 40)
         self.assertEqual(len(strip_ansi(idle)), 40)
         numbered = select_row("Season 02", 40, selected=False, index=2)
-        self.assertTrue(strip_ansi(numbered).startswith("2 "))
+        self.assertTrue(strip_ansi(numbered).startswith("Season 02"))
+        self.assertNotIn("2 ", strip_ansi(numbered)[:3])
         self.assertIn("\033[7m", selected)  # reverse = thème terminal
 
     def test_uses_ansi16_not_truecolor(self) -> None:

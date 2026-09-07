@@ -29,14 +29,13 @@ from tests.helpers import FIXTURES_DIR, result_item
 
 
 class OpenSubtitlesConfigHintTests(unittest.TestCase):
-    def test_hint_uses_platform_config_path(self) -> None:
-        from annie.paths import config_dir
+    def test_hint_points_to_settings_and_opensubtitles(self) -> None:
         from annie.subtitles import _opensubtitles_config_hint
 
         hint = _opensubtitles_config_hint()
-        self.assertIn(str(config_dir() / "config.toml"), hint)
-        self.assertIn("[subtitles]", hint)
-        self.assertNotIn("~/.config/annie", hint)
+        self.assertIn("settings", hint)
+        self.assertIn("https://www.opensubtitles.com/en/consumers", hint)
+        self.assertNotIn("config.toml", hint)
 
 
 class SubtitleLanguageTests(unittest.TestCase):

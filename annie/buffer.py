@@ -345,6 +345,8 @@ def wait_startable(
     file_size: int,
     *,
     listed_seeders: int | None = None,
+    player: str | None = None,
+    seed: bool = False,
 ) -> tuple[int, str]:
     """Wait until the file is startable or timeout. Returns (ready_bytes, mode)."""
     buf = _buffer_cfg()
@@ -436,6 +438,9 @@ def wait_startable(
                     peer_hint=peer_hint,
                     download_kib=status.download_rate / 1024,
                     extra_hint=probe_hint,
+                    player=player,
+                    seed=seed,
+                    filename=target.name,
                 )
             )
 
