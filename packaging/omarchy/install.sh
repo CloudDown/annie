@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wire Annie into Omarchy like a stock TUI (btop, Docker): PATH, app launcher,
-# Super+Shift+A, menu search, floating window.
+# Super+Shift+I, menu search, floating window.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -71,14 +71,32 @@ fi
 gtk-update-icon-cache "$ICON_BASE" &>/dev/null || true
 update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
 
-# Super+Shift+A is ChatGPT in Omarchy preinstalls — Annie takes the letter.
-if [[ -f "$BINDINGS" ]] && ! grep -q 'org.omarchy.annie\|"Annie"' "$BINDINGS"; then
-  cat >>"$BINDINGS" <<'EOF'
+# Super+Shift+A is ChatGPT — Annie uses Super+Shift+I (free).
+if [[ -f "$BINDINGS" ]]; then
+  python3 - "$BINDINGS" <<'PY'
+from pathlib import Path
+import re
+import sys
 
--- Annie — was ChatGPT (still in Apps menu / Super+Shift+Alt+A = Grok)
-hl.unbind("SUPER + SHIFT + A")
-o.bind("SUPER + SHIFT + A", "Annie", { tui = "annie", focus = true })
-EOF
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+text = re.sub(
+    r"\n-- Annie[^\n]*\n"
+    r"(?:hl\.unbind\(\"SUPER \+ SHIFT \+ A\"\)\n)?"
+    r"o\.bind\(\"SUPER \+ SHIFT \+ [AI]\", \"Annie\"[^\n]*\n",
+    "\n",
+    text,
+)
+if 'tui = "annie"' not in text:
+    text = text.rstrip() + """
+
+-- Annie (Super+Shift+A stays ChatGPT)
+o.bind("SUPER + SHIFT + I", "Annie", { tui = "annie", focus = true })
+"""
+    if not text.endswith("\n"):
+        text += "\n"
+path.write_text(text, encoding="utf-8")
+PY
 fi
 
 if [[ -f "$HYPRLAND" ]] && ! grep -q 'org.omarchy.annie' "$HYPRLAND"; then
@@ -127,7 +145,7 @@ if command -v hyprctl >/dev/null 2>&1; then
 fi
 
 printf '%s\n' "Annie is on Omarchy:"
-printf '%s\n' "  Super+Shift+A     launch / focus"
+printf '%s\n' "  Super+Shift+I     launch / focus"
 printf '%s\n' "  Super+Space       type annie / anime"
 printf '%s\n' "  Super+Alt+Space   Apps → Annie"
-printf '%s\n' "  Note: Super+Shift+A was ChatGPT (unbind). Grok is still Super+Shift+Alt+A."
+printf '%s\n' "  Super+Shift+A stays ChatGPT."

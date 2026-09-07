@@ -6,7 +6,7 @@ ANNIE := ./bin/annie.py
 help:
 	@echo "Targets:"
 	@echo "  make install      uv sync + config.toml + ~/.local/bin/annie"
-	@echo "  make omarchy      native Omarchy launcher, menu, Super+Shift+A"
+	@echo "  make omarchy      native Omarchy launcher, menu, Super+Shift+I"
 	@echo "  make dev          alias for install"
 	@echo "  make run          launch interactive CLI"
 	@echo "  make test         suite unitaire (offline)"

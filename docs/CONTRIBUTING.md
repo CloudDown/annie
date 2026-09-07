@@ -10,7 +10,7 @@ Prérequis : [uv](https://docs.astral.sh/uv/), Python **3.11+** (géré par uv),
 git clone https://github.com/CloudDown/annie.git
 cd annie
 make install   # uv sync + ~/.local/bin/annie + config.toml
-make omarchy   # Omarchy : Super+Shift+A
+make omarchy   # Omarchy : Super+Shift+I
 ```
 
 <details>
@@ -32,7 +32,7 @@ make test           # suite unitaire offline
 make test-offline   # régressions fixtures (sans réseau)
 make debug-rezero   # régression catalogue Re:Zero
 make smoke          # Tanya / Re:Zero / film Konosuba (offline)
-make omarchy        # lanceur Omarchy + Super+Shift+A (si Omarchy)
+make omarchy        # lanceur Omarchy + Super+Shift+I (si Omarchy)
 make clean          # supprime venv & artefacts
 ```
 

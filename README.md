@@ -40,7 +40,7 @@ Or from a clone: `make omarchy`
 
 | | |
 |---|---|
-| **Super+Shift+A** | Open / focus Annie |
+| **Super+Shift+I** | Open / focus Annie |
 | **Super+Space** | Search `annie` / `anime` |
 | Terminal | `annie` |
 

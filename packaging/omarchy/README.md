@@ -10,11 +10,11 @@ Same wiring as stock TUIs (`btop`, Docker): `xdg-terminal-exec --app-id=org.omar
 
 | Surface | Behavior |
 |---------|----------|
-| `Super+Shift+A` | launch / focus |
+| `Super+Shift+I` | launch / focus |
 | App launcher | `Annie.desktop` |
 | Omarchy menu | search `annie` / `anime` |
 | Window | float 1100×720 |
 
-`Super+Shift+A` replaces ChatGPT. Grok stays on `Super+Shift+Alt+A`.
+`Super+Shift+A` stays ChatGPT.
 
 Do not copy files into `/usr/share/omarchy/`.
