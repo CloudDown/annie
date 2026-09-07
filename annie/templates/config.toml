@@ -1,0 +1,110 @@
+# Annie config — ~/.config/annie/config.toml
+# Flat keys (player, category, filter…) remain supported for compatibility.
+
+[player]
+# auto | mpv | absolute path to mpv
+command = "auto"
+
+[player.mpv]
+cache_secs = 30
+hwdec = "auto-safe"          # auto | auto-safe | no
+vo = "gpu"
+gpu_api = "opengl"          # opengl | vulkan
+really_quiet = true
+force_window = true
+extra_args = []              # e.g. ["--fs"]
+
+[nyaa]
+category = "0_0"           # Nyaa category filter (0_0 = anime)
+filter = "0"               # 0 = all torrents
+search_pages = 2           # HTML pages per search
+parallel = 10              # parallel Nyaa requests (catalog)
+rate = 6.0                 # max requests/s to nyaa.si
+rate_burst = 8
+cache_ttl_minutes = 45
+sort = "seeders"           # seeders | size | date | downloads
+order = "desc"             # asc | desc
+timeout = 30.0             # HTTP timeout (seconds)
+retries = 4
+
+[mal]
+enabled = true             # Jikan/MAL (fallback or provider=mal)
+parallel = 10
+cache_ttl_hours = 168      # Jikan cache (7 days)
+
+[metadata]
+# auto = AniList + AllAnime · anilist = AniList graph · mal = MAL/Jikan · off = Nyaa only
+# Top-level shortcut: metadata = "off"
+mode = "auto"
+provider = "anilist"       # override: anilist | mal
+structure = "allanime"     # override: allanime | franchise
+enabled = true             # false = Nyaa only
+fallback_mal = true        # if AniList fails → MAL/Jikan
+confirm_ambiguous = true   # TUI "which anime?" when scores are close
+parallel = 8
+cache_ttl_hours = 168
+
+[catalog]
+skip_recap_movies = false
+fill_gaps_on_search = false  # fill missing episodes after search
+search_results_limit = 8     # default for `annie search -l`
+franchise_max_queries = 20
+primary_search_pages = 2
+franchise_search_pages = 2
+gap_search_pages = 1
+gap_max_missing = 6
+gap_max_queries = 10
+preferred_groups = []        # e.g. ["Erai-raws", "SubsPlease"]
+preferred_group_bonus = 10   # quality points added for these groups
+preferred_resolution = "auto"  # auto | 720p | 1080p | 2160p
+min_seeders_strict = 10
+min_seeders_relaxed = 3
+min_quality_strict = 26      # ~720p
+min_quality_relaxed = 12     # ~480p
+coverage_relaxed = 0.85
+prefer_season_batch = true
+season_batch_min_coverage = 0.85
+coherence_min_share = 0.60
+
+[subtitles]
+enabled = true
+default_lang = ""            # e.g. "en" — skips language menu when set
+fetch_timeout = 20.0
+api_key = ""                 # https://www.opensubtitles.com/en/consumers
+username = ""
+password = ""
+
+[ui]
+seeders_highlight = 50       # green threshold in `annie search`
+show_banner = true
+mal_pool_workers = 16        # MAL parallelism + Nyaa warmup
+show_download_progress = true  # terminal bars during mpv playback
+
+[streaming]
+# Share the current episode while watching (unlimited upload on the playing file).
+seed_while_watching = true
+# Upload limit outside seed mode (KiB/s). 0 = unlimited.
+upload_limit_kib = 512
+
+[buffer]
+# If artifacts / skips at episode start: raise mkv_start_mib / stream_margin_mib.
+max_wait_sec = 25.0          # ideal buffer wait
+no_peers_sec = 45.0          # timeout if no peers connected
+absolute_sec = 90.0          # hard timeout before giving up
+mkv_start_mib = 80           # contiguous MiB required to start an MKV
+mkv_head_mib = 96            # download priority for file head
+stream_margin_mib = 64       # playback / download margin (mpv pause)
+mpv_retry_sec = 15.0         # retry if mpv fails at start
+mkv_playable_wait_sec = 8.0
+
+[torrent]
+metadata_timeout = 60.0
+connections_limit = 300
+active_downloads = 1
+active_limit = 4
+unchoke_slots = 12
+unchoke_slots_seeding = 20
+enable_dht = true
+enable_lsd = true
+enable_upnp = true
+enable_natpmp = true

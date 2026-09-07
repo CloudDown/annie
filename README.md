@@ -1,49 +1,84 @@
+<div align="center">
+
+<pre>
+⣿⠛⠛⠛⠛⠻⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠛⢛⣿⠋⢀⡾⠃⠀⠀⠀⠀⢀⣤⣤⠤⠤⣤⣤⣀⣀⣀⣠⠶⡶⣤⣀⣠⠾⡷⣦⣀⣤⣤⡤⠤⠦⢤⣤⣄⡀⠀⢠⡶⢶⡄⠀⠀
+⢠⡟⠁⣴⣿⢤⡄⣴⢶⠶⡆⠈⢷⡀⠀⠀⠀⠀⢀⣭⣫⠵⠥⠽⣄⣝⠵⢍⣘⣄⠳⣤⣀⠀⠀⢀⡤⠊⣽⠁⠀⠸⣇⠀⢿⠀⠀
+⠸⢷⣴⣤⡤⠾⠇⣽⠋⠼⣷⠀⠈⢷⡄⢀⣤⡶⠋⠀⣀⡄⠤⠀⡲⡆⠀⠀⠈⠙⡄⠘⢮⢳⡴⠯⣀⢠⡏⠀⠀⠀⢻⠀⢸⠇⠀
+⠀⠀⠀⠀⠀⠀⠀⠙⠛⠋⠉⢀⣴⠟⠉⢯⡞⡠⢲⠉⣼⠀⠀⡰⠁⡇⢀⢷⠀⣄⢵⠀⠈⡟⢄⠀⠀⠙⢷⣤⣤⣤⡿⢢⡿⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠟⠑⠊⠁⡼⣌⢠⢿⢸⢸⡀⢰⠁⡸⡇⡸⣸⢰⢈⠘⡄⠀⢸⠀⢣⡀⠀⠈⢮⢢⣏⣤⡾⠃⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣯⣴⠞⡠⣼⠁⡘⣾⠏⣿⢇⣳⣸⣞⣀⢱⣧⣋⣞⡜⢳⡇⠀⢸⠀⢆⢧⠀⠰⣄⢏⢧⣾⠁⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢹⡏⢰⠁⡻⠀⡟⡏⠉⠀⣀⠀⠀⠀⠀⣀⠁⠀⠉⠛⢽⠇⠀⣼⡆⠈⡆⠃⠀⡏⠻⣾⣽⣇⡀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠁⡇⠀⡇⡄⣿⠷⠿⠿⠛⠀⠀⠀⠀⠛⠻⠿⠿⠿⡜⢀⡴⡟⢸⣸⡼⠀⠀⡇⠀⡞⡆⢻⠙⢦⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡶⢀⣼⣿⣬⣽⠧⠬⠇⠀⠀⠀⠀⠀⠀⢞⣯⣭⢺⣔⣪⣾⣤⠺⡇⢳⠀⢠⣧⡾⠛⠛⠻⠶⠞⠁
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠷⢿⠟⠉⡀⠈⢦⡀⠀⠀⣠⠖⠒⠒⢤⡀⠀⢀⡼⠿⢇⡣⢬⣶⠷⢿⣤⡾⠁⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠷⠾⠷⠖⠛⠛⠲⠶⠿⠤⣤⠤⠤⢷⣶⠋⠀⠀⠀⣱⠞⠁⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠓⠒⠚⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+</pre>
+
 # Annie
 
-CLI to search [Nyaa.si](https://nyaa.si), sort anime torrents, pick releases with **fzf**, and stream via **libtorrent** + **mpv** / **vlc** / **ffplay**.
+**Anime from the terminal — search, pick, stream in mpv.**
 
-## Requirements
+</div>
 
-- Python 3.11+
-- [fzf](https://github.com/junegunn/fzf) (interactive mode)
-- mpv, vlc, or ffplay
-- libtorrent Python bindings (installed automatically)
+Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. Catalog via AniList / AllAnime. Optional [OpenSubtitles](https://www.opensubtitles.com).
 
-## Setup
+> Personal tool — follow copyright law in your country.
+
+---
+
+## Install
+
+### Omarchy
 
 ```bash
-make install
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/master/install-omarchy.sh | bash
+```
+
+Or from a clone: `make omarchy`
+
+| | |
+|---|---|
+| **Super+Shift+A** | Open / focus Annie |
+| **Super+Space** | Search `annie` / `anime` |
+| Terminal | `annie` |
+
+### Arch / source
+
+```bash
+yay -S annie                  # AUR
 # or
-python3 -m venv .venv
-.venv/bin/pip install -e .
+git clone https://github.com/CloudDown/annie.git
+cd annie && make install      # needs uv + mpv
 ```
 
-## Usage
+---
 
-```bash
-./annie.py                  # interactive
-annie search "frieren" -l 5
-annie watch "frieren" -s 2 -e 6
-frieren s2e10               # shortcut in interactive mode
-```
+## Use
 
-Config (optional): `~/.config/annie/config.toml`
+Type a title in **English** or **romaji** (`frieren`, `made in abyss`).
 
-See also `AGENTS.md` for architecture and agent conventions.
+1. Season → episode → optional subtitles  
+2. mpv opens while the torrent downloads  
+3. Quit mpv with **q** · leave Annie with Ctrl+C  
 
-```toml
-player = "mpv"
-skip_recap_movies = false
-```
+Shortcuts at the prompt: `help` · `settings`
 
-## Project layout
+| You type | Result |
+|----------|--------|
+| `frieren s2` | Season 2 |
+| `frieren s2e6` | Episode + subtitles |
+| `frieren movie` | Movies |
 
-```
-annie.py          launcher (auto-uses .venv)
-annie/
-  cli.py          commands + interactive loop
-  media.py        parse, rank, catalog
-  nyaa.py         Nyaa client
-  stream.py       libtorrent + players
-  ui.py           fzf + terminal UI
-```
+TUI: **↑↓** · filter · **Enter** · **Esc** back.
+
+---
+
+## Settings
+
+Everything is configured inside Annie — type **`settings`** at the prompt:
+
+- player · subtitles (OpenSubtitles key) · resolution · preferred groups · metadata
+
+No need to edit config files by hand.

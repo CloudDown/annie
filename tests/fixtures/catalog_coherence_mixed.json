@@ -1,0 +1,36 @@
+{
+  "query": "re zero",
+  "description": "Mix batch + singles — outlier magnet sur E08",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 25, "label": "Season 01"}
+  ],
+  "expectations": {
+    "1": {"must_have": [8, 15]}
+  },
+  "coherence_before": {
+    "outlier_episodes": [8],
+    "outlier_reasons": ["magnet"]
+  },
+  "coherence_after": {
+    "outlier_episodes": [],
+    "ep8_must_contain": "SubsPlease",
+    "ep8_must_not_contain": ["EvilRips"]
+  },
+  "entries": [
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu (01-25) (1080p) [Batch]",
+      "seeders": 102,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 15 (1080p) [BBBBBBBB].mkv",
+      "seeders": 80,
+      "magnet": "magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "title": "[EvilRips] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [STOLEN].mkv",
+      "seeders": 200,
+      "magnet": "magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}

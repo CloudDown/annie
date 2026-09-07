@@ -1,0 +1,84 @@
+# Maintainer: CloudDown <noreply@github.com>
+pkgname=annie
+pkgver=0.5.0
+pkgrel=1
+pkgdesc="Anime torrent CLI — Nyaa, MAL catalog, TUI, libtorrent streaming"
+arch=('any')
+url="https://github.com/CloudDown/annie"
+license=('MIT')
+depends=(
+  'python'
+  'python-libtorrent'
+)
+optdepends=(
+  'mpv: video player'
+)
+makedepends=(
+  'python-build'
+  'python-installer'
+  'python-setuptools'
+  'python-wheel'
+)
+checkdepends=(
+  'python-libtorrent'
+)
+# For AUR: replace with
+# source=("git+https://github.com/CloudDown/annie.git?signed#commit=COMMIT")
+# sha256sums=('SKIP')
+source=()
+sha256sums=()
+
+pkgver() {
+  cd annie
+  sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml
+}
+
+prepare() {
+  if [[ -f "${srcdir}/annie/pyproject.toml" ]]; then
+    return 0
+  fi
+  local repo_root
+  repo_root="$(realpath "${startdir}/../.." 2>/dev/null || true)"
+  if [[ -f "${repo_root}/pyproject.toml" ]]; then
+    mkdir -p "${srcdir}/annie"
+    rsync -a \
+      --exclude '.venv' \
+      --exclude '.git' \
+      --exclude 'packaging/aur/pkg' \
+      --exclude 'packaging/aur/src' \
+      --exclude '__pycache__' \
+      "${repo_root}/" "${srcdir}/annie/"
+    return 0
+  fi
+  printf '%s\n' "Missing source: build from the git repo or set source= in PKGBUILD" >&2
+  return 1
+}
+
+build() {
+  cd annie
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd annie
+  python -m unittest discover -s tests -q
+}
+
+package() {
+  cd annie
+  PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 pip install \
+    --root="${pkgdir}" \
+    --prefix=/usr \
+    --no-deps \
+    --no-compile \
+    dist/*.whl
+  find "${pkgdir}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+  rm -f "${pkgdir}/usr/lib/python"*/site-packages/annie-*.dist-info/direct_url.json
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 packaging/omarchy/annie.desktop \
+    "${pkgdir}/usr/share/applications/annie.desktop"
+  install -Dm644 packaging/omarchy/annie.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/annie.svg"
+  install -Dm644 packaging/omarchy/annie.png \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/annie.png"
+}

@@ -1,0 +1,35 @@
+{
+  "query": "re zero",
+  "description": "Cas de régression Re:Zero — catalogue offline sans réseau",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 25, "label": "Season 01"},
+    {"mal_id": 2, "season": 2, "episode_count": 25, "label": "Season 02"},
+    {"mal_id": 3, "season": 3, "episode_count": 16, "label": "Season 03"},
+    {"mal_id": 4, "season": 4, "episode_count": 19, "label": "Season 04"}
+  ],
+  "expectations": {
+    "1": {"min_episodes": 10, "must_have": [1, 8, 15, 25], "must_not_have": [26, 42]},
+    "2": {"min_episodes": 5, "must_have": [1, 5, 15], "must_not_have": []},
+    "3": {"min_episodes": 1, "must_have": [8], "must_not_have": []},
+    "4": {"min_episodes": 3, "must_have": [1, 5, 11], "must_not_have": [12, 25, 42]}
+  },
+  "reject_spinoffs": ["PETIT"],
+  "entries": [
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 01 (1080p) [11111111].mkv",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [22222222].mkv",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 15 (1080p) [33333333].mkv",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 25 (1080p) [44444444].mkv",
+    "[HorribleSubs] Re Zero kara Hajimeru Isekai Seikatsu - 15 [1080p].mkv",
+    "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season - 05 [1080p]",
+    "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]",
+    "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season - 08 [1080p]",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 42 (720p).mkv",
+    "[Pn8] Re:PETIT -Starting Life in Another World From PETIT- S01E14",
+    "[LostYears] Re: ZERO - S03E08 (CR WEB-DL) | Re: Zero Kara Hajimeru Isekai Seikatsu Season 3 - 08",
+    "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season - 15 [1080p]",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 67 (1080p) [55555555].mkv",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 71 (1080p) [66666666].mkv",
+    "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 77 (1080p) [77777777].mkv",
+    "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 4th Season - 05 [1080p]"
+  ]
+}
