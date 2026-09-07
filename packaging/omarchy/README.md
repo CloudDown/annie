@@ -1,7 +1,7 @@
 # Annie on Omarchy
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/master/install-omarchy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
 ```
 
 Already in the repo: `make omarchy`.

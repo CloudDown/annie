@@ -16,7 +16,7 @@ paru -S annie
 The package ships the CLI + an Omarchy-style `.desktop`. Full desktop wiring (Super+Shift+A):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/master/install-omarchy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
 ```
 
 ## Local build from the repo

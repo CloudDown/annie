@@ -33,7 +33,7 @@ Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. 
 ### Omarchy
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/master/install-omarchy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
 ```
 
 Or from a clone: `make omarchy`
