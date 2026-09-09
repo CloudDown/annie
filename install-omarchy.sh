@@ -3,24 +3,30 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
 #
+# Layout (XDG):
+#   app     ~/.local/share/annie
+#   binary  ~/.local/bin/annie
+#   config  ~/.config/annie
+#
 # Optional: ANNIE_DIR=/path ANNIE_BRANCH=master bash …
 set -euo pipefail
 
 REPO="https://github.com/CloudDown/annie.git"
 # Feature branch until this lands on master (raw …/master/… is 404 today).
 BRANCH="${ANNIE_BRANCH:-cursor/initial-release}"
+DEFAULT_DEST="${XDG_DATA_HOME:-$HOME/.local/share}/annie"
 
-if [[ -f Makefile && -f packaging/omarchy/install.sh ]]; then
-  DEST="$(pwd)"
-elif [[ -n "${ANNIE_DIR:-}" ]]; then
+if [[ -n "${ANNIE_DIR:-}" ]]; then
   DEST="$ANNIE_DIR"
-elif [[ -d "$HOME/projet/annie/.git" ]]; then
-  DEST="$HOME/projet/annie"
+elif [[ -f Makefile && -f packaging/omarchy/install.sh ]]; then
+  # Already in a checkout: install from here (dev / existing clone).
+  DEST="$(pwd)"
 else
-  DEST="$HOME/annie"
+  DEST="$DEFAULT_DEST"
 fi
 
 if [[ ! -f "$DEST/Makefile" ]]; then
+  mkdir -p "$(dirname "$DEST")"
   git clone --branch "$BRANCH" --single-branch "$REPO" "$DEST"
 elif [[ -d "$DEST/.git" ]]; then
   git -C "$DEST" fetch --quiet origin "$BRANCH" || true

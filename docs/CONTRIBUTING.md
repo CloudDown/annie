@@ -9,9 +9,11 @@ Prérequis : [uv](https://docs.astral.sh/uv/), Python **3.11+** (géré par uv),
 ```bash
 git clone https://github.com/CloudDown/annie.git
 cd annie
-make install   # uv sync + ~/.local/bin/annie + config.toml
+make install   # uv sync + ~/.local/bin/annie + ~/.config/annie
 make omarchy   # Omarchy : Super+Shift+I
 ```
+
+Le one-shot Omarchy (`install-omarchy.sh`) clone dans `~/.local/share/annie` (sauf si tu es déjà dans un checkout, ou `ANNIE_DIR=`).
 
 <details>
 <summary>Installation manuelle (sans make)</summary>

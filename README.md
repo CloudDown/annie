@@ -36,6 +36,8 @@ Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. 
 curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
 ```
 
+Installs to `~/.local/share/annie`, puts `annie` on `~/.local/bin`, config in `~/.config/annie`.
+
 Or from a clone: `make omarchy`
 
 | | |

@@ -6,6 +6,16 @@ curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-rele
 
 Already in the repo: `make omarchy`.
 
+Install layout (XDG):
+
+| Path | Role |
+|------|------|
+| `~/.local/share/annie` | app (clone + `.venv`) |
+| `~/.local/bin/annie` | command on PATH |
+| `~/.config/annie` | `config.toml` |
+
+Override the app dir with `ANNIE_DIR=/path`.
+
 Same wiring as stock TUIs (`btop`, Docker): `xdg-terminal-exec --app-id=org.omarchy.annie`.
 
 | Surface | Behavior |
