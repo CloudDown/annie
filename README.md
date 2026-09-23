@@ -26,6 +26,10 @@ Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. 
 
 > Personal tool — follow copyright law in your country.
 
+<p align="center">
+  <img src="docs/screenshots/prompt.png" alt="Annie prompt" width="720" />
+</p>
+
 ---
 
 ## Install
@@ -75,6 +79,16 @@ Shortcuts at the prompt: `help` · `settings`
 
 TUI: **↑↓** · filter · **Enter** · **Esc** back.
 
+<p align="center">
+  <img src="docs/screenshots/seasons.png" alt="Season picker" width="720" />
+  <br />
+  <img src="docs/screenshots/episodes.png" alt="Episode picker" width="720" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/playback.png" alt="Playback buffer" width="720" />
+</p>
+
 ---
 
 ## Settings
@@ -84,3 +98,7 @@ Everything is configured inside Annie — type **`settings`** at the prompt:
 - player · subtitles (OpenSubtitles key) · resolution · preferred groups · metadata
 
 No need to edit config files by hand.
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" alt="Settings screen" width="720" />
+</p>

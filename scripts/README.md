@@ -10,6 +10,7 @@ Tools to diagnose parsing, catalog, and matching **without launching mpv**.
 | `debug_catalog.py` | Optional | Offline Re:Zero fixture or live `gather_catalog` |
 | `debug_parse.py` / `debug_match.py` | No | Title parse / torrent filename match |
 | `debug_subtitles.py` | Optional | OpenSubtitles title variants |
+| `render_readme_shots.py` | No | PNG screenshots for the README (`docs/screenshots/`) |
 
 ```bash
 make test
