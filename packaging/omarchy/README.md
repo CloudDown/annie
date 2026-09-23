@@ -1,10 +1,10 @@
 # Annie on Omarchy
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install.sh | bash
 ```
 
-Already in the repo: `make omarchy`.
+On Omarchy this wires the desktop (Super+Shift+I). Already in the repo: `make omarchy`.
 
 Install layout (XDG):
 

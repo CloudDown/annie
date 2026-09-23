@@ -16,8 +16,10 @@ paru -S annie
 The package ships the CLI + an Omarchy-style `.desktop`. Full desktop wiring (Super+Shift+I):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install.sh | bash
 ```
+
+Until the AUR package is published, that curl installer installs from source (`uv`) on Arch.
 
 ## Local build from the repo
 

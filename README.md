@@ -34,30 +34,26 @@ Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. 
 
 ## Install
 
-### Omarchy
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install-omarchy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install.sh | bash
 ```
 
-Installs to `~/.local/share/annie`, puts `annie` on `~/.local/bin`, config in `~/.config/annie`.
+Detects the host and installs accordingly:
 
-Or from a clone: `make omarchy`
+| System | What it does |
+|--------|----------------|
+| **Omarchy** | `uv` + `mpv`, app in `~/.local/share/annie`, **Super+Shift+I** |
+| **Arch / others** | Same XDG layout via source (`uv`) — no AUR package required |
+
+`annie` → `~/.local/bin` · config → `~/.config/annie`
+
+From a clone: `make install` · on Omarchy: `make omarchy`
 
 | | |
 |---|---|
-| **Super+Shift+I** | Open / focus Annie |
+| **Super+Shift+I** | Open / focus (Omarchy) |
 | **Super+Space** | Search `annie` / `anime` |
 | Terminal | `annie` |
-
-### Arch / source
-
-```bash
-yay -S annie                  # AUR
-# or
-git clone https://github.com/CloudDown/annie.git
-cd annie && make install      # needs uv + mpv
-```
 
 ---
 

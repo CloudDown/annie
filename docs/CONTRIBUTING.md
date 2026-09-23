@@ -13,7 +13,7 @@ make install   # uv sync + ~/.local/bin/annie + ~/.config/annie
 make omarchy   # Omarchy : Super+Shift+I
 ```
 
-Le one-shot Omarchy (`install-omarchy.sh`) clone dans `~/.local/share/annie` (sauf si tu es déjà dans un checkout, ou `ANNIE_DIR=`).
+Le one-shot (`install.sh`) détecte Omarchy / Arch / autre, clone dans `~/.local/share/annie` (sauf checkout local ou `ANNIE_DIR=`), et branche `make omarchy` ou `make install`.
 
 <details>
 <summary>Installation manuelle (sans make)</summary>
