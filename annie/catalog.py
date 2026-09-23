@@ -1576,7 +1576,11 @@ def _safe_search(
     pages: int | None = None,
 ) -> list[NyaaEntry]:
     try:
-        kwargs: dict = {"category": category, "filter_code": filter_code}
+        kwargs: dict = {
+            "category": category,
+            "filter_code": filter_code,
+            "exhaustive": False,
+        }
         if pages is not None:
             kwargs["pages"] = pages
         return search(query, **kwargs)

@@ -46,6 +46,13 @@ def _metadata_mode_defaults(mode: str) -> tuple[bool, str, str]:
     return True, "anilist", "allanime"
 
 
+def _listen_port(value: object) -> int:
+    port = toml_util.int_val(value, 55113)
+    if port < 0 or port > 65535:
+        return 55113
+    return port
+
+
 def _norm_resolution(value: str) -> str:
     raw = (value or "auto").lower()
     if raw not in {"auto", "720p", "1080p", "2160p"}:
@@ -156,6 +163,9 @@ class TorrentConfig:
     enable_lsd: bool = True
     enable_upnp: bool = True
     enable_natpmp: bool = True
+    # Port fixe : UPnP et les peers de retour survivent au redémarrage. 0 = défaut libtorrent.
+    listen_port: int = 55113
+    connection_speed: int = 150
 
 
 @dataclass
@@ -491,6 +501,10 @@ class AnnieConfig:
             enable_lsd=toml_util.bool_val(torrent_table.get("enable_lsd"), True),
             enable_upnp=toml_util.bool_val(torrent_table.get("enable_upnp"), True),
             enable_natpmp=toml_util.bool_val(torrent_table.get("enable_natpmp"), True),
+            listen_port=_listen_port(torrent_table.get("listen_port")),
+            connection_speed=max(
+                1, toml_util.int_val(torrent_table.get("connection_speed"), 150)
+            ),
         )
         mpv = MpvConfig(
             cache_secs=toml_util.int_val(mpv_table.get("cache_secs"), 30),

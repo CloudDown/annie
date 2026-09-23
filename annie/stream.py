@@ -96,33 +96,113 @@ def _upload_limit_bytes() -> int:
     return 0 if limit_kib <= 0 else limit_kib * 1024
 
 
-def make_session(*, seed_while_watching: bool = False) -> lt.session:
+def _listen_interfaces(port: int) -> str | None:
+    if port <= 0 or port > 65535:
+        return None
+    return f"0.0.0.0:{port},[::]:{port}"
+
+
+def _session_settings(*, seed_while_watching: bool) -> dict:
     torrent = _config().torrent
-    session = lt.session()
     upload_limit = 0 if seed_while_watching else _upload_limit_bytes()
+    settings = {
+        "active_downloads": max(1, torrent.active_downloads),
+        "active_seeds": 1 if seed_while_watching else 0,
+        "active_limit": torrent.active_limit,
+        "connections_limit": torrent.connections_limit,
+        "unchoke_slots_limit": (
+            torrent.unchoke_slots_seeding
+            if seed_while_watching
+            else torrent.unchoke_slots
+        ),
+        "allow_multiple_connections_per_ip": True,
+        "enable_dht": torrent.enable_dht,
+        "enable_lsd": torrent.enable_lsd,
+        "enable_upnp": torrent.enable_upnp,
+        "enable_natpmp": torrent.enable_natpmp,
+        "download_rate_limit": 0,
+        "upload_rate_limit": upload_limit,
+        "connection_speed": max(1, torrent.connection_speed),
+        "announce_to_all_trackers": True,
+        "announce_to_all_tiers": True,
+    }
+    listen = _listen_interfaces(torrent.listen_port)
+    if listen is not None:
+        settings["listen_interfaces"] = listen
+    return settings
+
+
+def _dht_state_path() -> Path:
+    return CACHE_DIR / "session" / "dht_state"
+
+
+def _load_dht_state(session: lt.session) -> None:
+    path = _dht_state_path()
+    if not path.is_file():
+        return
+    try:
+        data = lt.bdecode(path.read_bytes())
+    except Exception:
+        return
+    if not isinstance(data, dict) or not data:
+        return
+    try:
+        session.load_state(data)
+    except Exception:
+        pass
+
+
+def _save_dht_state(session: lt.session) -> None:
+    try:
+        flags = lt.save_state_flags_t.save_dht_state
+        data = session.save_state(flags)
+    except Exception:
+        return
+    if not isinstance(data, dict) or not data:
+        return
+    path = _dht_state_path()
+    try:
+        ensure_directory(path.parent)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(lt.bencode(data))
+        tmp.replace(path)
+    except Exception:
+        pass
+
+
+def _active_download_target(configured: int, torrent_count: int) -> int:
+    """Un seul torrent reste au réglage. Le prefetch ouvre un second slot."""
+    base = max(1, configured)
+    if torrent_count <= 1:
+        return base
+    return max(base, torrent_count)
+
+
+def _apply_active_downloads(session: lt.session, torrent_count: int) -> None:
+    torrent = _config().torrent
+    downloads = _active_download_target(torrent.active_downloads, torrent_count)
     try:
         session.apply_settings(
             {
-                "active_downloads": torrent.active_downloads,
-                "active_seeds": 1 if seed_while_watching else 0,
-                "active_limit": torrent.active_limit,
-                "connections_limit": torrent.connections_limit,
-                "unchoke_slots_limit": (
-                    torrent.unchoke_slots_seeding
-                    if seed_while_watching
-                    else torrent.unchoke_slots
-                ),
-                "allow_multiple_connections_per_ip": True,
-                "enable_dht": torrent.enable_dht,
-                "enable_lsd": torrent.enable_lsd,
-                "enable_upnp": torrent.enable_upnp,
-                "enable_natpmp": torrent.enable_natpmp,
-                "download_rate_limit": 0,
-                "upload_rate_limit": upload_limit,
+                "active_downloads": downloads,
+                "active_limit": max(torrent.active_limit, downloads),
             }
         )
     except Exception:
         pass
+
+
+def make_session(*, seed_while_watching: bool = False) -> lt.session:
+    settings = _session_settings(seed_while_watching=seed_while_watching)
+    try:
+        session = lt.session(settings)
+    except Exception:
+        session = lt.session()
+        try:
+            session.apply_settings(settings)
+        except Exception:
+            pass
+    _load_dht_state(session)
     return session
 
 
@@ -368,7 +448,11 @@ def load_torrent_info(source: str) -> lt.torrent_info:
         try:
             return wait_metadata(handle)
         finally:
-            session.remove_torrent(handle)
+            _save_dht_state(session)
+            try:
+                session.remove_torrent(handle)
+            except Exception:
+                pass
     path = Path(source).expanduser().resolve()
     if not path.is_file():
         die(f"file not found: {path}")
@@ -677,6 +761,7 @@ def _play_while_downloading(
     prefetch_alt_handle: lt.torrent_handle | None = None
     last_prefetch_boost = 0.0
     last_seed_boost = 0.0
+    last_lead = 0
     display_filename = target.name
     display_player = player_name
 
@@ -691,7 +776,13 @@ def _play_while_downloading(
             status = handle.status()
             download_rate = int(getattr(status, "download_rate", 0) or 0)
             urgent = consumption_rate > download_rate * 0.7
-            _enforce_sequential_frontier(handle, file_index, urgent=urgent)
+            _enforce_sequential_frontier(
+                handle,
+                file_index,
+                urgent=urgent,
+                download_rate=download_rate,
+                lead_bytes=last_lead,
+            )
             if seed_while_watching and session is not None:
                 if now - last_seed_boost >= 2.0:
                     _enable_watch_seed(session, handle, file_index)
@@ -771,6 +862,7 @@ def _play_while_downloading(
                                     )
                                 except Exception:
                                     pass
+                                _apply_active_downloads(session, 1)
                                 handle = next_handle
                             current_item = next_item
                             file_index = next_index
@@ -786,6 +878,7 @@ def _play_while_downloading(
                             prefetch_index = None
                             prefetch_alt_handle = None
                             last_prefetch_boost = 0.0
+                            last_lead = 0
                             prev_tick = time.monotonic()
                             continue
                     # Pas de suivant (ou loadfile échoué) : fermer mpv.
@@ -847,6 +940,7 @@ def _play_while_downloading(
 
             prev_tick = now
             lead = contiguous - play_byte
+            last_lead = max(0, lead) if ipc_available else contiguous
             if lead < _stream_margin_bytes():
                 time.sleep(0.08)
             else:
@@ -893,7 +987,8 @@ def _wait_mkv_playable(
         contiguous = _contiguous_file_bytes(handle, file_index)
         if _mkv_playable(target, contiguous):
             return contiguous
-        _enforce_sequential_frontier(handle, file_index)
+        rate = int(getattr(handle.status(), "download_rate", 0) or 0)
+        _enforce_sequential_frontier(handle, file_index, download_rate=rate)
         time.sleep(0.15)
     return contiguous
 
@@ -1263,6 +1358,7 @@ def play(
                 prefetch_box["ready"] = False
                 prefetch_box["failed"] = False
                 prefetch_box["item"] = nxt
+                _apply_active_downloads(session, 2)
                 stream_log("prefetch", "next episode…", tone="muted")
                 _start_sub_prefetch(nxt)
 
@@ -1354,6 +1450,7 @@ def play(
                     return next_index, next_path, next_size, next_handle
 
                 sp = magnet_save_path(magnet)
+                _apply_active_downloads(session, 2)
                 h = add_torrent(session, magnet, sp)
                 session_handles.append(h)
                 info = wait_metadata(h)
@@ -1563,6 +1660,7 @@ def play(
                 ):
                     stream_log_err(player_name, f"code {code}")
             finally:
+                _save_dht_state(session)
                 if seed_while_watching:
                     _disable_watch_seed(session)
                 # handle peut avoir changé après un switch multi-magnet.
@@ -1585,6 +1683,7 @@ def play(
             end_playback_ui()
     except KeyboardInterrupt:
         end_playback_ui()
+        _save_dht_state(session)
         if handle is not None:
             try:
                 session.remove_torrent(handle, 0 if keep else 1)

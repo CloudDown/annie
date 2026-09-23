@@ -218,6 +218,34 @@ extra_args = ["--fs"]
         self.assertEqual(cfg.mpv.hwdec, "no")
         self.assertEqual(cfg.mpv.extra_args, ["--fs"])
 
+    def test_torrent_listen_port_and_connection_speed(self) -> None:
+        toml = """
+[torrent]
+listen_port = 42000
+connection_speed = 120
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.torrent.listen_port, 42000)
+        self.assertEqual(cfg.torrent.connection_speed, 120)
+
+    def test_torrent_listen_port_out_of_range_falls_back(self) -> None:
+        toml = """
+[torrent]
+listen_port = 70000
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(toml, encoding="utf-8")
+            with mock.patch("annie.config.CONFIG_FILE", path):
+                reload_config()
+                cfg = AnnieConfig.load()
+        self.assertEqual(cfg.torrent.listen_port, 55113)
+
 
 if __name__ == "__main__":
     unittest.main()

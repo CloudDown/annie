@@ -346,7 +346,12 @@ def try_direct_play(
         except Exception as exc:
             _catalog_error(exc)
 
-    entries = search(query, category=config.category, filter_code=config.filter_code)
+    entries = search(
+        query,
+        category=config.category,
+        filter_code=config.filter_code,
+        exhaustive=True,
+    )
     picked = _pick_for_options(entries, query, options, config)
     if picked is None:
         print("  no torrent found.", file=sys.stderr)
@@ -380,6 +385,7 @@ def run_search(
         query,
         category=category or config.category,
         filter_code=filter_code or config.filter_code,
+        exhaustive=True,
     )
     if not entries:
         print("  no results.")
@@ -498,6 +504,7 @@ def run_watch(
         query,
         category=category or config.category,
         filter_code=filter_code or config.filter_code,
+        exhaustive=True,
     )
     picked = _pick_for_options(entries, query, options, config)
     if picked is None:

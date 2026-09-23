@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import contextlib
 import io
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 try:
     import libtorrent as lt  # noqa: F401
@@ -15,8 +18,12 @@ except ImportError:
     HAS_LT = False
 
 from annie.buffer import (
+    MKV_FRONTIER_PIECES,
+    WIDE_FRONTIER_PIECES,
     _buffer_peer_state,
     _buffer_start_mode,
+    _enforce_sequential_frontier,
+    _frontier_window,
     _peer_wait_deadlines,
 )
 from annie.config import BufferConfig
@@ -29,6 +36,10 @@ if HAS_LT:
 from annie.stream import (
     BINGE_PREFETCH_PROGRESS,
     BINGE_SWITCH_PROGRESS,
+    _active_download_target,
+    _load_dht_state,
+    _save_dht_state,
+    _session_settings,
 )
 
 
@@ -328,6 +339,147 @@ class FixtureFilenameTests(unittest.TestCase):
                     season=case.get("season"),
                 )
                 self.assertEqual(result, case["match"], msg=case["path"])
+
+
+class _PieceFiles:
+    def __init__(self, size: int) -> None:
+        self._size = size
+
+    def file_offset(self, _index: int) -> int:
+        return 0
+
+    def file_size(self, _index: int) -> int:
+        return self._size
+
+
+class _PieceInfo:
+    def __init__(self, pieces: int, piece_len: int = 1024) -> None:
+        self._len = piece_len
+        self._size = pieces * piece_len
+
+    def files(self) -> _PieceFiles:
+        return _PieceFiles(self._size)
+
+    def piece_length(self) -> int:
+        return self._len
+
+
+class _PieceHandle:
+    def __init__(self, pieces: int) -> None:
+        self._info = _PieceInfo(pieces)
+        self.priorities: dict[int, int] = {}
+
+    def torrent_file(self) -> _PieceInfo:
+        return self._info
+
+    def have_piece(self, _piece: int) -> bool:
+        return False
+
+    def piece_priority(self, piece: int, priority: int) -> None:
+        self.priorities[piece] = priority
+
+    def set_piece_deadline(self, _piece: int, _deadline: int) -> None:
+        return None
+
+
+class FrontierWindowTests(unittest.TestCase):
+    def test_narrow_until_the_download_is_fast(self) -> None:
+        self.assertEqual(_frontier_window(), MKV_FRONTIER_PIECES)
+        self.assertEqual(
+            _frontier_window(download_rate=1024 * 1024 - 1), MKV_FRONTIER_PIECES
+        )
+        self.assertEqual(
+            _frontier_window(download_rate=1024 * 1024), WIDE_FRONTIER_PIECES
+        )
+
+    def test_urgent_adds_a_small_extra_window(self) -> None:
+        self.assertEqual(_frontier_window(urgent=True), MKV_FRONTIER_PIECES + 32)
+        self.assertEqual(
+            _frontier_window(urgent=True, download_rate=2 * 1024 * 1024),
+            WIDE_FRONTIER_PIECES + 32,
+        )
+
+    def test_lead_past_the_margin_widens_the_window(self) -> None:
+        margin = 64 * 1024 * 1024
+        with mock.patch("annie.buffer._stream_margin_bytes", return_value=margin):
+            self.assertEqual(
+                _frontier_window(lead_bytes=margin - 1), MKV_FRONTIER_PIECES
+            )
+            self.assertEqual(_frontier_window(lead_bytes=margin), WIDE_FRONTIER_PIECES)
+
+    def test_priorities_stop_at_the_window(self) -> None:
+        narrow = _PieceHandle(400)
+        _enforce_sequential_frontier(narrow, 0, download_rate=0)
+        self.assertEqual(narrow.priorities[MKV_FRONTIER_PIECES - 1], 7)
+        self.assertEqual(narrow.priorities[MKV_FRONTIER_PIECES], 0)
+        self.assertEqual(narrow.priorities[399], 0)
+
+        wide = _PieceHandle(400)
+        _enforce_sequential_frontier(wide, 0, download_rate=2 * 1024 * 1024)
+        self.assertEqual(wide.priorities[WIDE_FRONTIER_PIECES - 1], 7)
+        self.assertEqual(wide.priorities[WIDE_FRONTIER_PIECES], 0)
+        self.assertTrue(
+            all(
+                priority == 0
+                for piece, priority in wide.priorities.items()
+                if piece >= WIDE_FRONTIER_PIECES
+            )
+        )
+
+
+class ActiveDownloadTests(unittest.TestCase):
+    def test_prefetch_opens_a_second_slot(self) -> None:
+        self.assertEqual(_active_download_target(1, 1), 1)
+        self.assertEqual(_active_download_target(1, 2), 2)
+        self.assertEqual(_active_download_target(4, 2), 4)
+        self.assertEqual(_active_download_target(0, 1), 1)
+
+
+class SessionSettingsTests(unittest.TestCase):
+    def test_trackers_and_listen_port(self) -> None:
+        from annie.config import AnnieConfig
+
+        torrent = AnnieConfig.load().torrent
+        settings = _session_settings(seed_while_watching=False)
+        self.assertTrue(settings["announce_to_all_trackers"])
+        self.assertTrue(settings["announce_to_all_tiers"])
+        self.assertEqual(settings["connection_speed"], max(1, torrent.connection_speed))
+        if torrent.listen_port > 0:
+            self.assertIn(str(torrent.listen_port), settings["listen_interfaces"])
+        else:
+            self.assertNotIn("listen_interfaces", settings)
+
+
+class DhtStateTests(unittest.TestCase):
+    def test_roundtrip_and_empty_state_keeps_the_file(self) -> None:
+        import libtorrent as lt
+
+        class FakeSession:
+            def __init__(self, data: dict | None = None) -> None:
+                self.data = data if data is not None else {}
+                self.loaded = None
+
+            def save_state(self, _flags: int) -> dict:
+                return self.data
+
+            def load_state(self, data: dict) -> None:
+                self.loaded = data
+
+        payload = {b"dht": {b"n": b"abc"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            with mock.patch("annie.stream.CACHE_DIR", cache):
+                _save_dht_state(FakeSession({}))
+                self.assertFalse((cache / "session" / "dht_state").exists())
+                _save_dht_state(FakeSession(payload))
+                path = cache / "session" / "dht_state"
+                self.assertTrue(path.is_file())
+                sentinel = path.read_bytes()
+                _save_dht_state(FakeSession({}))
+                self.assertEqual(path.read_bytes(), sentinel)
+                reader = FakeSession()
+                _load_dht_state(reader)
+        self.assertEqual(reader.loaded, lt.bdecode(sentinel))
 
 
 if __name__ == "__main__":

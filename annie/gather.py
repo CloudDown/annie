@@ -271,7 +271,9 @@ def gather_catalog(
             )
             options["catalog_fallback"] = True
 
-    entries = search(query, category=category, filter_code=filter_code)
+    entries = search(
+        query, category=category, filter_code=filter_code, exhaustive=True
+    )
     if not entries:
         return [], _annotate_source(options, "nyaa")
 

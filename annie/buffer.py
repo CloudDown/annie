@@ -21,6 +21,8 @@ MKV_MAGIC = b"\x1a\x45\xdf\xa3"
 MKV_CLUSTER = b"\x1f\x43\xb6\x75"
 START_MIN_MKV_BYTES = 2 * 1024 * 1024
 MKV_FRONTIER_PIECES = 64
+WIDE_FRONTIER_PIECES = 192
+FAST_DOWNLOAD_BYTES = 1024 * 1024
 START_MIN_MP4_BYTES = 256 * 1024
 START_MIN_OTHER_BYTES = 4 * 1024 * 1024
 MP4_TAIL_BYTES = 8 * 1024 * 1024
@@ -63,15 +65,42 @@ def _frontier_piece(handle: lt.torrent_handle, file_index: int) -> int | None:
     return None
 
 
+def _frontier_window(
+    *,
+    urgent: bool = False,
+    download_rate: int = 0,
+    lead_bytes: int | None = None,
+) -> int:
+    """64 pièces au départ ; ~192 quand le débit ou l'avance le permet."""
+    wide = download_rate >= FAST_DOWNLOAD_BYTES
+    if (
+        not wide
+        and lead_bytes is not None
+        and lead_bytes >= _stream_margin_bytes()
+    ):
+        wide = True
+    window = WIDE_FRONTIER_PIECES if wide else MKV_FRONTIER_PIECES
+    if urgent:
+        window += 32
+    return window
+
+
 def _enforce_sequential_frontier(
-    handle: lt.torrent_handle, file_index: int, *, urgent: bool = False
+    handle: lt.torrent_handle,
+    file_index: int,
+    *,
+    urgent: bool = False,
+    download_rate: int = 0,
+    lead_bytes: int | None = None,
 ) -> None:
     """Download only the next pieces after the contiguous frontier (no holes ahead)."""
     first_piece, last_piece = _file_piece_bounds(handle, file_index)
     frontier = _frontier_piece(handle, file_index)
     if frontier is None:
         return
-    window = MKV_FRONTIER_PIECES + (32 if urgent else 0)
+    window = _frontier_window(
+        urgent=urgent, download_rate=download_rate, lead_bytes=lead_bytes
+    )
     deadline_ms = 6 if urgent else 15
     window_end = min(last_piece, frontier + window - 1)
     for piece in range(first_piece, last_piece + 1):
@@ -450,7 +479,11 @@ def wait_startable(
                 stall_ticks = 0
                 last_ready = ready
 
-            _enforce_sequential_frontier(handle, file_index)
+            _enforce_sequential_frontier(
+                handle,
+                file_index,
+                download_rate=int(getattr(status, "download_rate", 0) or 0),
+            )
 
             if status.download_rate > 256 * 1024:
                 time.sleep(0.08)
