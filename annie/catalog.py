@@ -47,7 +47,8 @@ RECAP_MOVIE_PATTERNS = (
     re.compile(r"\bsummary\b", re.I),
     re.compile(r"\bdigest\b", re.I),
 )
-_SEASON_TAG_RE = re.compile(r"\bS0?(\d{1,2})\b", re.I)
+# Bare « S02 » / « S2 », ou « S02E07 » (le \b après digits échoue avant E).
+_SEASON_TAG_RE = re.compile(r"\bS(\d{1,2})(?:E\d{1,3})?\b", re.I)
 # Pluriel « Seasons 1-4 » = plage de saisons.
 # Singulier « Season 1-2 » (sans espaces) seulement si hi ≤ 5 (packs courts).
 # « Season 3 - 04 » / « Season 1~13 » = épisode(s), pas plage de saisons.

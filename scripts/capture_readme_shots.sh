@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/docs/screenshots"
-APP_ID="org.omarchy.annie"
+APP_ID="TUI.float"
 CHARS="92x24"
 HOLD_SEC=2.2
 

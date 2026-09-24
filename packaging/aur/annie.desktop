@@ -4,11 +4,9 @@ Type=Application
 Name=Annie
 GenericName=Anime
 Comment=Search, pick, and stream anime from the terminal
-Exec=xdg-terminal-exec --app-id=org.omarchy.annie -e annie
+Exec=annie
 TryExec=annie
-Terminal=false
+Terminal=true
 Icon=annie
-StartupNotify=true
-StartupWMClass=org.omarchy.annie
 Categories=AudioVideo;Video;TV;Player;
 Keywords=anime;nyaa;torrent;mpv;stream;mal;anilist;

@@ -42,7 +42,7 @@ Detects the host and installs accordingly:
 
 | System | What it does |
 |--------|----------------|
-| **Omarchy** | `uv` + `mpv`, app in `~/.local/share/annie`, **Super+Shift+I** |
+| **Omarchy** | `uv` + `mpv`, `omarchy tui install`, **Super+Shift+I** |
 | **Arch / others** | Same XDG layout via source (`uv`) — no AUR package required |
 
 `annie` → `~/.local/bin` · config → `~/.config/annie`
@@ -52,7 +52,7 @@ From a clone: `make install` · on Omarchy: `make omarchy`
 | | |
 |---|---|
 | **Super+Shift+I** | Open / focus (Omarchy) |
-| **Super+Space** | Search `annie` / `anime` |
+| **Super+Space** | Apps → Annie |
 | Terminal | `annie` |
 
 ---

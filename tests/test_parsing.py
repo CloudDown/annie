@@ -269,6 +269,28 @@ class EpisodeBelongsTests(unittest.TestCase):
         s2_ep = _item("[SubsPlease] Youjo Senki II - 01 (1080p).mkv")
         self.assertTrue(_episode_belongs_to_release(s2_ep, s2, absolute_offset=0))
 
+    def test_s2_accepts_s02e_tag_not_false_s00(self) -> None:
+        """Régression : « S02E07 » ne doit pas être lu comme saison 0 (S00)."""
+        s2 = MalRelease(
+            mal_id=2,
+            label="Youjo Senki II",
+            kind=MediaKind.EPISODE,
+            season=2,
+            episode_count=12,
+            nyaa_queries=["youjo senki", "tanya the evil"],
+            sort_key=(2, "youjo senki ii"),
+        )
+        judas = _item(
+            "[Judas] Youjo Senki (Saga of Tanya the Evil) - S02E07 "
+            "[1080p][HEVC x265 10bit][Multi-Subs] (Weekly)"
+        )
+        self.assertTrue(_episode_belongs_to_release(judas, s2, absolute_offset=0))
+        gecko = _item(
+            "[Gecko] Saga of Tanya the Evil - S00E07 "
+            "(幼女戦記) [YTB.WEB-DL 1080P AVC]"
+        )
+        self.assertFalse(_episode_belongs_to_release(gecko, s2, absolute_offset=0))
+
 
 class RomanSeasonParseTests(unittest.TestCase):
     def test_youjo_senki_ii_episode(self) -> None:
@@ -281,6 +303,21 @@ class RomanSeasonParseTests(unittest.TestCase):
         self.assertFalse(
             title_marks_season("[SubsPlease] Youjo Senki - 01 (1080p).mkv", 2)
         )
+
+    def test_s02e_not_parsed_as_season_zero(self) -> None:
+        from annie.catalog import _explicit_seasons_in_title
+        from annie.parsing import parse_season, title_marks_season
+
+        title = (
+            "[Judas] Youjo Senki (Saga of Tanya the Evil) - S02E07 "
+            "[1080p][HEVC x265 10bit][Multi-Subs] (Weekly)"
+        )
+        self.assertNotEqual(parse_season(title), 0)
+        self.assertEqual(_explicit_seasons_in_title(title), {2})
+        self.assertTrue(title_marks_season(title, 2))
+        self.assertEqual(parse_season("Youjo Senki S2"), 2)
+        self.assertEqual(parse_season("S00 specials"), 0)
+        self.assertEqual(_explicit_seasons_in_title("Foo - S00E02-E14 bar"), {0})
 
 
 class FranchiseOffsetTests(unittest.TestCase):

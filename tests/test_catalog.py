@@ -649,6 +649,44 @@ class TanyaAllAnimeScopedTests(unittest.TestCase):
         self.assertIn("II", ep1.entry.title)
         self.assertNotIn("DEAD", ep1.entry.title)
 
+    def test_s02e_singles_cover_s2_without_false_s00_reject(self) -> None:
+        """Régression : S02E07 n'est plus rejeté comme S00 — la S2 se remplit sans batch."""
+        s2 = mal_release(
+            mal_id=2,
+            season=2,
+            episode_count=12,
+            label="Youjo Senki II",
+            queries=["youjo senki", "tanya the evil"],
+            absolute_episode_offset=0,
+        )
+        judas = (
+            "[Judas] Youjo Senki (Saga of Tanya the Evil) - S02E07 "
+            "[1080p][HEVC x265 10bit][Multi-Subs] (Weekly)"
+        )
+        entries = [
+            nyaa_entry(judas, seeders=165),
+            nyaa_entry(
+                "[AnoZu] Saga of Tanya the Evil S02E01 1080p CR WEB-DL "
+                "AAC 2.0 H.264 | Youjo Senki II",
+                seeders=200,
+            ),
+        ]
+
+        def fake_search(query: str, **kwargs):
+            return entries
+
+        sections = build_catalog_from_releases(
+            [s2],
+            search=fake_search,
+            category="1_2",
+            filter_code="0",
+        )
+        self.assertEqual(len(sections), 1)
+        self.assertIn(7, sections[0].episodes)
+        self.assertIn("Judas", sections[0].episodes[7].entry.title)
+        self.assertIn(1, sections[0].episodes)
+        self.assertIn("AnoZu", sections[0].episodes[1].entry.title)
+
     def test_s00_specials_pack_does_not_cover_s2(self) -> None:
         """Pack Gecko S00E02-E14 ne doit pas écraser la vraie S2."""
         from annie.catalog import _batch_coverage, _batch_episodes_for_release

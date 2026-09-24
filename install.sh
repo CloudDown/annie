@@ -186,7 +186,7 @@ sync_repo
 
 case "$FLAVOR" in
   omarchy)
-    log "Omarchy → desktop wiring + Super+Shift+I"
+    log "Omarchy → tui-install + Super+Shift+I"
     install_omarchy
     ;;
   *)

@@ -281,6 +281,20 @@ class PickFileTests(unittest.TestCase):
         )
         self.assertEqual(picked_safe[0], 11)
 
+    def test_yyq_bracket_episode_picks_s2e07(self) -> None:
+        # Régression : batch YYQ « [Youjo Senki S2][07][…] » sans tiret avant l'épisode.
+        files = [
+            (
+                i,
+                f"[YYQSUB][Youjo Senki S2][{ep:02d}][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+                100,
+            )
+            for i, ep in enumerate(range(1, 13), start=0)
+        ]
+        picked = pick_file(files, None, None, episode=7, season=2)
+        self.assertEqual(picked[0], 6)
+        self.assertIn("[07]", picked[1])
+
     def test_disambiguates_franchise_batch_by_series(self) -> None:
         files = [
             (

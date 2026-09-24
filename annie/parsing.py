@@ -220,7 +220,11 @@ SE_BATCH_RANGE_RE = re.compile(
 ORDINAL_SEASON_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s+Season", re.I)
 ORDINAL_DASH_RE = re.compile(r"(?P<season>\d)(?:st|nd|rd|th)\s*[-–—]", re.I)
 SEASON_WORD_RE = re.compile(r"\bSeason\s*(?P<season>\d+)\b", re.I)
-SEASON_SHORT_RE = re.compile(r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})(?!E\d)", re.I)
+# Ne pas matcher « S0 » dans « S02E07 » : exiger fin de nombre (pas digit/E).
+SEASON_SHORT_RE = re.compile(
+    r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})(?![0-9Ee])",
+    re.I,
+)
 R_CODE_RE = re.compile(r"\bR(?P<season>[12])\b", re.I)
 SEASON_PACK_RE = re.compile(
     r"\b(?:BD|BluRay|Blu-?Ray|Remux|Batch|Complete|Full\s+Series|"
@@ -399,8 +403,8 @@ def title_marks_season(title: str, season: int) -> bool:
         return True
     if parse_roman_season(title) == season:
         return True
-    # Tags S02 / S2 hors parse_season court-circuité.
-    if re.search(rf"\bS0?{season}\b", title, re.I):
+    # Tags S02 / S2 / S02E07 hors parse_season court-circuité.
+    if re.search(rf"\bS0?{season}(?:E\d{{1,3}})?\b", title, re.I):
         return True
     if re.search(rf"\b(?:season|part|cour)\s*0?{season}\b", title, re.I):
         return True
@@ -972,6 +976,10 @@ def _contradicts_season(stem: str, season: int) -> bool:
     for match in re.finditer(r"\b[Ss]eason\s*0?(\d+)\b", stem, re.I):
         if int(match.group(1)) != season:
             return True
+    # « Youjo Senki S2 » / « II » : parse_season voit la saison sans SxxExx.
+    marked = parse_season(stem)
+    if marked is not None and marked != season:
+        return True
     if season == 1 and re.search(r"\bR2\b", stem, re.I):
         return True
     if (
@@ -979,6 +987,17 @@ def _contradicts_season(stem: str, season: int) -> bool:
         and re.search(r"\bR1\b", stem, re.I)
         and not re.search(r"\bR2\b", stem, re.I)
     ):
+        return True
+    return False
+
+
+def _match_bracket_episode(stem: str, episode: int) -> bool:
+    """Style « [Group][Title S2][07][1080P].mp4 » (déjà connu de parse_title)."""
+    for match in BRACKET_EP_RE.finditer(stem):
+        if int(match.group("episode")) == episode:
+            return True
+    leading = LEADING_BRACKET_EP_RE.match(stem)
+    if leading is not None and int(leading.group("episode")) == episode:
         return True
     return False
 
@@ -1011,6 +1030,10 @@ def match_episode_filename(
     if re.search(r"\bOVA\b", stem, re.I) or re.search(r"\bOVA\d", stem, re.I):
         return False
 
+    ep_hit = _match_dash_episode(stem, episode) or _match_bracket_episode(
+        stem, episode
+    )
+
     if season is not None:
         strict_patterns = (
             rf"[Ss]{season:02d}[Ee]{episode:02d}\b",
@@ -1020,11 +1043,11 @@ def match_episode_filename(
             return True
         if _contradicts_season(stem, season):
             return False
-        return _match_dash_episode(stem, episode)
+        return ep_hit
 
     if re.search(rf"[Ss]\d+[Ee]0?{episode}\b", stem, re.I):
         return True
-    return _match_dash_episode(stem, episode)
+    return ep_hit
 
 
 def parse_inline_target(query: str) -> tuple[str, dict]:

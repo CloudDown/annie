@@ -34,7 +34,7 @@ make test           # suite unitaire offline
 make test-offline   # régressions fixtures (sans réseau)
 make debug-rezero   # régression catalogue Re:Zero
 make smoke          # Tanya / Re:Zero / film Konosuba (offline)
-make omarchy        # lanceur Omarchy + Super+Shift+I (si Omarchy)
+make omarchy        # omarchy-tui-install + Super+Shift+I (si Omarchy)
 make clean          # supprime venv & artefacts
 ```
 
@@ -76,7 +76,7 @@ tests/
 scripts/              Outils debug / validation (réseau)
 packaging/
   aur/                PKGBUILD AUR
-  omarchy/            Desktop, icon, `make omarchy`
+  omarchy/            Icon + `make omarchy` (tui-install)
 ```
 
 ## Tests vs scripts de validation

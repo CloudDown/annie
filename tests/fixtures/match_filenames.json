@@ -33,5 +33,26 @@
     "episode": 8,
     "season": 1,
     "match": false
+  },
+  {
+    "id": "yyq-bracket-s2e07",
+    "path": "[YYQSUB][Youjo Senki S2][07][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+    "episode": 7,
+    "season": 2,
+    "match": true
+  },
+  {
+    "id": "yyq-bracket-s2e07-not-s1",
+    "path": "[YYQSUB][Youjo Senki S2][07][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+    "episode": 7,
+    "season": 1,
+    "match": false
+  },
+  {
+    "id": "yyq-bracket-wrong-ep",
+    "path": "[YYQSUB][Youjo Senki S2][07][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+    "episode": 8,
+    "season": 2,
+    "match": false
   }
 ]

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Wire Annie into Omarchy like a stock TUI (btop, Docker): PATH, app launcher,
-# Super+Shift+I, menu search, floating window.
+# Wire Annie into Omarchy: PATH, omarchy-tui-install (launcher), Super+Shift+I.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -16,8 +15,8 @@ if ! command -v omarchy >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v xdg-terminal-exec >/dev/null 2>&1; then
-  printf '%s\n' "omarchy: xdg-terminal-exec is missing." >&2
+if ! command -v omarchy-tui-install >/dev/null 2>&1; then
+  printf '%s\n' "omarchy: omarchy-tui-install is missing." >&2
   exit 1
 fi
 
@@ -28,9 +27,7 @@ if ((${#need[@]})); then
   omarchy pkg add "${need[@]}"
 fi
 
-mkdir -p "$BIN_DIR" "$DESKTOP_DIR" \
-  "$ICON_BASE/scalable/apps" \
-  "$ICON_BASE/256x256/apps"
+mkdir -p "$BIN_DIR"
 
 # Prefer the venv entry point from `make install` / `uv sync`.
 if [[ -x "$ROOT/.venv/bin/annie" ]]; then
@@ -42,36 +39,54 @@ elif ! command -v annie >/dev/null 2>&1; then
   exit 1
 fi
 
-install -m644 "$ROOT/packaging/omarchy/annie.desktop" "$DESKTOP_DIR/Annie.desktop"
-install -m644 "$ROOT/packaging/omarchy/annie.svg" "$ICON_BASE/scalable/apps/annie.svg"
-if [[ -f "$ROOT/packaging/omarchy/annie.png" ]]; then
-  install -m644 "$ROOT/packaging/omarchy/annie.png" "$ICON_BASE/256x256/apps/annie.png"
-fi
-
-if [[ ! -f "$ICON_BASE/index.theme" ]]; then
-  cat >"$ICON_BASE/index.theme" <<'EOF'
-[Icon Theme]
-Name=Hicolor
-Comment=User icon theme
-Directories=256x256/apps,scalable/apps
-
-[256x256/apps]
-Size=256
-Context=Applications
-Type=Fixed
-
-[scalable/apps]
-Size=128
-MaxSize=512
-Context=Applications
-Type=Scalable
-EOF
-fi
-
+# --- migrate away from legacy custom wiring ---
+rm -f "$DESKTOP_DIR/Annie.desktop"
+rm -f "$ICON_BASE/scalable/apps/annie.svg" \
+  "$ICON_BASE/256x256/apps/annie.png" \
+  "$ICON_BASE/256x256/apps/annie.svg"
 gtk-update-icon-cache "$ICON_BASE" &>/dev/null || true
 update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
 
-# Super+Shift+A is ChatGPT — Annie uses Super+Shift+I (free).
+if [[ -f "$MENU" ]] && grep -q '"trigger.annie"' "$MENU"; then
+  python3 - "$MENU" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+text2 = re.sub(
+    r'\n  "trigger\.annie": \{.*?\n  \},?\n',
+    "\n",
+    text,
+    count=1,
+    flags=re.DOTALL,
+)
+if text2 != text:
+    path.write_text(text2, encoding="utf-8")
+PY
+fi
+
+if [[ -f "$HYPRLAND" ]] && grep -q 'org.omarchy.annie' "$HYPRLAND"; then
+  python3 - "$HYPRLAND" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+text2 = re.sub(
+    r"\n-- Annie TUI:[^\n]*\n"
+    r"(?:o\.window\(\"org\.omarchy\.annie\"[^\n]*\n)+",
+    "\n",
+    text,
+)
+if text2 != text:
+    path.write_text(text2, encoding="utf-8")
+PY
+fi
+
+# Super+Shift+A is ChatGPT — Annie uses Super+Shift+I (same app-id as tui-install).
 if [[ -f "$BINDINGS" ]]; then
   python3 - "$BINDINGS" <<'PY'
 from pathlib import Path
@@ -87,11 +102,12 @@ text = re.sub(
     "\n",
     text,
 )
-if 'tui = "annie"' not in text:
+marker = 'omarchy-launch-or-focus-tui --app-id=TUI.float annie'
+if marker not in text:
     text = text.rstrip() + """
 
 -- Annie (Super+Shift+A stays ChatGPT)
-o.bind("SUPER + SHIFT + I", "Annie", { tui = "annie", focus = true })
+o.bind("SUPER + SHIFT + I", "Annie", "omarchy-launch-or-focus-tui --app-id=TUI.float annie")
 """
     if not text.endswith("\n"):
         text += "\n"
@@ -99,41 +115,16 @@ path.write_text(text, encoding="utf-8")
 PY
 fi
 
-if [[ -f "$HYPRLAND" ]] && ! grep -q 'org.omarchy.annie' "$HYPRLAND"; then
-  cat >>"$HYPRLAND" <<'EOF'
-
--- Annie TUI: larger float than btop so the catalog fits.
-o.window("org.omarchy.annie", { float = true })
-o.window("org.omarchy.annie", { center = true })
-o.window("org.omarchy.annie", { size = { 1100, 720 } })
-EOF
+ICON="$ROOT/packaging/omarchy/annie.png"
+if [[ ! -f "$ICON" ]]; then
+  ICON="$ROOT/packaging/omarchy/annie.svg"
+fi
+if [[ ! -f "$ICON" ]]; then
+  printf '%s\n' "omarchy: missing packaging/omarchy/annie.png (or .svg)." >&2
+  exit 1
 fi
 
-if [[ -f "$MENU" ]] && ! grep -q '"trigger.annie"' "$MENU"; then
-  python3 - "$MENU" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
-needle = '"trigger.download"'
-block = '''  "trigger.annie": {
-    "icon": "󰎁",
-    "label": "Annie",
-    "aliases": ["annie", "anime", "nyaa", "mpv"],
-    "description": "Search and stream anime",
-    "when": "omarchy-cmd-present annie",
-    "action": "omarchy-launch-or-focus-tui annie"
-  },
-
-  '''
-if '"trigger.annie"' in text:
-    raise SystemExit(0)
-if needle not in text:
-    raise SystemExit("omarchy-menu.jsonc: missing trigger.download anchor")
-path.write_text(text.replace(needle, block + needle, 1), encoding="utf-8")
-PY
-fi
+omarchy-tui-install "Annie" annie float "$ICON"
 
 if command -v hyprctl >/dev/null 2>&1; then
   hyprctl reload >/dev/null
@@ -146,8 +137,7 @@ fi
 
 printf '%s\n' "Annie is on Omarchy:"
 printf '%s\n' "  Super+Shift+I     launch / focus"
-printf '%s\n' "  Super+Space       type annie / anime"
-printf '%s\n' "  Super+Alt+Space   Apps → Annie"
+printf '%s\n' "  Super+Space       Apps → Annie"
 printf '%s\n' "  Super+Shift+A stays ChatGPT."
 printf '%s\n' "Paths:"
 printf '%s\n' "  app     $ROOT"
