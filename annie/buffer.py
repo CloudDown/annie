@@ -246,6 +246,13 @@ def _is_startable(
         contiguous = _contiguous_file_bytes(handle, file_index)
         return _mkv_playable(path, contiguous)
     if ext in {".mp4", ".m4v", ".mov"}:
+        # Même cible que la barre buffer (mkv_start_mib) : un moov en tête
+        # ne doit pas déclencher un « quick start » à ~15 % de la jauge.
+        if handle is not None and file_index is not None:
+            contiguous = _contiguous_file_bytes(handle, file_index)
+            complete = file_size > 0 and ready >= file_size
+            if contiguous < _mkv_start_bytes() and not complete:
+                return False
         if ready < START_MIN_MP4_BYTES or not _mp4_has_ftyp(path):
             return False
         if _mp4_moov_in_head(path, min(ready, 32 * 1024 * 1024)):
@@ -340,17 +347,18 @@ def _buffer_start_mode(
     hard_timeout: bool,
     seeding: bool,
 ) -> str | None:
-    """Décide si on lance mpv. None = continuer d'attendre."""
+    """Décide si on lance mpv. None = continuer d'attendre.
+
+    La barre buffer vise ``target_bytes`` (mkv_start_mib) : on ne lance pas
+    en dessous, même après soft timeout (ex. MP4 avec moov en tête).
+    """
+    _ = soft_timeout
     full = startable and can_start and contiguous >= target_bytes
     if full:
         return "ready"
-    if seeding and startable:
+    if seeding and startable and contiguous >= target_bytes:
         return "seeding"
-    if soft_timeout and startable and can_start:
-        return "quick"
     if hard_timeout:
-        if can_start and startable:
-            return "forced"
         return "timeout"
     return None
 

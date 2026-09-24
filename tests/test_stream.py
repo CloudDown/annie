@@ -108,7 +108,7 @@ class PeerWaitDeadlineTests(unittest.TestCase):
 
 
 class BufferStartModeTests(unittest.TestCase):
-    def test_ready_beats_quick(self) -> None:
+    def test_ready_when_full_buffer(self) -> None:
         self.assertEqual(
             _buffer_start_mode(
                 startable=True,
@@ -122,18 +122,18 @@ class BufferStartModeTests(unittest.TestCase):
             "ready",
         )
 
-    def test_quick_after_soft_timeout_without_full_buffer(self) -> None:
-        self.assertEqual(
+    def test_soft_timeout_does_not_start_below_target(self) -> None:
+        """Régression : barre buffer ~15 % ne doit plus lancer (quick MP4)."""
+        self.assertIsNone(
             _buffer_start_mode(
                 startable=True,
                 can_start=True,
-                contiguous=20 * 1024 * 1024,
+                contiguous=12 * 1024 * 1024,
                 target_bytes=80 * 1024 * 1024,
                 soft_timeout=True,
                 hard_timeout=False,
                 seeding=False,
-            ),
-            "quick",
+            )
         )
 
     def test_keeps_waiting_before_timeout(self) -> None:
@@ -149,7 +149,7 @@ class BufferStartModeTests(unittest.TestCase):
             )
         )
 
-    def test_forced_on_hard_timeout(self) -> None:
+    def test_hard_timeout_without_full_buffer_fails(self) -> None:
         self.assertEqual(
             _buffer_start_mode(
                 startable=True,
@@ -160,7 +160,7 @@ class BufferStartModeTests(unittest.TestCase):
                 hard_timeout=True,
                 seeding=False,
             ),
-            "quick",
+            "timeout",
         )
         self.assertEqual(
             _buffer_start_mode(
