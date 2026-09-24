@@ -1,0 +1,33 @@
+{
+  "query": "re zero",
+  "description": "Régression qualité S1E8 — batch seedé vs Director's Cut mort",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 25, "label": "Season 01"}
+  ],
+  "expectations": {
+    "1": {"must_have": [8], "must_not_have": []}
+  },
+  "quality_expectations": {
+    "1": {
+      "8": {
+        "min_seeders": 10,
+        "min_quality": 38,
+        "must_not_contain": ["Director's Cut", "Directors Cut"]
+      }
+    }
+  },
+  "entries": [
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu (01-25) (1080p) [Batch]",
+      "seeders": 102
+    },
+    {
+      "title": "Re.ZERO.Starting.Life.in.Another.World.Directors.Cut.S01E08.MULTi.1080p.WEB-DL.x264-T3KASHi",
+      "seeders": 1
+    },
+    {
+      "title": "[HorribleSubs] Re Zero kara Hajimeru Isekai Seikatsu - 08 [480p].mkv",
+      "seeders": 2
+    }
+  ]
+}

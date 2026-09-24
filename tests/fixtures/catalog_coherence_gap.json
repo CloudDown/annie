@@ -1,0 +1,26 @@
+{
+  "query": "re zero",
+  "description": "Batch partiel + single pour combler le trou",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 25, "label": "Season 01"}
+  ],
+  "expectations": {
+    "1": {"must_have": [13, 14]}
+  },
+  "coherence_after": {
+    "ep13_magnet": "magnet:?xt=urn:btih:1111111111111111111111111111111111111111",
+    "ep14_magnet": "magnet:?xt=urn:btih:2222222222222222222222222222222222222222"
+  },
+  "entries": [
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu (01-13) (1080p) [Batch]",
+      "seeders": 100,
+      "magnet": "magnet:?xt=urn:btih:1111111111111111111111111111111111111111"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 14 (1080p) [GAP].mkv",
+      "seeders": 70,
+      "magnet": "magnet:?xt=urn:btih:2222222222222222222222222222222222222222"
+    }
+  ]
+}

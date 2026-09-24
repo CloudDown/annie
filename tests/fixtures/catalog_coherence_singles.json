@@ -1,0 +1,49 @@
+{
+  "query": "re zero",
+  "description": "Épisodes seuls — 7 ep. même magnet, E08 outlier",
+  "releases": [
+    {"mal_id": 1, "season": 1, "episode_count": 8, "label": "Season 01"}
+  ],
+  "entries": [
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 01 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 02 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 03 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 04 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 05 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 06 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 07 (1080p).mkv",
+      "seeders": 50,
+      "magnet": "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "title": "[EvilRips] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p).mkv",
+      "seeders": 200,
+      "magnet": "magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}

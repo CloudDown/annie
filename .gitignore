@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -6,3 +7,29 @@ build/
 dist/
 .venv/
 *.egg
+
+# Tooling / IDE
+.cursor/
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local agent context (not part of the app)
+docs/AGENTS.md
+
+# Artefacts de validation / debug (scripts eux-mêmes restent versionnables)
+scripts/results/
+
+# Artefacts makepkg (AUR)
+packaging/aur/pkg/
+packaging/aur/src/
+*.pkg.tar.zst
+
+# Développement local (expérimentations)
+dev/
+
+# Config utilisateur locale (pas le template annie/templates/)
+/config.toml
+/settings.toml

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "rezero-s2-single",
+    "title": "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season - 05 [1080p]",
+    "expect": {"season": 2, "episode": 5, "kind": "episode"}
+  },
+  {
+    "id": "rezero-s1-dash",
+    "title": "[HorribleSubs] Re Zero kara Hajimeru Isekai Seikatsu - 15 [1080p].mkv",
+    "expect": {"season": 1, "episode": 15, "kind": "episode"}
+  },
+  {
+    "id": "rezero-absolute",
+    "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 42 (720p).mkv",
+    "expect": {"season": null, "episode": 42, "kind": "episode"}
+  },
+  {
+    "id": "rezero-s2-batch",
+    "title": "[Erai-raws] Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season 1~13 [1080p]",
+    "expect": {"season": 2, "kind": "batch", "batch_eps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]}
+  },
+  {
+    "id": "lostyears-pipe-alias",
+    "title": "[LostYears] Re: ZERO - S03E08 (CR WEB-DL) | Re: Zero Kara Hajimeru Isekai Seikatsu Season 3 - 08",
+    "expect": {"batch_eps": []}
+  },
+  {
+    "id": "subsplease-s1-single",
+    "title": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [ABCD1234].mkv",
+    "expect": {"season": 1, "episode": 8, "kind": "episode"}
+  },
+  {
+    "id": "codegeass-s01-bd-pack",
+    "title": "[Lulu] Code Geass: Lelouch of the Rebellion S01 v2 [BD 1080p HEVC TrueHD FLAC][Dual Audio]",
+    "expect": {"season": 1, "kind": "batch"}
+  },
+  {
+    "id": "codegeass-r2-bd-pack",
+    "title": "[Maximus] Code Geass: Lelouch of the Rebellion R2 S02 (2008) [BluRay 1080p x265 10bit Dual Audio AC3]",
+    "expect": {"season": 2, "kind": "batch"}
+  },
+  {
+    "id": "codegeass-r1-notation",
+    "title": "[Lulu] Code Geass: Lelouch of the Rebellion R1 [BD 1080p HEVC TrueHD FLAC][Dual Audio]",
+    "expect": {"season": 1, "kind": "batch"}
+  },
+  {
+    "id": "frieren-s01-bd-pack",
+    "title": "[wham] Sousou no Frieren | Frieren: Beyond Journey's End - S01 (BD 1080p AV1 Opus AAC Dual Audio)",
+    "expect": {"season": 1, "kind": "batch"}
+  },
+  {
+    "id": "fma-absolute-episode",
+    "title": "[Eclipse] Fullmetal Alchemist Brotherhood - 44 (1280x720 h264) [5AB6A293].mkv",
+    "expect": {"season": null, "episode": 44, "kind": "episode"}
+  },
+  {
+    "id": "akito-exiled-remux",
+    "title": "Code Geass Akito the Exiled 4 Memories of Hatred 2015 BluRay 1080p DTS-HD MA 5.1 AVC HYBRID REMUX -FraMeSToR",
+    "expect": {"kind": "movie"}
+  },
+  {
+    "id": "codegeass-season2-bd",
+    "title": "[CBM] Code Geass Season 2 (Dual Audio) [BD 1080p 10bit x265]",
+    "expect": {"season": 2, "kind": "batch"}
+  }
+]

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Annie
+GenericName=Anime
+Comment=Search, pick, and stream anime from the terminal
+Exec=annie
+TryExec=annie
+Terminal=true
+Icon=annie
+Categories=AudioVideo;Video;TV;Player;
+Keywords=anime;nyaa;torrent;mpv;stream;mal;anilist;

@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "type": "subtitle",
+      "id": "12345678",
+      "attributes": {
+        "release": "Re.Zero S01E08 1080p",
+        "download_count": 1234,
+        "files": [
+          {
+            "file_id": 7654844,
+            "file_name": "re.zero.s01e08.srt"
+          }
+        ]
+      }
+    },
+    {
+      "type": "subtitle",
+      "id": "87654321",
+      "attributes": {
+        "release": "Re.Zero S01E08 alt",
+        "download_count": 50,
+        "files": [
+          {
+            "file_id": 7654845,
+            "file_name": "re.zero.alt.srt"
+          }
+        ]
+      }
+    }
+  ]
+}

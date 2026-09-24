@@ -1,14 +1,15 @@
 [project]
 name = "annie"
-version = "0.4.0"
+version = "0.5.0"
 description = "Anime torrent CLI — search Nyaa, sort releases, stream with mpv"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "rain" }]
+authors = [{ name = "CloudDown" }]
 keywords = ["anime", "nyaa", "torrent", "cli", "mpv"]
 classifiers = [
     "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -18,11 +19,15 @@ dependencies = [
     "libtorrent>=2.0.13",
 ]
 
+[project.optional-dependencies]
+dev = []
+
 [project.scripts]
 annie = "annie.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/local/annie"
+Homepage = "https://github.com/CloudDown/annie"
+Repository = "https://github.com/CloudDown/annie"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -31,3 +36,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["annie*"]
+
+[tool.setuptools.package-data]
+annie = ["templates/*.toml"]

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "subsplease-batch-s01e08",
+    "path": "[SubsPlease] Re Zero kara Hajimeru Isekai Seikatsu - 08 (1080p) [ABCD1234].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": true
+  },
+  {
+    "id": "erai-crc-bracket",
+    "path": "[Erai-raws] Re Zero - 08 [1080p][ABC12345].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": true
+  },
+  {
+    "id": "wrong-episode",
+    "path": "[SubsPlease] Re Zero - 09 (1080p) [ABCD1234].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": false
+  },
+  {
+    "id": "s01e08-explicit",
+    "path": "[Erai-raws] Re Zero S01E08 [1080p].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": true
+  },
+  {
+    "id": "nc-op-skip",
+    "path": "[SubsPlease] Re Zero NCOP [1080p].mkv",
+    "episode": 8,
+    "season": 1,
+    "match": false
+  },
+  {
+    "id": "yyq-bracket-s2e07",
+    "path": "[YYQSUB][Youjo Senki S2][07][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+    "episode": 7,
+    "season": 2,
+    "match": true
+  },
+  {
+    "id": "yyq-bracket-s2e07-not-s1",
+    "path": "[YYQSUB][Youjo Senki S2][07][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+    "episode": 7,
+    "season": 1,
+    "match": false
+  },
+  {
+    "id": "yyq-bracket-wrong-ep",
+    "path": "[YYQSUB][Youjo Senki S2][07][TVRIP][1080P][AVC_AAC][JPSC].mp4",
+    "episode": 8,
+    "season": 2,
+    "match": false
+  }
+]
