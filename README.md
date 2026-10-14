@@ -1,36 +1,7 @@
-<div align="center">
+<h1 align="center">Annie</h1>
+<p align="center">Anime from the terminal: search, pick, stream in mpv.</p>
 
-<pre>
-⣿⠛⠛⠛⠛⠻⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠛⢛⣿⠋⢀⡾⠃⠀⠀⠀⠀⢀⣤⣤⠤⠤⣤⣤⣀⣀⣀⣠⠶⡶⣤⣀⣠⠾⡷⣦⣀⣤⣤⡤⠤⠦⢤⣤⣄⡀⠀⢠⡶⢶⡄⠀⠀
-⢠⡟⠁⣴⣿⢤⡄⣴⢶⠶⡆⠈⢷⡀⠀⠀⠀⠀⢀⣭⣫⠵⠥⠽⣄⣝⠵⢍⣘⣄⠳⣤⣀⠀⠀⢀⡤⠊⣽⠁⠀⠸⣇⠀⢿⠀⠀
-⠸⢷⣴⣤⡤⠾⠇⣽⠋⠼⣷⠀⠈⢷⡄⢀⣤⡶⠋⠀⣀⡄⠤⠀⡲⡆⠀⠀⠈⠙⡄⠘⢮⢳⡴⠯⣀⢠⡏⠀⠀⠀⢻⠀⢸⠇⠀
-⠀⠀⠀⠀⠀⠀⠀⠙⠛⠋⠉⢀⣴⠟⠉⢯⡞⡠⢲⠉⣼⠀⠀⡰⠁⡇⢀⢷⠀⣄⢵⠀⠈⡟⢄⠀⠀⠙⢷⣤⣤⣤⡿⢢⡿⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠟⠑⠊⠁⡼⣌⢠⢿⢸⢸⡀⢰⠁⡸⡇⡸⣸⢰⢈⠘⡄⠀⢸⠀⢣⡀⠀⠈⢮⢢⣏⣤⡾⠃⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣯⣴⠞⡠⣼⠁⡘⣾⠏⣿⢇⣳⣸⣞⣀⢱⣧⣋⣞⡜⢳⡇⠀⢸⠀⢆⢧⠀⠰⣄⢏⢧⣾⠁⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢹⡏⢰⠁⡻⠀⡟⡏⠉⠀⣀⠀⠀⠀⠀⣀⠁⠀⠉⠛⢽⠇⠀⣼⡆⠈⡆⠃⠀⡏⠻⣾⣽⣇⡀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠁⡇⠀⡇⡄⣿⠷⠿⠿⠛⠀⠀⠀⠀⠛⠻⠿⠿⠿⡜⢀⡴⡟⢸⣸⡼⠀⠀⡇⠀⡞⡆⢻⠙⢦⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡶⢀⣼⣿⣬⣽⠧⠬⠇⠀⠀⠀⠀⠀⠀⢞⣯⣭⢺⣔⣪⣾⣤⠺⡇⢳⠀⢠⣧⡾⠛⠛⠻⠶⠞⠁
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠷⢿⠟⠉⡀⠈⢦⡀⠀⠀⣠⠖⠒⠒⢤⡀⠀⢀⡼⠿⢇⡣⢬⣶⠷⢿⣤⡾⠁⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠷⠾⠷⠖⠛⠛⠲⠶⠿⠤⣤⠤⠤⢷⣶⠋⠀⠀⠀⣱⠞⠁⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠓⠒⠚⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-</pre>
-
-# Annie
-
-**Anime from the terminal — search, pick, stream in mpv.**
-
-</div>
-
-Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. Catalog via AniList / AllAnime. Optional [OpenSubtitles](https://www.opensubtitles.com).
-
-> Personal tool — follow copyright law in your country.
-
-<p align="center">
-  <img src="docs/screenshots/prompt.png" alt="Annie prompt" width="720" />
-</p>
-
----
+<p align="center"><img src="docs/screenshots/prompt.png" width="100%" alt="Annie prompt" /></p>
 
 ## Install
 
@@ -38,63 +9,35 @@ Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. 
 curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/main/install.sh | bash
 ```
 
-Detects the host and installs accordingly:
+From a clone: `make install` · on Omarchy: `make omarchy`.
 
-| System | What it does |
-|--------|----------------|
-| **Omarchy** | `uv` + `mpv`, `omarchy tui install`, **Super+Shift+I** |
-| **Arch / others** | Same XDG layout via source (`uv`) — no AUR package required |
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="docs/screenshots/seasons.png" alt="Season picker" /><br /><sub>Pick a season</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/episodes.png" alt="Episode picker" /><br /><sub>Pick an episode</sub></td>
+    <td width="33%" align="center"><img src="docs/screenshots/playback.png" alt="Playback" /><br /><sub>Plays while it downloads</sub></td>
+  </tr>
+</table>
 
-`annie` → `~/.local/bin` · config → `~/.config/annie`
+## Usage
 
-From a clone: `make install` · on Omarchy: `make omarchy`
+```bash
+annie                  # interactive prompt
+annie watch frieren    # search and stream
+annie search frieren   # search Nyaa only
+```
 
-| | |
+| At the prompt | Result |
+|---|---|
+| `frieren s2` | Season 2 |
+| `frieren s2e6` | Episode 6 + subtitles |
+| `frieren movie` | Movies |
+| `settings` / `help` | Settings / menu |
+
+| Key | Action |
 |---|---|
 | **Super+Shift+I** | Open / focus (Omarchy) |
-| **Super+Space** | Apps → Annie |
-| Terminal | `annie` |
+| **↑↓** · **Enter** · **Esc** | Move · select · back |
+| **q** (mpv) · **Ctrl+C** | Quit player · quit Annie |
 
----
-
-## Use
-
-Type a title in **English** or **romaji** (`frieren`, `made in abyss`).
-
-1. Season → episode → optional subtitles  
-2. mpv opens while the torrent downloads  
-3. Quit mpv with **q** · leave Annie with Ctrl+C  
-
-Shortcuts at the prompt: `help` · `settings`
-
-| You type | Result |
-|----------|--------|
-| `frieren s2` | Season 2 |
-| `frieren s2e6` | Episode + subtitles |
-| `frieren movie` | Movies |
-
-TUI: **↑↓** · filter · **Enter** · **Esc** back.
-
-<p align="center">
-  <img src="docs/screenshots/seasons.png" alt="Season picker" width="720" />
-  <br />
-  <img src="docs/screenshots/episodes.png" alt="Episode picker" width="720" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/playback.png" alt="Playback buffer" width="720" />
-</p>
-
----
-
-## Settings
-
-Everything is configured inside Annie — type **`settings`** at the prompt:
-
-- player · subtitles (OpenSubtitles key) · resolution · preferred groups · metadata
-
-No need to edit config files by hand.
-
-<p align="center">
-  <img src="docs/screenshots/settings.png" alt="Settings screen" width="720" />
-</p>
+<p align="center"><a href="docs/GUIDE.md">Docs</a> · Personal tool, follow copyright law in your country.</p>
