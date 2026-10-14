@@ -35,7 +35,7 @@ Search [Nyaa](https://nyaa.si), pick a season/episode, play while it downloads. 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/cursor/initial-release/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/annie/main/install.sh | bash
 ```
 
 Detects the host and installs accordingly:
